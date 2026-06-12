@@ -42,8 +42,8 @@
 
 ### Task 4: Visual verification
 
-- [ ] Temp-DB app launch (EARWORM_DB + EARWORM_OPEN pattern). Screenshots, Read and judge each: (a) settings modal open (`,` via sendshortcut — remember ~1 s latency) with the scale Fader and rows; (b) exit modal (Escape); (c) after dragging nothing — confirm `stay` dismisses (send `n`). Leave /tmp/ew-set-*.png.
-- [ ] Commit fixes if any: `fix(desktop): settings/exit verification`
+- [x] Temp-DB app launch (EARWORM_DB + EARWORM_OPEN pattern). Screenshots, Read and judge each: (a) settings modal open (`,` via sendshortcut — remember ~1 s latency) with the scale Fader and rows; (b) exit modal (Escape); (c) after dragging nothing — confirm `stay` dismisses (send `n`). Leave /tmp/ew-set-*.png. *(All three pass: settings modal with fader/toggle/chips; exit modal with accent exit + stay; `n` dismisses, app stays alive. The 250% fader reading was the legacy localStorage zoom migrating correctly.)*
+- [x] Commit fixes if any: `fix(desktop): settings/exit verification` *(one fix: the legacy `earworm-zoom` key is kept after migration — localStorage is shared across EARWORM_DB profiles.)*
 
 ### Task 5: Live responsiveness proof + gate
 

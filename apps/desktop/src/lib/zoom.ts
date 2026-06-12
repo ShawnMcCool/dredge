@@ -35,9 +35,10 @@ export async function initZoom(): Promise<void> {
     await getCurrentWebview().setZoom(current);
     return;
   }
-  // one-time migration: adopt the old localStorage zoom, then drop the key
+  // one-time migration: adopt the old localStorage zoom. The key stays put
+  // (it's ignored from now on): localStorage is shared across EARWORM_DB
+  // profiles, so deleting it here would rob another profile's migration.
   const legacy = Number(localStorage.getItem(LEGACY_STORAGE_KEY));
-  localStorage.removeItem(LEGACY_STORAGE_KEY);
   await apply(valid(legacy) ? legacy : firstRunDefault());
 }
 
