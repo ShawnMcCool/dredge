@@ -244,11 +244,11 @@ git add -A && git commit -m "feat(server): capture commands — discover, roll, 
 - Create: `apps/desktop/src/components/Capture.svelte`
 - Modify: `apps/desktop/src/lib/stores.ts` (capture actions), right-rail tabs
 
-- [ ] **Step 1: Implement**
+- [x] **Step 1: Implement**
 
 Tab `capture`: refresh button → node list (`app` bold, `media` muted — media is often the *song title currently playing*); click a node → `capture.start`; status line while rolling: `● REC <app> — <filled>s buffered` (accent dot, mono); grab buttons `last 30s · 60s · 2m · all` → `capture.grab` → imported song auto-opens (reuse `openSong(id)`); stop button. Poll `capture.status` every 2 s while the tab is visible (no new event plumbing needed).
 
-- [ ] **Step 2: Verify + commit**
+- [x] **Step 2: Verify + commit**
 
 Run: `pnpm build && pnpm vitest run` — clean.
 

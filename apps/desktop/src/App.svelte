@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import Capture from "./components/Capture.svelte";
   import DuePanel from "./components/DuePanel.svelte";
   import Library from "./components/Library.svelte";
   import Loops from "./components/Loops.svelte";
@@ -11,7 +12,7 @@
   import { installKeys, KEY_HELP } from "./lib/keys";
   import { initEvents, pendingRatings, planStatus, sessionSummary } from "./lib/stores";
 
-  const TABS = ["sections", "loops", "plan", "due"] as const;
+  const TABS = ["sections", "loops", "plan", "capture", "due"] as const;
   // due panel greets you on app start — the schedule is the product
   let tab = $state<(typeof TABS)[number]>("due");
   let running = $derived(
@@ -54,6 +55,8 @@
             <Loops />
           {:else if tab === "plan"}
             <PlanBuilder />
+          {:else if tab === "capture"}
+            <Capture />
           {:else}
             <DuePanel />
           {/if}

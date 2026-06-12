@@ -120,6 +120,20 @@ export interface SessionSummary {
   steps: number;
 }
 
+export interface CaptureNode {
+  id: number;
+  app: string;
+  /** media.name — often the song title currently playing. */
+  media: string;
+}
+
+export interface CaptureStatus {
+  running: boolean;
+  filled_secs?: number;
+  app?: string;
+  media?: string;
+}
+
 // --- stores ---------------------------------------------------------------
 
 export const songs = writable<Song[]>([]);
@@ -138,6 +152,8 @@ export const retention = writable<RetentionRow[]>([]);
 export const pendingRatings = writable<PendingRating[]>([]);
 /** Set when plan_finished fires; cleared when the summary is dismissed. */
 export const sessionSummary = writable<SessionSummary | null>(null);
+export const captureNodes = writable<CaptureNode[]>([]);
+export const captureStatus = writable<CaptureStatus>({ running: false });
 
 /** Loops that due.list contained when the plan started: their first
  *  end-of-step rating is the retention probe (`is_retest: true`). */
@@ -339,6 +355,34 @@ export const actions = {
 
   async refreshDue(): Promise<void> {
     due.set(await cmd<DueItem[]>("due.list"));
+  },
+
+  // --- capture ---
+
+  async refreshCaptureNodes(): Promise<void> {
+    captureNodes.set(await cmd<CaptureNode[]>("capture.nodes"));
+  },
+
+  async refreshCaptureStatus(): Promise<void> {
+    captureStatus.set(await cmd<CaptureStatus>("capture.status"));
+  },
+
+  async startCapture(nodeId: number): Promise<void> {
+    await cmd("capture.start", { node_id: nodeId });
+    await this.refreshCaptureStatus();
+  },
+
+  async stopCapture(): Promise<void> {
+    await cmd("capture.stop");
+    captureStatus.set({ running: false });
+  },
+
+  /** Snapshot the last N seconds to a WAV, import it, and open it. */
+  async grabCapture(lastSecs: number): Promise<Song> {
+    const song = await cmd<Song>("capture.grab", { last_secs: lastSecs });
+    await this.refreshSongs();
+    await this.openSong(song.id);
+    return song;
   },
 
   async refreshRetention(): Promise<void> {
