@@ -701,7 +701,7 @@ git add -A && git commit -m "feat(engine): safe realtime R3 stretcher wrapper"
 - Create: `crates/engine/src/filter.rs`
 - Modify: `crates/engine/src/lib.rs` (add `pub mod filter;`)
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `crates/engine/src/filter.rs`:
 ```rust
@@ -760,12 +760,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run (fail), implement**
+- [x] **Step 2: Run (fail), implement**
 
 RBJ cookbook lowpass: `w0 = 2π·fc/sr`, `alpha = sin(w0)/(2q)`, `cosw0 = cos(w0)`;
 `b0 = (1-cosw0)/2`, `b1 = 1-cosw0`, `b2 = b0`, `a0 = 1+alpha`, `a1 = -2cosw0`, `a2 = 1-alpha`; normalize b*, a1, a2 by `a0`. `process`: `y = b0x + b1x1 + b2x2 - a1y1 - a2y2`, shift states.
 
-- [ ] **Step 3: Run tests, verify pass; commit**
+- [x] **Step 3: Run tests, verify pass; commit**
 
 Run: `cargo test -p engine filter` — 1 PASS.
 
