@@ -31,6 +31,177 @@ fn from_params<T: serde::de::DeserializeOwned>(p: Value) -> Result<T, String> {
     serde_json::from_value(p).map_err(|e| format!("bad params: {e}"))
 }
 
+// --- shared dispatch (lock-phased heavy commands) ---------------------------
+
+/// Dispatch that holds the App lock only for state work — known-heavy
+/// commands (`song.open`, `song.import`, `capture.grab`) run their decode/
+/// hash/IO phase outside the lock, so the tick pump and other clients never
+/// wait behind a multi-second decode. Everything else takes the lock once
+/// and delegates to `App::dispatch` (which inlines the same phases).
+pub fn dispatch_shared(app: &Arc<Mutex<App>>, req: Request) -> Response {
+    let id = req.id;
+    let phased = match req.cmd.as_str() {
+        "song.open" => open_phased(app, req.params),
+        "song.import" => import_phased(app, req.params),
+        "capture.grab" => grab_phased(app, req.params),
+        _ => return app.lock().unwrap().dispatch(req),
+    };
+    match phased {
+        Ok(data) => Response::ok(id, data),
+        Err(e) => Response::err(id, e),
+    }
+}
+
+fn open_phased(app: &Arc<Mutex<App>>, p: Value) -> Result<Value, String> {
+    let p: OpenParams = from_params(p)?;
+    let (song, stems_cache) = app.lock().unwrap().open_lookup(p.song_id)?;
+    let decoded = open_decode(&song, &stems_cache)?;
+    app.lock().unwrap().finish_open(song, decoded)
+}
+
+fn import_phased(app: &Arc<Mutex<App>>, p: Value) -> Result<Value, String> {
+    let p: ImportParams = from_params(p)?;
+    let hash = engine::decode::file_hash(Path::new(&p.path)).err_str()?;
+    if let Some(existing) = app.lock().unwrap().import_lookup(&hash)? {
+        return serde_json::to_value(existing).err_str();
+    }
+    let prep = import_decode(p.path, p.title, hash)?;
+    app.lock().unwrap().import_prepared(prep)
+}
+
+fn grab_phased(app: &Arc<Mutex<App>>, p: Value) -> Result<Value, String> {
+    let p: GrabParams = from_params(p)?;
+    let snap = app.lock().unwrap().grab_snapshot(p.last_secs)?;
+    let (path, title) = grab_write_wav(&snap)?;
+    let hash = engine::decode::file_hash(&path).err_str()?;
+    if let Some(existing) = app.lock().unwrap().import_lookup(&hash)? {
+        return serde_json::to_value(existing).err_str();
+    }
+    let prep = import_decode(path.to_string_lossy().into_owned(), Some(title), hash)?;
+    app.lock().unwrap().import_prepared(prep)
+}
+
+#[derive(Deserialize)]
+struct OpenParams {
+    song_id: SongId,
+}
+
+#[derive(Deserialize)]
+struct ImportParams {
+    path: String,
+    title: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct GrabParams {
+    last_secs: f64,
+}
+
+/// Lock-free product of `song.open`'s slow phase: engine-ready audio,
+/// whether it's a 4-stem set, and the waveform peaks.
+struct OpenDecoded {
+    set: engine::buffer::StemSet,
+    stems: bool,
+    peaks: engine::peaks::Peaks,
+}
+
+/// Slow phase of `song.open` (pure, no lock): decode the mix, load/compute
+/// peaks, and decode all cached stem WAVs when present.
+fn open_decode(song: &Song, stems_cache: &Path) -> Result<OpenDecoded, String> {
+    let buf = engine::decode::decode_file(Path::new(&song.path)).err_str()?;
+    let peaks = engine::peaks::load_or_compute(&buf, &song.file_hash).err_str()?;
+    // Cached stems auto-load as a 4-stem set; otherwise the plain mix.
+    if App::stems_cached(stems_cache) {
+        let mut bufs = Vec::with_capacity(STEM_NAMES.len());
+        for name in STEM_NAMES {
+            bufs.push(
+                engine::decode::decode_file(&stems_cache.join(format!("{name}.wav"))).err_str()?,
+            );
+        }
+        Ok(OpenDecoded {
+            set: engine::buffer::StemSet::new(bufs),
+            stems: true,
+            peaks,
+        })
+    } else {
+        Ok(OpenDecoded {
+            set: engine::buffer::StemSet::single(buf),
+            stems: false,
+            peaks,
+        })
+    }
+}
+
+/// Lock-free product of `song.import`'s slow phase.
+struct ImportPrepared {
+    path: String,
+    title: String,
+    hash: String,
+    duration_secs: f64,
+    sidecar: Option<practice::sidecar::Sidecar>,
+}
+
+/// Slow phase of `song.import` (pure, no lock): decode for the duration and
+/// read the sidecar. The hash is computed by the caller — it gates the
+/// dedupe lookup that decides whether this phase runs at all.
+fn import_decode(
+    path: String,
+    title: Option<String>,
+    hash: String,
+) -> Result<ImportPrepared, String> {
+    let p = Path::new(&path);
+    let buf = engine::decode::decode_file(p).err_str()?;
+    // explicit title wins over the file stem
+    let title = title.unwrap_or_else(|| {
+        p.file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("untitled")
+            .to_owned()
+    });
+    let sidecar = practice::sidecar::read_sidecar(p).err_str()?;
+    Ok(ImportPrepared {
+        duration_secs: buf.duration_secs(),
+        title,
+        hash,
+        sidecar,
+        path,
+    })
+}
+
+/// Lock-phase product of `capture.grab`: the raw snapshot + naming context.
+struct GrabSnapshot {
+    samples: Vec<f32>,
+    node: engine::capture::CaptureNode,
+    dir: PathBuf,
+}
+
+/// Slow phase of `capture.grab` (no lock): write the snapshot WAV and name
+/// it after the captured app/media.
+fn grab_write_wav(snap: &GrabSnapshot) -> Result<(PathBuf, String), String> {
+    let node = &snap.node;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let stem = if node.media.is_empty() {
+        format!("{}-{ts}", sanitize_filename(&node.app))
+    } else {
+        format!(
+            "{}-{}-{ts}",
+            sanitize_filename(&node.app),
+            sanitize_filename(&node.media)
+        )
+    };
+    let path = snap.dir.join(format!("{stem}.wav"));
+    engine::capture::write_wav(&path, &snap.samples).err_str()?;
+    let title = if node.media.is_empty() {
+        node.app.clone()
+    } else {
+        format!("{} — {}", node.app, node.media)
+    };
+    Ok((path, title))
+}
+
 const DATE_FMT: &[time::format_description::FormatItem<'static>] =
     time::macros::format_description!("[year]-[month]-[day]");
 
@@ -848,79 +1019,73 @@ impl App {
     }
 
     /// Snapshot the last `last_secs` of the rolling capture to a WAV under
-    /// `captures_dir`, then funnel it through `song.import` (hash, sidecar,
-    /// peaks all reused).
+    /// `captures_dir`, then funnel it through the `song.import` phases
+    /// (hash, sidecar, peaks all reused). `dispatch_shared` runs the same
+    /// phases with the WAV/hash/decode work outside the lock.
     fn capture_grab(&mut self, p: Value) -> Result<Value, String> {
-        #[derive(Deserialize)]
-        struct P {
-            last_secs: f64,
+        let p: GrabParams = from_params(p)?;
+        let snap = self.grab_snapshot(p.last_secs)?;
+        let (path, title) = grab_write_wav(&snap)?;
+        let hash = engine::decode::file_hash(&path).err_str()?;
+        if let Some(existing) = self.import_lookup(&hash)? {
+            return serde_json::to_value(existing).err_str();
         }
-        let p: P = from_params(p)?;
+        let prep = import_decode(path.to_string_lossy().into_owned(), Some(title), hash)?;
+        self.import_prepared(prep)
+    }
+
+    /// `capture.grab` phase 1 (needs the lock): snapshot the rolling buffer.
+    fn grab_snapshot(&mut self, last_secs: f64) -> Result<GrabSnapshot, String> {
         let (_, node) = self.capture.status().ok_or("no capture running")?;
-        let samples = self.capture.snapshot(p.last_secs)?;
+        let samples = self.capture.snapshot(last_secs)?;
         if samples.is_empty() {
             return Err("capture buffer is empty".into());
         }
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let stem = if node.media.is_empty() {
-            format!("{}-{ts}", sanitize_filename(&node.app))
-        } else {
-            format!(
-                "{}-{}-{ts}",
-                sanitize_filename(&node.app),
-                sanitize_filename(&node.media)
-            )
-        };
-        let path = self.captures_dir.join(format!("{stem}.wav"));
-        engine::capture::write_wav(&path, &samples).err_str()?;
-        let title = if node.media.is_empty() {
-            node.app.clone()
-        } else {
-            format!("{} — {}", node.app, node.media)
-        };
-        self.song_import(json!({
-            "path": path.to_string_lossy(),
-            "title": title,
-        }))
+        Ok(GrabSnapshot {
+            samples,
+            node,
+            dir: self.captures_dir.clone(),
+        })
     }
 
     // --- library ---------------------------------------------------------
 
     fn song_import(&mut self, p: Value) -> Result<Value, String> {
-        #[derive(Deserialize)]
-        struct P {
-            path: String,
-            title: Option<String>,
-        }
-        let p: P = from_params(p)?;
-        let path = Path::new(&p.path);
-        let hash = engine::decode::file_hash(path).err_str()?;
-        if let Some(existing) = self.store.song_by_hash(&hash).err_str()? {
+        let p: ImportParams = from_params(p)?;
+        let hash = engine::decode::file_hash(Path::new(&p.path)).err_str()?;
+        if let Some(existing) = self.import_lookup(&hash)? {
             return serde_json::to_value(existing).err_str();
         }
-        let buf = engine::decode::decode_file(path).err_str()?;
-        // explicit title wins over the file stem
-        let title = p.title.unwrap_or_else(|| {
-            path.file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("untitled")
-                .to_owned()
-        });
+        let prep = import_decode(p.path, p.title, hash)?;
+        self.import_prepared(prep)
+    }
+
+    /// `song.import` dedupe check (needs the lock): a song with this content
+    /// hash already exists → return it instead of re-importing.
+    fn import_lookup(&self, hash: &str) -> Result<Option<Song>, String> {
+        self.store.song_by_hash(hash).err_str()
+    }
+
+    /// `song.import` final phase (needs the lock): insert the row, restore
+    /// the sidecar, announce the library change.
+    fn import_prepared(&mut self, prep: ImportPrepared) -> Result<Value, String> {
+        // re-check the hash: under `dispatch_shared` another client may have
+        // imported the same file between the lookup and this phase
+        if let Some(existing) = self.store.song_by_hash(&prep.hash).err_str()? {
+            return serde_json::to_value(existing).err_str();
+        }
         let song = self
             .store
             .insert_song(NewSong {
-                title: &title,
+                title: &prep.title,
                 artist: None,
-                path: &p.path,
-                file_hash: &hash,
-                duration_secs: buf.duration_secs(),
+                path: &prep.path,
+                file_hash: &prep.hash,
+                duration_secs: prep.duration_secs,
             })
             .err_str()?;
-        if let Some(sc) = practice::sidecar::read_sidecar(path).err_str()? {
-            self.restore_sidecar(song.id, &sc)?;
+        if let Some(sc) = &prep.sidecar {
+            self.restore_sidecar(song.id, sc)?;
         }
         // socket-driven imports (incl. capture.grab) refresh every client's
         // library on the next tick
@@ -1002,39 +1167,38 @@ impl App {
     }
 
     fn song_open(&mut self, p: Value) -> Result<Value, String> {
-        #[derive(Deserialize)]
-        struct P {
-            song_id: SongId,
-        }
-        let p: P = from_params(p)?;
-        let song = self.song_row(p.song_id)?;
-        let buf = engine::decode::decode_file(Path::new(&song.path)).err_str()?;
-        let peaks = engine::peaks::load_or_compute(&buf, &song.file_hash).err_str()?;
-        // Cached stems auto-load as a 4-stem set; otherwise the plain mix.
+        let p: OpenParams = from_params(p)?;
+        let (song, stems_cache) = self.open_lookup(p.song_id)?;
+        let decoded = open_decode(&song, &stems_cache)?;
+        self.finish_open(song, decoded)
+    }
+
+    /// `song.open` phase 1 (needs the lock): resolve the song row and the
+    /// stems cache dir for it.
+    fn open_lookup(&self, song_id: SongId) -> Result<(Song, PathBuf), String> {
+        let song = self.song_row(song_id)?;
         let cache = self.stems_cache_dir(&song.file_hash);
-        let stems = if Self::stems_cached(&cache) {
-            let mut bufs = Vec::with_capacity(STEM_NAMES.len());
-            for name in STEM_NAMES {
-                bufs.push(
-                    engine::decode::decode_file(&cache.join(format!("{name}.wav"))).err_str()?,
-                );
-            }
-            self.audio.load(engine::buffer::StemSet::new(bufs));
-            true
-        } else {
-            self.audio.load(engine::buffer::StemSet::single(buf));
-            false
-        };
+        Ok((song, cache))
+    }
+
+    /// `song.open` final phase (needs the lock): load the engine, build the
+    /// response, set the open song.
+    fn finish_open(&mut self, song: Song, decoded: OpenDecoded) -> Result<Value, String> {
+        let song_id = song.id;
+        self.audio.load(decoded.set);
         let out = json!({
             "song": song,
-            "sections": self.store.list_sections(p.song_id).err_str()?,
-            "loops": self.store.list_loops(p.song_id).err_str()?,
-            "plans": self.store.list_plans(p.song_id).err_str()?,
-            "peaks": peaks,
-            "stems": stems,
-            "analysis": self.store.get_analysis(p.song_id).err_str()?,
+            "sections": self.store.list_sections(song_id).err_str()?,
+            "loops": self.store.list_loops(song_id).err_str()?,
+            "plans": self.store.list_plans(song_id).err_str()?,
+            "peaks": decoded.peaks,
+            "stems": decoded.stems,
+            "analysis": self.store.get_analysis(song_id).err_str()?,
         });
-        self.open_song = Some(OpenSong { song, stems });
+        self.open_song = Some(OpenSong {
+            song,
+            stems: decoded.stems,
+        });
         Ok(out)
     }
 

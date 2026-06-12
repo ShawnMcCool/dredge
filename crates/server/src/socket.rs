@@ -115,7 +115,9 @@ fn client_loop(stream: UnixStream, app: Arc<Mutex<App>>, subs: Arc<Mutex<Vec<Uni
                 }
                 Err(e) => Response::err(req.id, format!("subscribe failed: {e}")),
             },
-            Ok(req) => app.lock().unwrap().dispatch(req),
+            // phased dispatch: heavy commands decode outside the app lock,
+            // so this client's slow request never stalls the pump or others
+            Ok(req) => crate::app::dispatch_shared(&app, req),
             Err(e) => Response::err(0, format!("parse error: {e}")),
         };
         let Ok(mut json) = serde_json::to_string(&resp) else {

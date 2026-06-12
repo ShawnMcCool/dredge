@@ -10,8 +10,8 @@
 
 **Diagnosis:** `host::dispatch` is a sync Tauri command → runs on the GTK main thread → any slow command freezes the window. Worst offenders hold the `Mutex<App>` while decoding entire songs (`song.open`: symphonia + rubato + peaks, seconds per song; `song.import`; `capture.grab`), which also starves the 50 ms tick pump (position events + socket stall).
 
-- [ ] `host.rs`: make the command `async fn` (Tauri runs it on a worker thread — the window keeps painting even while a command waits on the lock).
-- [ ] Phase the heavy commands so decode runs WITHOUT the lock. In `server`, add a shared entry point used by BOTH the socket handler and the Tauri command:
+- [x] `host.rs`: make the command `async fn` (Tauri runs it on a worker thread — the window keeps painting even while a command waits on the lock). *(`async fn` + `spawn_blocking` so decodes don't tie up runtime workers.)*
+- [x] Phase the heavy commands so decode runs WITHOUT the lock. In `server`, add a shared entry point used by BOTH the socket handler and the Tauri command:
   ```rust
   /// Dispatch that holds the App lock only for state work — known-heavy
   /// commands (song.open, song.import, capture.grab) run their decode/
@@ -20,10 +20,10 @@
   ```
   Mechanics per command, e.g. `song.open`: lock → look up `(path, hash)` → unlock → `decode_file` + `peaks::load_or_compute` (pure, slow) → lock → `finish_open(song_id, buf_or_stems, peaks)` (loads engine, sets open_song, builds response). `App` gains the small phase methods (`open_lookup`, `finish_open`, `import_prepared`, `grab_snapshot_then_import` analog); `App::dispatch` keeps working for everything else (and remains what tests use), with heavy commands in `App::dispatch` simply delegating to the phases inline (same behavior, single-threaded tests unaffected).
   Stems auto-load on open: decode all stem WAVs also outside the lock (they're part of the slow phase).
-- [ ] `socket.rs` request loop and `host.rs` both call `dispatch_shared`. The tick pump and other clients now stall at most for the short lock phases.
-- [ ] Tests: existing suites stay green (they exercise `App::dispatch`). Add one: `dispatch_shared` on `song.open` returns the same payload as `App::dispatch` (parity test with a small WAV).
-- [ ] Measured proof (in Task 5's live check): while `song.open` of a ~4-minute file is in flight, a concurrent `status` over the socket answers in < 250 ms (was: blocked for the whole decode).
-- [ ] Commit: `perf(server,desktop): async dispatch; heavy commands decode outside the app lock`
+- [x] `socket.rs` request loop and `host.rs` both call `dispatch_shared`. The tick pump and other clients now stall at most for the short lock phases.
+- [x] Tests: existing suites stay green (they exercise `App::dispatch`). Add one: `dispatch_shared` on `song.open` returns the same payload as `App::dispatch` (parity test with a small WAV). *(`crates/server/tests/dispatch_shared.rs` — byte-identical serialized responses, plus import-dedupe parity.)*
+- [ ] Measured proof (in Task 5's live check): while `song.open` of a ~4-minute file is in flight, a concurrent `status` over the socket answers in < 250 ms (was: blocked for the whole decode). *(Before measured on pre-change earwormd: status blocked 2089 ms during a 2.15 s open.)*
+- [x] Commit: `perf(server,desktop): async dispatch; heavy commands decode outside the app lock`
 
 ### Task 2: Escape → exit confirmation
 

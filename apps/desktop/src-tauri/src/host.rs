@@ -25,9 +25,16 @@ impl SocketState {
     }
 }
 
+/// Async + phased: the command runs off the GTK main thread (the window
+/// keeps painting while it waits) and heavy commands decode outside the app
+/// lock via `dispatch_shared`. `spawn_blocking` keeps the multi-second
+/// decodes from tying up the async runtime's worker threads.
 #[tauri::command]
-pub fn dispatch(state: tauri::State<AppState>, req: Request) -> Response {
-    state.0.lock().unwrap().dispatch(req)
+pub async fn dispatch(state: tauri::State<'_, AppState>, req: Request) -> Result<Response, String> {
+    let app = state.0.clone();
+    tauri::async_runtime::spawn_blocking(move || server::app::dispatch_shared(&app, req))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Dev affordance: `EARWORM_OPEN=<song id>` opens that song at launch,
