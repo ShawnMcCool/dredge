@@ -247,7 +247,7 @@ git add -A && git commit -m "feat(practice): domain model with serde contracts"
 - Create: `crates/practice/src/tempo.rs`
 - Modify: `crates/practice/src/lib.rs` (add `pub mod tempo;`)
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `crates/practice/src/tempo.rs`:
 ```rust
@@ -306,12 +306,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run tests, verify failure**
+- [x] **Step 2: Run tests, verify failure**
 
 Run: `cargo test -p practice tempo`
 Expected: panics on `todo!()`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Replace `todo!()`:
 ```rust
@@ -328,12 +328,12 @@ Replace `todo!()`:
         raw.clamp(0.25, 2.0)
 ```
 
-- [ ] **Step 4: Run tests, verify pass**
+- [x] **Step 4: Run tests, verify pass**
 
 Run: `cargo test -p practice tempo`
 Expected: 5 PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A && git commit -m "feat(practice): tempo curves (dwell/ladder/oscillate)"
