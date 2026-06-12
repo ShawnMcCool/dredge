@@ -328,6 +328,15 @@ export const actions = {
     await this.refreshRetention();
   },
 
+  /** Answer the head of the rating queue (UI prompt or 1/2/3 keys). */
+  async resolveRating(rating: Rating): Promise<void> {
+    const q = get(pendingRatings);
+    const head = q[0];
+    if (!head) return;
+    pendingRatings.set(q.slice(1));
+    await this.rate(head.loop_id, rating, head.is_retest);
+  },
+
   async refreshDue(): Promise<void> {
     due.set(await cmd<DueItem[]>("due.list"));
   },

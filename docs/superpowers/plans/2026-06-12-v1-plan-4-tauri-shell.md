@@ -212,13 +212,13 @@ git add -A && git commit -m "feat(desktop): waveform canvas with selection, zoom
 **Files:**
 - Create: `apps/desktop/src/components/Transport.svelte`, `apps/desktop/src/lib/keys.ts`
 
-- [ ] **Step 1: Implement**
+- [x] **Step 1: Implement**
 
 Transport bar under the waveform: play/pause button; time readout `mm:ss.t / mm:ss` (mono font); rate readout + slider 0.25–2.0 step 0.05 with preset chips `50 70 85 100 %`; pitch chips `-2 -1 0 +1 +2` semitones + cents drag-number; toggles: `BASS FOCUS` (octave-up + low-pass — sends `bass_focus {on}` AND `pitch {octave_up: true}` together), `MUTE`.
 
 `keys.ts` — global keydown (ignore when target is input/textarea): Space play/pause; `r` restart current loop (`loop.set` again with current loop bounds → engine jumps to start; if no loop, `seek 0`); `[` / `]` rate −/+5%; `l` create loop from selection; `Escape` clear selection; `b` bass focus toggle; `1/2/3` rate Miss/Shaky/Solid when the rating prompt is visible (wired in Task 7). Show the map in a help footer line.
 
-- [ ] **Step 2: Verify + commit**
+- [x] **Step 2: Verify + commit**
 
 Run: `pnpm build` (svelte-check via build) — clean.
 
