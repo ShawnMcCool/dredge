@@ -1,6 +1,7 @@
 <script lang="ts">
   import { actions, bassFocusOn, muted, openSong, pitch, position } from "../lib/stores";
   import Button from "../lib/ui/Button.svelte";
+  import Fader from "../lib/ui/Fader.svelte";
   import Group from "../lib/ui/Group.svelte";
   import Toolbar from "../lib/ui/Toolbar.svelte";
 
@@ -18,10 +19,6 @@
     const m = Math.floor(secs / 60);
     const r = Math.floor(secs % 60);
     return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
-  }
-
-  function onRateInput(e: Event) {
-    void actions.setRate(Number((e.currentTarget as HTMLInputElement).value));
   }
 
   function onCentsInput(e: Event) {
@@ -47,13 +44,14 @@
 
     <Group grow>
       <span class="readout rate">{Math.round($position.rate * 100)}%</span>
-      <input
-        type="range"
-        min="0.25"
-        max="2"
-        step="0.05"
+      <Fader
         value={$position.rate}
-        oninput={onRateInput}
+        min={0.25}
+        max={2}
+        step={0.05}
+        accent
+        onchange={(v) => void actions.setRate(v)}
+        format={(v) => `rate ${Math.round(v * 100)}%`}
       />
     </Group>
 
@@ -116,13 +114,6 @@
     color: var(--accent);
     min-width: 4ch;
     text-align: right;
-  }
-
-  input[type="range"] {
-    flex: 1 1 120px;
-    min-width: 120px;
-    max-width: 320px;
-    accent-color: var(--accent);
   }
 
   .cents {

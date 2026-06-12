@@ -21,10 +21,10 @@
 
 ### Task 2: Adopt everywhere
 
-- [ ] Transport rate slider → horizontal `Fader` (accent), same 0.25–2.0 step 0.05 behavior.
-- [ ] StemMixer → vertical `Fader` per channel (~96 px tall, accent on BASS), values 0–1 step 0.01; M/S behavior unchanged; remove all the old vertical-range CSS.
-- [ ] Grep for any remaining `type="range"` in src/ — there must be none afterward.
-- [ ] `pnpm build` clean. Commit: `refactor(desktop): transport + mixer on Fader`
+- [x] Transport rate slider → horizontal `Fader` (accent), same 0.25–2.0 step 0.05 behavior.
+- [x] StemMixer → vertical `Fader` per channel (~96 px tall, accent on BASS), values 0–1 step 0.01; M/S behavior unchanged; remove all the old vertical-range CSS.
+- [x] Grep for any remaining `type="range"` in src/ — there must be none afterward.
+- [x] `pnpm build` clean. Commit: `refactor(desktop): transport + mixer on Fader`
 
 ### Task 3: Reopen last song on launch
 

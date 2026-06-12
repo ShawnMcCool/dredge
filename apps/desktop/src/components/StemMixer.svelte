@@ -12,6 +12,7 @@
     stemsRunning,
   } from "../lib/stores";
   import Button from "../lib/ui/Button.svelte";
+  import Fader from "../lib/ui/Fader.svelte";
   import Toolbar from "../lib/ui/Toolbar.svelte";
 </script>
 
@@ -21,15 +22,18 @@
       {#if $openSong.stems}
         {#each STEM_LABELS as label, i (label)}
           <div class="channel" class:bass={i === BASS_STEM}>
-            <input
-              class="fader"
-              type="range"
-              min="0"
-              max="100"
-              value={$stemMix.levels[i]}
-              oninput={(e) => actions.setStemLevel(i, Number(e.currentTarget.value))}
-              title="{label} level"
-            />
+            <div class="fader">
+              <Fader
+                orientation="vertical"
+                value={$stemMix.levels[i] / 100}
+                min={0}
+                max={1}
+                step={0.01}
+                accent={i === BASS_STEM}
+                onchange={(v) => void actions.setStemLevel(i, Math.round(v * 100))}
+                format={(v) => `${label} ${Math.round(v * 100)}%`}
+              />
+            </div>
             <span class="name mono">{label}</span>
             <span class="toggles">
               <Button
@@ -80,15 +84,7 @@
   }
 
   .fader {
-    writing-mode: vertical-lr;
-    direction: rtl;
-    height: 64px;
-    width: 16px;
-    accent-color: var(--muted);
-  }
-
-  .channel.bass .fader {
-    accent-color: var(--accent);
+    height: 96px;
   }
 
   .name {
