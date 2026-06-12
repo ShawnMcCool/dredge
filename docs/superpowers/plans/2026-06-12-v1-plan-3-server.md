@@ -368,7 +368,7 @@ git add -A && git commit -m "feat(server): rating, resurfacing and retention com
 - Modify: `crates/server/src/lib.rs`
 - Test: `crates/server/tests/socket.rs`
 
-- [ ] **Step 1: Implement**
+- [x] **Step 1: Implement**
 
 `crates/server/src/socket.rs`:
 ```rust
@@ -397,14 +397,14 @@ Behavior:
 - Pump thread: every 50 ms `app.lock().tick()`; serialize each `Event`, write to every subscriber (drop subscribers whose write fails).
 - `ServerHandle { path, shutdown: Arc<AtomicBool>, ... }` with `Drop` removing the socket file; accept loop uses `set_nonblocking(true)` + 50 ms sleep so shutdown flag is honored (also lets one thread double as accept+pump — implementer's choice, keep it simple).
 
-- [ ] **Step 2: Integration test**
+- [x] **Step 2: Integration test**
 
 `crates/server/tests/socket.rs` — start `serve` on a temp path with MockEngine app; connect with `UnixStream`:
 1. `request_response_roundtrip` — send `{"id":7,"cmd":"song.list"}` line, read line, parse: id 7, ok true, data `[]`.
 2. `subscribe_receives_events` — client A subscribes; push a `LoopWrapped` into the shared mock; within ~500 ms client A reads a `{"event":"loop_wrapped"...}` line (set read timeout 2 s).
 3. `bad_json_gets_error_response` — send `not json\n`, get ok:false.
 
-- [ ] **Step 3: Run (fail→pass); commit**
+- [x] **Step 3: Run (fail→pass); commit**
 
 Run: `cargo test -p server --test socket` — 3 PASS.
 
