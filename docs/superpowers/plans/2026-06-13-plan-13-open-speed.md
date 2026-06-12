@@ -10,8 +10,8 @@
 
 ### Task 1: Parallel decode in the open phase
 
-- [ ] In the heavy phase of `song.open` (`dispatch_shared` slow phase / `App::dispatch` inline equivalent): decode the original and the 4 stem WAVs concurrently with `std::thread::scope` (5 threads, each `decode_file`); join, propagate the first error. Peaks compute stays after the original's decode (needs it) but runs while stems decode if convenient — don't gold-plate.
-- [ ] `cargo test` green (existing open tests cover correctness). Commit: `perf(server): parallel decode of song + stems on open`
+- [x] In the heavy phase of `song.open` (`dispatch_shared` slow phase / `App::dispatch` inline equivalent): decode the original and the 4 stem WAVs concurrently with `std::thread::scope` (5 threads, each `decode_file`); join, propagate the first error. Peaks compute stays after the original's decode (needs it) but runs while stems decode if convenient — don't gold-plate.
+- [x] `cargo test` green (existing open tests cover correctness). Commit: `perf(server): parallel decode of song + stems on open`
 
 ### Task 2: 48 kHz stem caches
 

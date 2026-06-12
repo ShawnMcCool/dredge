@@ -106,30 +106,45 @@ struct OpenDecoded {
 }
 
 /// Slow phase of `song.open` (pure, no lock): decode the mix, load/compute
-/// peaks, and decode all cached stem WAVs when present.
+/// peaks, and decode all cached stem WAVs when present. With stems the five
+/// decodes run concurrently (`std::thread::scope`): one thread per stem WAV
+/// while the calling thread decodes the original and computes peaks.
 fn open_decode(song: &Song, stems_cache: &Path) -> Result<OpenDecoded, String> {
-    let buf = engine::decode::decode_file(Path::new(&song.path)).err_str()?;
-    let peaks = engine::peaks::load_or_compute(&buf, &song.file_hash).err_str()?;
-    // Cached stems auto-load as a 4-stem set; otherwise the plain mix.
-    if App::stems_cached(stems_cache) {
+    // No cached stems: the plain mix alone.
+    if !App::stems_cached(stems_cache) {
+        let buf = engine::decode::decode_file(Path::new(&song.path)).err_str()?;
+        let peaks = engine::peaks::load_or_compute(&buf, &song.file_hash).err_str()?;
+        return Ok(OpenDecoded {
+            set: engine::buffer::StemSet::single(buf),
+            stems: false,
+            peaks,
+        });
+    }
+    std::thread::scope(|scope| {
+        let stem_threads: Vec<_> = STEM_NAMES
+            .iter()
+            .map(|name| {
+                let path = stems_cache.join(format!("{name}.wav"));
+                scope.spawn(move || open_stem(&path))
+            })
+            .collect();
+        let buf = engine::decode::decode_file(Path::new(&song.path)).err_str()?;
+        let peaks = engine::peaks::load_or_compute(&buf, &song.file_hash).err_str()?;
         let mut bufs = Vec::with_capacity(STEM_NAMES.len());
-        for name in STEM_NAMES {
-            bufs.push(
-                engine::decode::decode_file(&stems_cache.join(format!("{name}.wav"))).err_str()?,
-            );
+        for t in stem_threads {
+            bufs.push(t.join().map_err(|_| "stem decode thread panicked")??);
         }
         Ok(OpenDecoded {
             set: engine::buffer::StemSet::new(bufs),
             stems: true,
             peaks,
         })
-    } else {
-        Ok(OpenDecoded {
-            set: engine::buffer::StemSet::single(buf),
-            stems: false,
-            peaks,
-        })
-    }
+    })
+}
+
+/// Decode one cached stem WAV for the open path.
+fn open_stem(path: &Path) -> Result<engine::buffer::SongBuffer, String> {
+    engine::decode::decode_file(path).err_str()
 }
 
 /// Lock-free product of `song.import`'s slow phase.
