@@ -775,7 +775,7 @@ git add -A && git commit -m "feat(practice): pull-based plan runner with rotatio
 - Create: `crates/practice/src/schedule.rs`
 - Modify: `crates/practice/src/lib.rs` (add `pub mod schedule;`)
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `crates/practice/src/schedule.rs`:
 ```rust
@@ -860,12 +860,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run tests, verify failure**
+- [x] **Step 2: Run tests, verify failure**
 
 Run: `cargo test -p practice schedule`
 Expected: panics on `todo!()`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```rust
 pub fn next_state(prev: Option<Resurfacing>, loop_id: LoopId, rating: Rating, today: Date) -> Resurfacing {
@@ -888,12 +888,12 @@ pub fn due(items: &[Resurfacing], today: Date) -> Vec<LoopId> {
 }
 ```
 
-- [ ] **Step 4: Run tests, verify pass**
+- [x] **Step 4: Run tests, verify pass**
 
 Run: `cargo test -p practice schedule`
 Expected: 6 PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A && git commit -m "feat(practice): spaced resurfacing ladder"
