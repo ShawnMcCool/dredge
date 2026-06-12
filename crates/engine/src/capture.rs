@@ -20,6 +20,10 @@ use std::time::Duration;
 #[derive(Debug, Clone, serde::Serialize, PartialEq)]
 pub struct CaptureNode {
     pub id: u32,
+    /// object.serial — what `target.object` actually matches on modern
+    /// PipeWire (registry ids do NOT work; targeting by id silently falls
+    /// back to the default source).
+    pub serial: u64,
     pub app: String,   // application.name or node.name fallback
     pub media: String, // media.name (song title in Spotify/Firefox!) or ""
 }
@@ -66,8 +70,13 @@ fn scan_output_streams() -> Result<Vec<CaptureNode>, pw::Error> {
                     .unwrap_or("")
                     .to_owned();
                 let media = props.get("media.name").unwrap_or("").to_owned();
+                let serial = props
+                    .get("object.serial")
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(u64::from(global.id));
                 found.borrow_mut().push(CaptureNode {
                     id: global.id,
+                    serial,
                     app,
                     media,
                 });
@@ -169,8 +178,9 @@ fn run_capture(
         *pw::keys::NODE_NAME => "earworm-capture",
     };
     // Target the chosen application output stream node directly; PipeWire
-    // links us to its monitor ports (what pw-record --target does).
-    props.insert(*pw::keys::TARGET_OBJECT, node.id.to_string());
+    // links us to its monitor ports. target.object matches object.serial
+    // (or node.name) — never the registry id.
+    props.insert(*pw::keys::TARGET_OBJECT, node.serial.to_string());
 
     let stream = pw::stream::StreamBox::new(&core, "earworm-capture", props)?;
 

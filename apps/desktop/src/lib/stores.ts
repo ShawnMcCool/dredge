@@ -122,6 +122,8 @@ export interface SessionSummary {
 
 export interface CaptureNode {
   id: number;
+  /** object.serial — what the engine targets; registry ids don't link on modern PipeWire. */
+  serial: number;
   app: string;
   /** media.name — often the song title currently playing. */
   media: string;

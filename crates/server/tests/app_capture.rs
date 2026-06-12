@@ -20,11 +20,13 @@ fn two_nodes() -> Vec<CaptureNode> {
     vec![
         CaptureNode {
             id: 51,
+            serial: 10051,
             app: "Spotify".into(),
             media: "Some Song".into(),
         },
         CaptureNode {
             id: 73,
+            serial: 10073,
             app: "Firefox".into(),
             media: "".into(),
         },

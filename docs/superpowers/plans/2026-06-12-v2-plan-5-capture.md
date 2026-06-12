@@ -277,7 +277,7 @@ git add -A && git commit -m "feat(server): earwormd capture parity"
 
 No files — verification task. PipeWire is live on this machine.
 
-- [ ] **Step 1: End-to-end capture of a real app node**
+- [x] **Step 1: End-to-end capture of a real app node**
 
 ```bash
 ffmpeg -f lavfi -i "sine=frequency=330:duration=60" -ac 2 /tmp/cap-src.flac  # if missing
@@ -293,7 +293,7 @@ kill %1
 ```
 Drive it with a small python3 socket script (pattern from Plan 3's smoke). Assert the grabbed WAV's RMS > 0.1 (`sox <wav> -n stat` or a 10-line rust example). If `target.object` linking fails, implement the documented fallback in Task 2 and re-run.
 
-- [ ] **Step 2: Record results + commit any fixes**
+- [x] **Step 2: Record results + commit any fixes**
 
 ```bash
 git add -A && git commit -m "test(capture): live pipewire capture smoke verified"
