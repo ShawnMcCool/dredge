@@ -105,7 +105,7 @@ git add -A && git commit -m "feat(desktop): embed app dispatcher, event pump, sh
 - Create: `apps/desktop/src/lib/ipc.ts`, `apps/desktop/src/lib/stores.ts`
 - Test: `apps/desktop/src/lib/ipc.test.ts` (vitest, mock invoke)
 
-- [ ] **Step 1: Implement**
+- [x] **Step 1: Implement**
 
 `ipc.ts`:
 ```typescript
@@ -140,7 +140,7 @@ export function onEvent(handler: (e: EwEvent) => void): Promise<() => void> {
 
 `ipc.test.ts` (vitest with `vi.mock("@tauri-apps/api/core")`): `cmd` resolves data on ok:true; throws with the error message on ok:false; ids increment.
 
-- [ ] **Step 2: Run tests, pass; commit**
+- [x] **Step 2: Run tests, pass; commit**
 
 Run: `pnpm vitest run` — green.
 
