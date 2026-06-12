@@ -167,7 +167,7 @@ git add -A && git commit -m "feat(server): AudioControl trait with engine impl a
 - Modify: `crates/server/src/lib.rs`
 - Test: `crates/server/tests/app_library.rs`
 
-- [ ] **Step 1: App skeleton and library dispatch**
+- [x] **Step 1: App skeleton and library dispatch**
 
 `crates/server/src/app.rs` — structure:
 
@@ -241,7 +241,7 @@ Command behaviors (params shapes shown as JSON):
 
 After any mutation of sections/loops/plans: write the sidecar (`practice::sidecar::write_sidecar`) for the affected song; ignore (log to stderr) sidecar IO errors — DB is the primary store.
 
-- [ ] **Step 2: Write failing tests**
+- [x] **Step 2: Write failing tests**
 
 `crates/server/tests/app_library.rs` — helpers: temp dir; generate a 2 s 44.1 kHz WAV with hound (reuse the pattern from `crates/engine/tests/decode.rs`); `App::new(Store::open_in_memory()... , Box::new(MockEngine::default()))`. Note `App` needs a way to inspect the mock in tests — give `App` `#[cfg(test)]`-free access via `pub fn audio_mut(&mut self) -> &mut dyn AudioControl` and downcast… **simpler:** make tests construct `App` with the mock, and assert effects through dispatch responses + store-visible state only; engine-command assertions happen in Task 4's tests where they matter, via a small `Arc<Mutex<MockEngine>>` wrapper implementing `AudioControl` (commands forwarded; test keeps a clone).
 
@@ -251,11 +251,11 @@ Tests (write with real JSON requests through `dispatch`):
 3. `loops_and_plans_roundtrip` — create a manual loop, save a plan referencing it (one `play_reps` step), `plan.list` returns it; sidecar file exists next to the WAV and parses (`read_sidecar`).
 4. `unknown_command_errors` — `{"cmd":"bogus"}` → ok:false, error contains "unknown".
 
-- [ ] **Step 3: Run (fail), implement, run (pass)**
+- [x] **Step 3: Run (fail), implement, run (pass)**
 
 Run: `cargo test -p server --test app_library` — 4 PASS.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A && git commit -m "feat(server): app dispatcher with library commands, junction auto-derive, sidecar write"

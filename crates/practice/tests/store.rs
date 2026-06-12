@@ -89,6 +89,24 @@ fn loops_roundtrip_with_kind() {
 }
 
 #[test]
+fn loop_by_id_finds_one_or_none() {
+    let (store, song) = store_with_song();
+    let l = store
+        .insert_loop(
+            song.id,
+            NewLoop {
+                name: "riff",
+                start: 1.0,
+                end: 2.0,
+                kind: LoopKind::Manual,
+            },
+        )
+        .unwrap();
+    assert_eq!(store.loop_by_id(l.id).unwrap(), Some(l.clone()));
+    assert!(store.loop_by_id(LoopId(999)).unwrap().is_none());
+}
+
+#[test]
 fn plans_roundtrip_steps_json() {
     let (store, song) = store_with_song();
     let l = store

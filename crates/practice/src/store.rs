@@ -271,6 +271,25 @@ impl Store {
         })
     }
 
+    pub fn loop_by_id(&self, id: LoopId) -> Result<Option<LoopRegion>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, song_id, name, start_secs, end_secs, kind_json
+             FROM loops WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query_map(params![id.0], |row| {
+            let kind_json: String = row.get(5)?;
+            Ok(LoopRegion {
+                id: LoopId(row.get(0)?),
+                song_id: SongId(row.get(1)?),
+                name: row.get(2)?,
+                start: row.get(3)?,
+                end: row.get(4)?,
+                kind: serde_json::from_str(&kind_json).map_err(json_err)?,
+            })
+        })?;
+        rows.next().transpose().map_err(Into::into)
+    }
+
     pub fn delete_loop(&self, id: LoopId) -> Result<()> {
         self.conn
             .execute("DELETE FROM loops WHERE id = ?1", params![id.0])?;
