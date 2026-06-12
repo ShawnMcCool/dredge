@@ -922,6 +922,12 @@ impl App {
         if let Some(sc) = practice::sidecar::read_sidecar(path).err_str()? {
             self.restore_sidecar(song.id, &sc)?;
         }
+        // socket-driven imports (incl. capture.grab) refresh every client's
+        // library on the next tick
+        let _ = self.job_tx.send(Event {
+            event: "library_changed".into(),
+            data: Value::Null,
+        });
         serde_json::to_value(song).err_str()
     }
 

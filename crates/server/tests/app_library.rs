@@ -174,6 +174,22 @@ fn loop_update_moves_and_renames() {
 }
 
 #[test]
+fn import_emits_library_changed() {
+    let (mut app, _dir, wav) = test_app();
+    req(&mut app, "song.import", json!({"path": wav}));
+    let events = app.tick();
+    assert!(
+        events.iter().any(|e| e.event == "library_changed"),
+        "expected library_changed in {events:?}"
+    );
+
+    // re-import dedupes by hash — nothing changed, nothing announced
+    req(&mut app, "song.import", json!({"path": wav}));
+    let events = app.tick();
+    assert!(!events.iter().any(|e| e.event == "library_changed"));
+}
+
+#[test]
 fn unknown_command_errors() {
     let (mut app, _dir, _wav) = test_app();
     let resp = app.dispatch(Request {

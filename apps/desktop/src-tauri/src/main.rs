@@ -8,6 +8,10 @@ use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
 fn db_path() -> std::path::PathBuf {
+    // dev/test affordance beside EARWORM_OPEN: point the store elsewhere
+    if let Some(p) = std::env::var_os("EARWORM_DB") {
+        return std::path::PathBuf::from(p);
+    }
     dirs::data_local_dir()
         .unwrap_or_else(std::env::temp_dir)
         .join("earworm/earworm.db")

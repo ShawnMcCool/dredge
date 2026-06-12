@@ -15,9 +15,9 @@
 
 ### Task 2: Server — `library_changed` + small affordances
 
-- [ ] `song.import` (incl. capture.grab path) and `song.delete`-if-exists push a `library_changed` event through the existing job-events mpsc so socket-driven imports refresh the UI. Test: dispatch import → `tick()` events include `library_changed` (extend an existing app test file).
-- [ ] Desktop `main.rs`: honor `EARWORM_DB` env for the store path (dev/test affordance beside `EARWORM_OPEN`).
-- [ ] `cargo test -p server` green. Commit: `feat(server): library_changed event + EARWORM_DB affordance`
+- [x] `song.import` (incl. capture.grab path) and `song.delete`-if-exists push a `library_changed` event through the existing job-events mpsc so socket-driven imports refresh the UI. Test: dispatch import → `tick()` events include `library_changed` (extend an existing app test file). *(No `song.delete` command exists, so only `song.import` emits.)*
+- [x] Desktop `main.rs`: honor `EARWORM_DB` env for the store path (dev/test affordance beside `EARWORM_OPEN`).
+- [x] `cargo test -p server` green. Commit: `feat(server): library_changed event + EARWORM_DB affordance`
 
 ### Task 3: Prepare flow (stores + modal component + button)
 
