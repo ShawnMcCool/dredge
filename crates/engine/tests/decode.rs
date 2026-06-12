@@ -33,8 +33,8 @@ fn decodes_resamples_and_upmixes() {
     // stereo channels identical after mono upmix
     assert_eq!(buf.data[1000 * 2], buf.data[1000 * 2 + 1]);
     // energy preserved: RMS of a 0.5-amplitude sine ≈ 0.35
-    let rms = (buf.data.iter().map(|s| (*s as f64).powi(2)).sum::<f64>() / buf.data.len() as f64)
-        .sqrt();
+    let rms =
+        (buf.data.iter().map(|s| (*s as f64).powi(2)).sum::<f64>() / buf.data.len() as f64).sqrt();
     assert!((0.30..=0.40).contains(&rms), "rms = {rms}");
     let _ = SAMPLE_RATE; // canonical-rate contract referenced above
 }

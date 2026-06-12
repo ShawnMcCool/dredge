@@ -978,7 +978,7 @@ from the pipewire-rs `audio-src` example for the resolved crate version
 (check docs.rs — the stream API moved between 0.7/0.8/0.9). No unit tests;
 verification is the example binary.
 
-- [ ] **Step 1: Engine facade**
+- [x] **Step 1: Engine facade**
 
 `crates/engine/src/engine.rs`:
 ```rust
@@ -1019,7 +1019,7 @@ impl Engine {
 
 Rings: `rtrb::RingBuffer::<EngineCmd>::new(256)`, `rtrb::RingBuffer::<EngineEvent>::new(1024)`.
 
-- [ ] **Step 2: PipeWire output thread**
+- [x] **Step 2: PipeWire output thread**
 
 `crates/engine/src/output.rs` — `pub fn spawn(cmd_rx, evt_tx, song_slot) -> Result<JoinHandle>`:
 - Thread runs a PipeWire `MainLoop` with a playback `Stream`, format F32LE 48 kHz 2ch, `AUTOCONNECT | MAP_BUFFERS | RT_PROCESS`, node name `"earworm"`.
@@ -1028,7 +1028,7 @@ Rings: `rtrb::RingBuffer::<EngineCmd>::new(256)`, `rtrb::RingBuffer::<EngineEven
 - No song loaded → write silence.
 - Set `PIPEWIRE_LATENCY`-friendly node latency property: `node.latency = "1024/48000"` (playback tool, not an instrument chain — modest quantum is right; do NOT request 128 like Slopsmith).
 
-- [ ] **Step 3: Smoke example**
+- [x] **Step 3: Smoke example**
 
 `crates/engine/examples/play.rs`:
 ```rust
@@ -1060,7 +1060,7 @@ fn main() {
 }
 ```
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run: `cargo build -p engine --example play` — must compile.
 Run: `cargo test -p engine && cargo clippy -p engine -- -D warnings && cargo fmt`
@@ -1070,7 +1070,7 @@ If a real audio file is available, smoke-test:
 `timeout 10 cargo run -p engine --example play -- <file> 10 14 0.75`
 Expected: audible looped playback, `LoopWrapped` events printed roughly every 5.3 s (4 s loop at 0.75×). If no audio file is available, generate one: `ffmpeg -f lavfi -i "sine=frequency=220:duration=30" -ac 2 /tmp/test-sine.flac`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A && git commit -m "feat(engine): pipewire output thread, engine facade, play example"

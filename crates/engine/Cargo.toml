@@ -9,7 +9,7 @@ symphonia = { version = "0.5", features = ["mp3", "flac", "vorbis", "wav", "pcm"
 rubato = "0.16"
 rtrb = "0.3"
 arc-swap = "1"
-pipewire = "0.10"
+pipewire = { version = "0.10", features = ["v0_3_49"] }
 libspa = "0.10"
 blake3 = "1"
 serde.workspace = true

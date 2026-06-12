@@ -12,7 +12,10 @@ pub enum EngineCmd {
     Play,
     Pause,
     SeekSecs(f64),
-    SetLoopSecs { start: f64, end: f64 },
+    SetLoopSecs {
+        start: f64,
+        end: f64,
+    },
     ClearLoop,
     SetRate(f64),
     /// semitones + cents, combined at the boundary into one scale factor
@@ -125,8 +128,17 @@ impl Pipeline {
             }
         }
 
-        let got = self.stretch.pull(out);
-        out[got * CHANNELS..].fill(0.0);
+        // Pull in BLOCK_FRAMES-sized chunks until the block is filled
+        // (out may be larger than one stretcher block).
+        let mut filled = 0;
+        while filled < frames_req {
+            let got = self.stretch.pull(&mut out[filled * CHANNELS..]);
+            if got == 0 {
+                break;
+            }
+            filled += got;
+        }
+        out[filled * CHANNELS..].fill(0.0);
 
         if let Some(bf) = &mut self.bass_focus {
             bf.process_interleaved(out);

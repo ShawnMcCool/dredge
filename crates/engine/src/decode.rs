@@ -143,7 +143,10 @@ fn resample_stereo(left: &[f32], right: &[f32], src_rate: u32) -> Result<(Vec<f3
 
     let mut pos = 0;
     while pos + RESAMPLE_CHUNK <= l64.len() {
-        let chunk = [&l64[pos..pos + RESAMPLE_CHUNK], &r64[pos..pos + RESAMPLE_CHUNK]];
+        let chunk = [
+            &l64[pos..pos + RESAMPLE_CHUNK],
+            &r64[pos..pos + RESAMPLE_CHUNK],
+        ];
         let out = resampler
             .process(&chunk, None)
             .map_err(|e| Error::Decode(format!("resample: {e}")))?;

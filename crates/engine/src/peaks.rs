@@ -15,9 +15,9 @@ pub fn compute_peaks(buf: &SongBuffer) -> Peaks {
         .data
         .chunks(FRAMES_PER_BUCKET * CHANNELS)
         .map(|chunk| {
-            chunk.iter().fold((f32::MAX, f32::MIN), |(lo, hi), s| {
-                (lo.min(*s), hi.max(*s))
-            })
+            chunk
+                .iter()
+                .fold((f32::MAX, f32::MIN), |(lo, hi), s| (lo.min(*s), hi.max(*s)))
         })
         .collect();
     Peaks {

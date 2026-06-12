@@ -13,8 +13,9 @@ pub struct ReadInfo {
 /// Reads source frames; when a loop is set, wraps end→start with a
 /// linear (equal-gain) crossfade. The crossfade blends the loop tail
 /// [end-x, end) with the head [start, start+x); after the blend the
-/// position continues from start+x, so the loop period is exactly
-/// end-start frames.
+/// position continues from start+x (the head's first x frames were
+/// already heard inside the blend), so the first pass is exactly
+/// end-start frames and steady-state passes are end-start-x frames.
 pub struct Looper {
     buf: Arc<SongBuffer>,
     pos: usize, // current source frame
@@ -191,7 +192,12 @@ mod tests {
         // ramp slope is 1/frame; blend moves value from ~19,520 to ~10,480
         // over 480 frames → max step ≈ (19520-10480)/480 + 1 ≈ 20.
         for w in vals.windows(2) {
-            assert!((w[1] - w[0]).abs() <= 25.0, "discontinuity {} -> {}", w[0], w[1]);
+            assert!(
+                (w[1] - w[0]).abs() <= 25.0,
+                "discontinuity {} -> {}",
+                w[0],
+                w[1]
+            );
         }
     }
 

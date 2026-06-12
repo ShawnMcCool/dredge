@@ -1,0 +1,177 @@
+//! PipeWire output thread: a thin shell around `Pipeline`.
+//!
+//! The process callback drains the command ring, renders, and pushes events
+//! out the event ring. It never allocates or locks, except constructing a
+//! fresh `Pipeline` at a song-swap boundary (acceptable: song loads only).
+
+use crate::buffer::{SongBuffer, CHANNELS, SAMPLE_RATE};
+use crate::pipeline::{EngineCmd, EngineEvent, Pipeline};
+use arc_swap::ArcSwapOption;
+use pipewire as pw;
+use pw::{properties::properties, spa};
+use spa::pod::Pod;
+use std::sync::Arc;
+use std::thread::JoinHandle;
+
+/// Upper bound on frames per process callback we can render into.
+const MAX_QUANTUM_FRAMES: usize = 8192;
+
+struct State {
+    cmd_rx: rtrb::Consumer<EngineCmd>,
+    evt_tx: rtrb::Producer<EngineEvent>,
+    song_slot: Arc<ArcSwapOption<SongBuffer>>,
+    pipeline: Option<Pipeline>,
+    current_song: Option<Arc<SongBuffer>>,
+    render_buf: Vec<f32>,
+    events: Vec<EngineEvent>,
+}
+
+pub fn spawn(
+    cmd_rx: rtrb::Consumer<EngineCmd>,
+    evt_tx: rtrb::Producer<EngineEvent>,
+    song_slot: Arc<ArcSwapOption<SongBuffer>>,
+) -> crate::error::Result<JoinHandle<()>> {
+    let handle = std::thread::Builder::new()
+        .name("earworm-pw".into())
+        .spawn(move || {
+            if let Err(e) = run(cmd_rx, evt_tx, song_slot) {
+                eprintln!("earworm pipewire thread failed: {e}");
+            }
+        })?;
+    Ok(handle)
+}
+
+fn run(
+    cmd_rx: rtrb::Consumer<EngineCmd>,
+    evt_tx: rtrb::Producer<EngineEvent>,
+    song_slot: Arc<ArcSwapOption<SongBuffer>>,
+) -> Result<(), pw::Error> {
+    pw::init();
+    let mainloop = pw::main_loop::MainLoopRc::new(None)?;
+    let context = pw::context::ContextRc::new(&mainloop, None)?;
+    let core = context.connect_rc(None)?;
+
+    let stream = pw::stream::StreamBox::new(
+        &core,
+        "earworm",
+        properties! {
+            *pw::keys::MEDIA_TYPE => "Audio",
+            *pw::keys::MEDIA_ROLE => "Music",
+            *pw::keys::MEDIA_CATEGORY => "Playback",
+            *pw::keys::AUDIO_CHANNELS => "2",
+            *pw::keys::NODE_NAME => "earworm",
+            // playback tool, not an instrument chain — a modest quantum is right
+            *pw::keys::NODE_LATENCY => "1024/48000",
+        },
+    )?;
+
+    let state = State {
+        cmd_rx,
+        evt_tx,
+        song_slot,
+        pipeline: None,
+        current_song: None,
+        render_buf: vec![0.0; MAX_QUANTUM_FRAMES * CHANNELS],
+        events: Vec::with_capacity(64),
+    };
+
+    let _listener = stream
+        .add_local_listener_with_user_data(state)
+        .process(|stream, state| {
+            let Some(mut buffer) = stream.dequeue_buffer() else {
+                return;
+            };
+
+            // Song swap detection: compare the slot against the buffer the
+            // current pipeline was built from.
+            let song = state.song_slot.load_full();
+            let swapped = match (&song, &state.current_song) {
+                (Some(a), Some(b)) => !Arc::ptr_eq(a, b),
+                (Some(_), None) => true,
+                (None, Some(_)) => true,
+                (None, None) => false,
+            };
+            if swapped {
+                state.pipeline = song.clone().map(Pipeline::new);
+                state.current_song = song;
+            }
+
+            // Drain control commands into the pipeline.
+            while let Ok(cmd) = state.cmd_rx.pop() {
+                if let Some(p) = state.pipeline.as_mut() {
+                    p.apply(cmd);
+                }
+            }
+
+            let stride = std::mem::size_of::<f32>() * CHANNELS;
+            // The driver tells us how many frames this cycle wants; the
+            // mapped buffer itself may be much larger (maxsize).
+            let requested = buffer.requested() as usize;
+            let datas = buffer.datas_mut();
+            let data = &mut datas[0];
+            let n_frames = if let Some(slice) = data.data() {
+                let mut n_frames = (slice.len() / stride).min(MAX_QUANTUM_FRAMES);
+                if requested > 0 {
+                    n_frames = n_frames.min(requested);
+                }
+                let out = &mut state.render_buf[..n_frames * CHANNELS];
+                match state.pipeline.as_mut() {
+                    Some(p) => {
+                        state.events.clear();
+                        p.render(out, &mut state.events);
+                        for ev in state.events.drain(..) {
+                            let _ = state.evt_tx.push(ev); // drop on full
+                        }
+                    }
+                    None => out.fill(0.0),
+                }
+                for (i, s) in out.iter().enumerate() {
+                    slice[i * 4..i * 4 + 4].copy_from_slice(&s.to_le_bytes());
+                }
+                n_frames
+            } else {
+                0
+            };
+            let chunk = data.chunk_mut();
+            *chunk.offset_mut() = 0;
+            *chunk.stride_mut() = stride as _;
+            *chunk.size_mut() = (stride * n_frames) as _;
+        })
+        .register()?;
+
+    let mut audio_info = spa::param::audio::AudioInfoRaw::new();
+    audio_info.set_format(spa::param::audio::AudioFormat::F32LE);
+    audio_info.set_rate(SAMPLE_RATE);
+    audio_info.set_channels(CHANNELS as u32);
+    let mut position = [0; spa::param::audio::MAX_CHANNELS];
+    position[0] = spa::sys::SPA_AUDIO_CHANNEL_FL;
+    position[1] = spa::sys::SPA_AUDIO_CHANNEL_FR;
+    audio_info.set_position(position);
+
+    let values: Vec<u8> = pw::spa::pod::serialize::PodSerializer::serialize(
+        std::io::Cursor::new(Vec::new()),
+        &pw::spa::pod::Value::Object(pw::spa::pod::Object {
+            type_: spa::sys::SPA_TYPE_OBJECT_Format,
+            id: spa::sys::SPA_PARAM_EnumFormat,
+            properties: audio_info.into(),
+        }),
+    )
+    .unwrap()
+    .0
+    .into_inner();
+
+    let mut params = [Pod::from_bytes(&values).unwrap()];
+
+    stream.connect(
+        spa::utils::Direction::Output,
+        None,
+        pw::stream::StreamFlags::AUTOCONNECT
+            | pw::stream::StreamFlags::MAP_BUFFERS
+            | pw::stream::StreamFlags::RT_PROCESS,
+        &mut params,
+    )?;
+
+    mainloop.run();
+
+    Ok(())
+}

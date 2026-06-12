@@ -159,8 +159,7 @@ mod tests {
     fn output_is_not_silence() {
         let input = sine(48_000, 440.0);
         let out = run(0.75, &input);
-        let rms =
-            (out.iter().map(|s| (*s as f64).powi(2)).sum::<f64>() / out.len() as f64).sqrt();
+        let rms = (out.iter().map(|s| (*s as f64).powi(2)).sum::<f64>() / out.len() as f64).sqrt();
         assert!(rms > 0.1, "rms = {rms}");
     }
 }
