@@ -88,6 +88,14 @@
     height: 100vh;
   }
 
+  /* below the point where the preferred minimums fit, shrink all three
+     columns further instead of pushing the right rail off-screen */
+  @media (max-width: 745px) {
+    .shell {
+      grid-template-columns: minmax(110px, 240px) minmax(220px, 1fr) minmax(130px, 340px);
+    }
+  }
+
   .library {
     border-right: 1px solid var(--line);
     padding: var(--space);
@@ -99,7 +107,8 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
     padding: var(--space);
   }
 
@@ -107,6 +116,7 @@
     border-left: 1px solid var(--line);
     padding: var(--space);
     min-width: 0;
+    overflow-x: hidden;
     overflow-y: auto;
   }
 
@@ -120,10 +130,12 @@
 
   .tabs {
     display: flex;
+    flex-wrap: wrap;
     gap: calc(var(--space) / 2);
     margin-bottom: var(--space);
     border-bottom: 1px solid var(--line);
     padding-bottom: var(--space);
+    min-width: 0;
   }
 
   .tab {

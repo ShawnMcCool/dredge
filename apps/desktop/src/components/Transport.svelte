@@ -55,6 +55,9 @@
         value={$position.rate}
         oninput={onRateInput}
       />
+    </Group>
+
+    <Group>
       {#each RATE_PRESETS as r (r)}
         <Button
           variant="chip"

@@ -69,7 +69,7 @@ Pass criteria per screenshot:
 - right-rail content scrolls rather than stretching the column
 - at 1000×700 the app is still fully usable (groups stacked, nothing clipped invisibly)
 
-- [ ] All three screenshots pass. Leave them in /tmp for review. Commit any fixes: `fix(desktop): resize verification fixes`
+- [x] All three screenshots pass. Leave them in /tmp for review. Commit any fixes: `fix(desktop): resize verification fixes`
 
 ### Task 5: Gate
 
