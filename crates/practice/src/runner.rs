@@ -28,16 +28,23 @@ pub struct PlanRunner {
 
 impl PlanRunner {
     pub fn new(plan: Plan) -> Self {
-        Self { plan, step_idx: 0, rep_idx: 0 }
+        Self {
+            plan,
+            step_idx: 0,
+            rep_idx: 0,
+        }
     }
 
     fn step_total_reps(step: &PlanStep) -> u32 {
         match step {
             PlanStep::ListenFirst { reps, .. } => *reps,
             PlanStep::PlayReps { reps, .. } => *reps,
-            PlanStep::Rotation { loop_ids, rounds, reps_per_visit, .. } => {
-                loop_ids.len() as u32 * rounds * reps_per_visit
-            }
+            PlanStep::Rotation {
+                loop_ids,
+                rounds,
+                reps_per_visit,
+                ..
+            } => loop_ids.len() as u32 * rounds * reps_per_visit,
             PlanStep::RecallTest { alternations, .. } => alternations * 2,
         }
     }
@@ -72,7 +79,12 @@ impl PlanRunner {
                 step_idx,
                 rep_idx,
             },
-            PlanStep::Rotation { loop_ids, reps_per_visit, curve, .. } => {
+            PlanStep::Rotation {
+                loop_ids,
+                reps_per_visit,
+                curve,
+                ..
+            } => {
                 let visit = rep_idx / (*reps_per_visit).max(1);
                 let slot = (visit as usize) % loop_ids.len();
                 let visits_to_this_loop = visit / loop_ids.len() as u32;
@@ -87,7 +99,11 @@ impl PlanRunner {
             PlanStep::RecallTest { loop_id, rate, .. } => RepSpec {
                 loop_id: *loop_id,
                 rate: *rate,
-                mode: if rep_idx % 2 == 0 { RepMode::Play } else { RepMode::RecallSilent },
+                mode: if rep_idx.is_multiple_of(2) {
+                    RepMode::Play
+                } else {
+                    RepMode::RecallSilent
+                },
                 step_idx,
                 rep_idx,
             },
@@ -117,7 +133,12 @@ mod tests {
     use crate::model::{PlanId, SongId, TempoCurve};
 
     fn plan(steps: Vec<PlanStep>) -> Plan {
-        Plan { id: PlanId(1), song_id: SongId(1), name: "p".into(), steps }
+        Plan {
+            id: PlanId(1),
+            song_id: SongId(1),
+            name: "p".into(),
+            steps,
+        }
     }
 
     fn drain(mut r: PlanRunner) -> Vec<RepSpec> {
@@ -137,7 +158,9 @@ mod tests {
         }]));
         let reps = drain(r);
         assert_eq!(reps.len(), 2);
-        assert!(reps.iter().all(|s| s.mode == RepMode::Listen && s.loop_id == LoopId(7)));
+        assert!(reps
+            .iter()
+            .all(|s| s.mode == RepMode::Listen && s.loop_id == LoopId(7)));
         assert!(reps.iter().all(|s| s.rate == 1.0));
         assert_eq!(reps[1].rep_idx, 1);
     }
@@ -147,7 +170,11 @@ mod tests {
         let r = PlanRunner::new(plan(vec![PlanStep::PlayReps {
             loop_id: LoopId(1),
             reps: 3,
-            curve: TempoCurve::Ladder { start: 0.6, step: 0.1, target: 1.0 },
+            curve: TempoCurve::Ladder {
+                start: 0.6,
+                step: 0.1,
+                target: 1.0,
+            },
         }]));
         let rates: Vec<f64> = drain(r).iter().map(|s| s.rate).collect();
         assert_eq!(rates, vec![0.6, 0.7, 0.8]);
@@ -156,7 +183,10 @@ mod tests {
     #[test]
     fn steps_run_in_sequence() {
         let r = PlanRunner::new(plan(vec![
-            PlanStep::ListenFirst { loop_id: LoopId(1), reps: 1 },
+            PlanStep::ListenFirst {
+                loop_id: LoopId(1),
+                reps: 1,
+            },
             PlanStep::PlayReps {
                 loop_id: LoopId(1),
                 reps: 1,
@@ -189,7 +219,11 @@ mod tests {
             loop_ids: vec![LoopId(1), LoopId(2)],
             rounds: 2,
             reps_per_visit: 2,
-            curve: TempoCurve::Ladder { start: 0.6, step: 0.1, target: 1.0 },
+            curve: TempoCurve::Ladder {
+                start: 0.6,
+                step: 0.1,
+                target: 1.0,
+            },
         }]));
         let reps = drain(r);
         // loop 1 visits: round0 (rate for visit 0), round1 (rate for visit 1)
@@ -211,15 +245,26 @@ mod tests {
         let modes: Vec<RepMode> = drain(r).iter().map(|s| s.mode).collect();
         assert_eq!(
             modes,
-            vec![RepMode::Play, RepMode::RecallSilent, RepMode::Play, RepMode::RecallSilent]
+            vec![
+                RepMode::Play,
+                RepMode::RecallSilent,
+                RepMode::Play,
+                RepMode::RecallSilent
+            ]
         );
     }
 
     #[test]
     fn skip_step_jumps_to_next_step() {
         let mut r = PlanRunner::new(plan(vec![
-            PlanStep::ListenFirst { loop_id: LoopId(1), reps: 10 },
-            PlanStep::ListenFirst { loop_id: LoopId(2), reps: 1 },
+            PlanStep::ListenFirst {
+                loop_id: LoopId(1),
+                reps: 10,
+            },
+            PlanStep::ListenFirst {
+                loop_id: LoopId(2),
+                reps: 1,
+            },
         ]));
         r.advance();
         r.skip_step();

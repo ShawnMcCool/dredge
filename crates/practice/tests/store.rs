@@ -32,17 +32,35 @@ fn sections_replace_atomically_in_position_order() {
         .replace_sections(
             song.id,
             &[
-                NewSection { name: "Chorus", start: 30.0, end: 50.0, position: 1 },
-                NewSection { name: "Verse", start: 10.0, end: 30.0, position: 0 },
+                NewSection {
+                    name: "Chorus",
+                    start: 30.0,
+                    end: 50.0,
+                    position: 1,
+                },
+                NewSection {
+                    name: "Verse",
+                    start: 10.0,
+                    end: 30.0,
+                    position: 0,
+                },
             ],
         )
         .unwrap();
     let sections = store.list_sections(song.id).unwrap();
     assert_eq!(sections.len(), 2);
     assert_eq!(sections[0].name, "Verse"); // ordered by position
-    // replace drops the old set
+                                           // replace drops the old set
     store
-        .replace_sections(song.id, &[NewSection { name: "Solo", start: 0.0, end: 5.0, position: 0 }])
+        .replace_sections(
+            song.id,
+            &[NewSection {
+                name: "Solo",
+                start: 0.0,
+                end: 5.0,
+                position: 0,
+            }],
+        )
         .unwrap();
     assert_eq!(store.list_sections(song.id).unwrap().len(), 1);
 }
@@ -57,7 +75,10 @@ fn loops_roundtrip_with_kind() {
                 name: "Verse→Chorus",
                 start: 28.0,
                 end: 32.0,
-                kind: LoopKind::Junction { from_section: SectionId(1), to_section: SectionId(2) },
+                kind: LoopKind::Junction {
+                    from_section: SectionId(1),
+                    to_section: SectionId(2),
+                },
             },
         )
         .unwrap();
@@ -71,7 +92,15 @@ fn loops_roundtrip_with_kind() {
 fn plans_roundtrip_steps_json() {
     let (store, song) = store_with_song();
     let l = store
-        .insert_loop(song.id, NewLoop { name: "A", start: 0.0, end: 4.0, kind: LoopKind::Manual })
+        .insert_loop(
+            song.id,
+            NewLoop {
+                name: "A",
+                start: 0.0,
+                end: 4.0,
+                kind: LoopKind::Manual,
+            },
+        )
         .unwrap();
     let steps = vec![PlanStep::PlayReps {
         loop_id: l.id,
@@ -87,17 +116,46 @@ fn plans_roundtrip_steps_json() {
 fn retention_reports_latest_retest_per_loop() {
     let (store, song) = store_with_song();
     let l = store
-        .insert_loop(song.id, NewLoop { name: "A", start: 0.0, end: 4.0, kind: LoopKind::Manual })
+        .insert_loop(
+            song.id,
+            NewLoop {
+                name: "A",
+                start: 0.0,
+                end: 4.0,
+                kind: LoopKind::Manual,
+            },
+        )
         .unwrap();
     store
-        .record_rep(NewRep { loop_id: l.id, plan_id: None, mode: "play".into(), rate: 0.9, rating: Some(Rating::Shaky), is_retest: true })
+        .record_rep(NewRep {
+            loop_id: l.id,
+            plan_id: None,
+            mode: "play".into(),
+            rate: 0.9,
+            rating: Some(Rating::Shaky),
+            is_retest: true,
+        })
         .unwrap();
     store
-        .record_rep(NewRep { loop_id: l.id, plan_id: None, mode: "play".into(), rate: 1.0, rating: Some(Rating::Solid), is_retest: true })
+        .record_rep(NewRep {
+            loop_id: l.id,
+            plan_id: None,
+            mode: "play".into(),
+            rate: 1.0,
+            rating: Some(Rating::Solid),
+            is_retest: true,
+        })
         .unwrap();
     // non-retest reps don't count
     store
-        .record_rep(NewRep { loop_id: l.id, plan_id: None, mode: "play".into(), rate: 1.0, rating: Some(Rating::Miss), is_retest: false })
+        .record_rep(NewRep {
+            loop_id: l.id,
+            plan_id: None,
+            mode: "play".into(),
+            rate: 1.0,
+            rating: Some(Rating::Miss),
+            is_retest: false,
+        })
         .unwrap();
     let retention = store.retention(song.id).unwrap();
     assert_eq!(retention.len(), 1);
@@ -109,10 +167,26 @@ fn retention_reports_latest_retest_per_loop() {
 fn resurfacing_upserts() {
     let (store, song) = store_with_song();
     let l = store
-        .insert_loop(song.id, NewLoop { name: "A", start: 0.0, end: 4.0, kind: LoopKind::Manual })
+        .insert_loop(
+            song.id,
+            NewLoop {
+                name: "A",
+                start: 0.0,
+                end: 4.0,
+                kind: LoopKind::Manual,
+            },
+        )
         .unwrap();
-    let r1 = Resurfacing { loop_id: l.id, interval_idx: 0, due_on: date!(2026 - 06 - 13) };
-    let r2 = Resurfacing { loop_id: l.id, interval_idx: 1, due_on: date!(2026 - 06 - 15) };
+    let r1 = Resurfacing {
+        loop_id: l.id,
+        interval_idx: 0,
+        due_on: date!(2026 - 06 - 13),
+    };
+    let r2 = Resurfacing {
+        loop_id: l.id,
+        interval_idx: 1,
+        due_on: date!(2026 - 06 - 15),
+    };
     store.upsert_resurfacing(r1).unwrap();
     store.upsert_resurfacing(r2).unwrap();
     assert_eq!(store.all_resurfacing().unwrap(), vec![r2]);
@@ -122,7 +196,15 @@ fn resurfacing_upserts() {
 fn deleting_song_cascades() {
     let (store, song) = store_with_song();
     store
-        .insert_loop(song.id, NewLoop { name: "A", start: 0.0, end: 4.0, kind: LoopKind::Manual })
+        .insert_loop(
+            song.id,
+            NewLoop {
+                name: "A",
+                start: 0.0,
+                end: 4.0,
+                kind: LoopKind::Manual,
+            },
+        )
         .unwrap();
     store.delete_song(song.id).unwrap();
     assert!(store.list_loops(song.id).unwrap().is_empty());

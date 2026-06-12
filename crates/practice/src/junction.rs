@@ -1,4 +1,4 @@
-use crate::model::{LoopKind, LoopRegion, LoopId, Section};
+use crate::model::{LoopId, LoopKind, LoopRegion, Section};
 
 /// A junction loop spans the tail of one section into the head of the next.
 /// `tail`/`head` are window lengths in seconds; windows are clamped so the
@@ -18,7 +18,10 @@ pub fn derive_junctions(sections: &[Section], tail: f64, head: f64) -> Vec<LoopR
                 name: format!("{}→{}", a.name, b.name),
                 start: (a.end - tail).max(a.start),
                 end: (b.start + head).min(b.end),
-                kind: LoopKind::Junction { from_section: a.id, to_section: b.id },
+                kind: LoopKind::Junction {
+                    from_section: a.id,
+                    to_section: b.id,
+                },
             }
         })
         .collect()
@@ -54,7 +57,10 @@ mod tests {
         assert_eq!(loops[0].end, 32.0);
         assert_eq!(
             loops[0].kind,
-            LoopKind::Junction { from_section: SectionId(1), to_section: SectionId(2) }
+            LoopKind::Junction {
+                from_section: SectionId(1),
+                to_section: SectionId(2)
+            }
         );
     }
 

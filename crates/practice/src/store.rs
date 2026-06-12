@@ -139,8 +139,9 @@ impl Store {
     }
 
     fn migrate(&self) -> Result<()> {
-        let version: i64 =
-            self.conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        let version: i64 = self
+            .conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))?;
         if version == 0 {
             self.conn.execute_batch(SCHEMA_V1)?;
             self.conn.pragma_update(None, "user_version", 1)?;
@@ -196,7 +197,8 @@ impl Store {
     }
 
     pub fn delete_song(&self, id: SongId) -> Result<()> {
-        self.conn.execute("DELETE FROM songs WHERE id = ?1", params![id.0])?;
+        self.conn
+            .execute("DELETE FROM songs WHERE id = ?1", params![id.0])?;
         Ok(())
     }
 
@@ -207,7 +209,10 @@ impl Store {
         sections: &[NewSection],
     ) -> Result<Vec<Section>> {
         let tx = self.conn.transaction()?;
-        tx.execute("DELETE FROM sections WHERE song_id = ?1", params![song_id.0])?;
+        tx.execute(
+            "DELETE FROM sections WHERE song_id = ?1",
+            params![song_id.0],
+        )?;
         let mut out = Vec::with_capacity(sections.len());
         for s in sections {
             tx.execute(
@@ -267,7 +272,8 @@ impl Store {
     }
 
     pub fn delete_loop(&self, id: LoopId) -> Result<()> {
-        self.conn.execute("DELETE FROM loops WHERE id = ?1", params![id.0])?;
+        self.conn
+            .execute("DELETE FROM loops WHERE id = ?1", params![id.0])?;
         Ok(())
     }
 
@@ -341,9 +347,10 @@ impl Store {
     }
 
     pub fn upsert_resurfacing(&self, r: Resurfacing) -> Result<()> {
-        let due_on = r.due_on.format(DATE_FMT).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, e)
-        })?;
+        let due_on = r
+            .due_on
+            .format(DATE_FMT)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         self.conn.execute(
             "INSERT INTO resurfacing (loop_id, interval_idx, due_on) VALUES (?1, ?2, ?3)
              ON CONFLICT(loop_id) DO UPDATE SET interval_idx = ?2, due_on = ?3",

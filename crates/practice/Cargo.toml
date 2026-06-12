@@ -9,3 +9,6 @@ serde_json.workspace = true
 thiserror.workspace = true
 time.workspace = true
 rusqlite.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

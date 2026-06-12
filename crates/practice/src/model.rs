@@ -34,7 +34,10 @@ pub struct Section {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LoopKind {
     Manual,
-    Junction { from_section: SectionId, to_section: SectionId },
+    Junction {
+        from_section: SectionId,
+        to_section: SectionId,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -63,7 +66,11 @@ pub enum TempoCurve {
 pub enum PlanStep {
     /// Playback-only passes before play-along (audiation gate).
     ListenFirst { loop_id: LoopId, reps: u32 },
-    PlayReps { loop_id: LoopId, reps: u32, curve: TempoCurve },
+    PlayReps {
+        loop_id: LoopId,
+        reps: u32,
+        curve: TempoCurve,
+    },
     /// Interleaved rotation over several loops.
     Rotation {
         loop_ids: Vec<LoopId>,
@@ -72,7 +79,11 @@ pub enum PlanStep {
         curve: TempoCurve,
     },
     /// Alternate audible pass / silent pass (play from memory).
-    RecallTest { loop_id: LoopId, alternations: u32, rate: f64 },
+    RecallTest {
+        loop_id: LoopId,
+        alternations: u32,
+        rate: f64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -99,11 +110,18 @@ mod tests {
     #[test]
     fn plan_steps_roundtrip_through_json() {
         let steps = vec![
-            PlanStep::ListenFirst { loop_id: LoopId(1), reps: 3 },
+            PlanStep::ListenFirst {
+                loop_id: LoopId(1),
+                reps: 3,
+            },
             PlanStep::PlayReps {
                 loop_id: LoopId(1),
                 reps: 5,
-                curve: TempoCurve::Oscillate { low: 0.7, high: 1.0, period: 3 },
+                curve: TempoCurve::Oscillate {
+                    low: 0.7,
+                    high: 1.0,
+                    period: 3,
+                },
             },
             PlanStep::Rotation {
                 loop_ids: vec![LoopId(1), LoopId(2)],
@@ -111,7 +129,11 @@ mod tests {
                 reps_per_visit: 2,
                 curve: TempoCurve::Dwell { rate: 0.9 },
             },
-            PlanStep::RecallTest { loop_id: LoopId(2), alternations: 4, rate: 1.0 },
+            PlanStep::RecallTest {
+                loop_id: LoopId(2),
+                alternations: 4,
+                rate: 1.0,
+            },
         ];
         let json = serde_json::to_string(&steps).unwrap();
         let back: Vec<PlanStep> = serde_json::from_str(&json).unwrap();

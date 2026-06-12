@@ -1199,7 +1199,7 @@ git add -A && git commit -m "feat(practice): sqlite store with migrations and re
 - Modify: `crates/practice/src/lib.rs` (add `pub mod sidecar;`)
 - Test: inline `#[cfg(test)]` using `tempfile` (add `tempfile = "3"` to `[dev-dependencies]`)
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `crates/practice/src/sidecar.rs`:
 ```rust
@@ -1299,12 +1299,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run tests, verify failure**
+- [x] **Step 2: Run tests, verify failure**
 
 Run: `cargo test -p practice sidecar`
 Expected: panics on `todo!()`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```rust
 pub fn sidecar_path(audio_path: &Path) -> PathBuf {
@@ -1331,12 +1331,12 @@ pub fn read_sidecar(audio_path: &Path) -> Result<Option<Sidecar>> {
 }
 ```
 
-- [ ] **Step 4: Run tests, verify pass**
+- [x] **Step 4: Run tests, verify pass**
 
 Run: `cargo test -p practice sidecar`
 Expected: 4 PASS.
 
-- [ ] **Step 5: Full crate check and commit**
+- [x] **Step 5: Full crate check and commit**
 
 Run: `cargo test -p practice && cargo clippy -p practice -- -D warnings && cargo fmt --check`
 Expected: all green (fix any clippy/fmt fallout first).

@@ -14,7 +14,12 @@ pub struct Resurfacing {
 }
 
 /// Compute the next schedule state after a rated practice on `today`.
-pub fn next_state(prev: Option<Resurfacing>, loop_id: LoopId, rating: Rating, today: Date) -> Resurfacing {
+pub fn next_state(
+    prev: Option<Resurfacing>,
+    loop_id: LoopId,
+    rating: Rating,
+    today: Date,
+) -> Resurfacing {
     let interval_idx = match (prev, rating) {
         (None, _) | (_, Rating::Miss) => 0,
         (Some(p), Rating::Shaky) => p.interval_idx,
@@ -48,7 +53,11 @@ mod tests {
 
     #[test]
     fn solid_advances_the_ladder() {
-        let prev = Resurfacing { loop_id: LoopId(1), interval_idx: 1, due_on: date!(2026 - 06 - 12) };
+        let prev = Resurfacing {
+            loop_id: LoopId(1),
+            interval_idx: 1,
+            due_on: date!(2026 - 06 - 12),
+        };
         let s = next_state(Some(prev), LoopId(1), Rating::Solid, date!(2026 - 06 - 12));
         assert_eq!(s.interval_idx, 2);
         assert_eq!(s.due_on, date!(2026 - 06 - 16)); // +4 days
@@ -56,7 +65,11 @@ mod tests {
 
     #[test]
     fn solid_clamps_at_top_rung() {
-        let prev = Resurfacing { loop_id: LoopId(1), interval_idx: 4, due_on: date!(2026 - 06 - 12) };
+        let prev = Resurfacing {
+            loop_id: LoopId(1),
+            interval_idx: 4,
+            due_on: date!(2026 - 06 - 12),
+        };
         let s = next_state(Some(prev), LoopId(1), Rating::Solid, date!(2026 - 06 - 12));
         assert_eq!(s.interval_idx, 4);
         assert_eq!(s.due_on, date!(2026 - 06 - 26)); // +14 days
@@ -64,7 +77,11 @@ mod tests {
 
     #[test]
     fn shaky_repeats_the_rung() {
-        let prev = Resurfacing { loop_id: LoopId(1), interval_idx: 2, due_on: date!(2026 - 06 - 12) };
+        let prev = Resurfacing {
+            loop_id: LoopId(1),
+            interval_idx: 2,
+            due_on: date!(2026 - 06 - 12),
+        };
         let s = next_state(Some(prev), LoopId(1), Rating::Shaky, date!(2026 - 06 - 12));
         assert_eq!(s.interval_idx, 2);
         assert_eq!(s.due_on, date!(2026 - 06 - 16));
@@ -72,7 +89,11 @@ mod tests {
 
     #[test]
     fn miss_resets_to_first_rung() {
-        let prev = Resurfacing { loop_id: LoopId(1), interval_idx: 3, due_on: date!(2026 - 06 - 12) };
+        let prev = Resurfacing {
+            loop_id: LoopId(1),
+            interval_idx: 3,
+            due_on: date!(2026 - 06 - 12),
+        };
         let s = next_state(Some(prev), LoopId(1), Rating::Miss, date!(2026 - 06 - 12));
         assert_eq!(s.interval_idx, 0);
         assert_eq!(s.due_on, date!(2026 - 06 - 13));
@@ -81,10 +102,25 @@ mod tests {
     #[test]
     fn due_returns_overdue_and_today_sorted() {
         let items = vec![
-            Resurfacing { loop_id: LoopId(1), interval_idx: 0, due_on: date!(2026 - 06 - 14) },
-            Resurfacing { loop_id: LoopId(2), interval_idx: 0, due_on: date!(2026 - 06 - 10) },
-            Resurfacing { loop_id: LoopId(3), interval_idx: 0, due_on: date!(2026 - 06 - 12) },
+            Resurfacing {
+                loop_id: LoopId(1),
+                interval_idx: 0,
+                due_on: date!(2026 - 06 - 14),
+            },
+            Resurfacing {
+                loop_id: LoopId(2),
+                interval_idx: 0,
+                due_on: date!(2026 - 06 - 10),
+            },
+            Resurfacing {
+                loop_id: LoopId(3),
+                interval_idx: 0,
+                due_on: date!(2026 - 06 - 12),
+            },
         ];
-        assert_eq!(due(&items, date!(2026 - 06 - 12)), vec![LoopId(2), LoopId(3)]);
+        assert_eq!(
+            due(&items, date!(2026 - 06 - 12)),
+            vec![LoopId(2), LoopId(3)]
+        );
     }
 }
