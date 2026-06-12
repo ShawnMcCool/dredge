@@ -7,4 +7,5 @@ pub mod ffi;
 pub mod filter;
 pub mod looper;
 pub mod peaks;
+pub mod pipeline;
 pub mod stretch;

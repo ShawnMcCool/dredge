@@ -781,7 +781,7 @@ git add -A && git commit -m "feat(engine): bass-focus lowpass biquad"
 - Create: `crates/engine/src/pipeline.rs`
 - Modify: `crates/engine/src/lib.rs` (add `pub mod pipeline;`)
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `crates/engine/src/pipeline.rs`:
 ```rust
@@ -943,7 +943,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run (fail), implement**
+- [x] **Step 2: Run (fail), implement**
 
 `render` core loop:
 1. If `!playing` and gain has ramped to 0: zero `out`, return (emit one Position per render for UI liveness is fine but not required by tests).
@@ -957,7 +957,7 @@ mod tests {
 
 `Pause` exact semantics for the test `paused_pipeline_renders_silence`: initial state `playing=false, gain=0, target_gain=0` — render zeros without touching the stretcher.
 
-- [ ] **Step 3: Run tests, verify pass; commit**
+- [x] **Step 3: Run tests, verify pass; commit**
 
 Run: `cargo test -p engine pipeline` — 6 PASS.
 
