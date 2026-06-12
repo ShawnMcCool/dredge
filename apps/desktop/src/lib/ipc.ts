@@ -17,6 +17,11 @@ export async function cmd<T = unknown>(cmd: string, params: unknown = null): Pro
   return resp.data as T;
 }
 
+/** `EARWORM_OPEN=<song id>` dev affordance — null unless the env var is set. */
+export function initialSong(): Promise<number | null> {
+  return invoke<number | null>("initial_song");
+}
+
 export type EwEvent = { event: string; data: any };
 
 export function onEvent(handler: (e: EwEvent) => void): Promise<() => void> {

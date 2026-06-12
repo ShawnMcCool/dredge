@@ -2,7 +2,7 @@
 // of truth. Stores mirror the wire shapes of `server::app::App`.
 
 import { get, writable } from "svelte/store";
-import { cmd, onEvent } from "./ipc";
+import { cmd, initialSong, onEvent } from "./ipc";
 
 // --- wire types ----------------------------------------------------------
 
@@ -569,15 +569,17 @@ export const actions = {
 
 const LAST_SONG_KEY = "earworm-last-song";
 
-/** Pick up where the last session left off; the song may be gone — start
- *  empty in that case rather than surfacing an error. */
+/** Pick up where the last session left off (`EARWORM_OPEN` wins when set);
+ *  the song may be gone — start empty rather than surfacing an error. */
 async function openLastSong(): Promise<void> {
-  const id = Number(localStorage.getItem(LAST_SONG_KEY));
-  if (!Number.isInteger(id) || id <= 0) return;
+  const forced = await initialSong().catch(() => null);
+  const stored = Number(localStorage.getItem(LAST_SONG_KEY));
+  const id = forced ?? (Number.isInteger(stored) && stored > 0 ? stored : null);
+  if (id == null) return;
   try {
     await actions.openSong(id);
   } catch {
-    localStorage.removeItem(LAST_SONG_KEY);
+    // song may be gone — start empty
   }
 }
 

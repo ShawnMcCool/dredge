@@ -30,6 +30,13 @@ pub fn dispatch(state: tauri::State<AppState>, req: Request) -> Response {
     state.0.lock().unwrap().dispatch(req)
 }
 
+/// Dev affordance: `EARWORM_OPEN=<song id>` opens that song at launch,
+/// overriding the remembered last song.
+#[tauri::command]
+pub fn initial_song() -> Option<i64> {
+    std::env::var("EARWORM_OPEN").ok()?.parse().ok()
+}
+
 /// Start the shared socket + pump; tick events are mirrored to the webview.
 pub fn start_server(
     handle: tauri::AppHandle,

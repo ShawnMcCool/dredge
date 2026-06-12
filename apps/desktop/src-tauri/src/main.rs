@@ -42,7 +42,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(host::AppState(app.clone()))
-        .invoke_handler(tauri::generate_handler![host::dispatch])
+        .invoke_handler(tauri::generate_handler![host::dispatch, host::initial_song])
         .setup(move |tauri_app| {
             let server = host::start_server(tauri_app.handle().clone(), app.clone())?;
             tauri_app.manage(host::SocketState::new(server));

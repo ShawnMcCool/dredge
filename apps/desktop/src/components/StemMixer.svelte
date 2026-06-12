@@ -69,6 +69,9 @@
 
 <style>
   .stems {
+    /* never flex-shrink below content height in the stage column — the
+       explicit min-height would otherwise let the mixer collapse to 32px */
+    flex: 0 0 auto;
     padding: var(--space) 0;
     border-bottom: 1px solid var(--line);
     min-height: 32px;

@@ -100,6 +100,7 @@
 
 <style>
   .transport {
+    flex: 0 0 auto;
     padding: var(--space) 0;
     border-bottom: 1px solid var(--line);
     min-width: 0;
