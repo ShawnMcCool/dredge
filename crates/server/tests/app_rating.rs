@@ -6,6 +6,8 @@ use server::app::App;
 use server::capture_control::MockCapture;
 use server::control::MockEngine;
 use server::protocol::Request;
+use server::stems::FakeSeparator;
+use std::sync::Arc;
 use time::macros::format_description;
 
 fn req(app: &mut App, cmd: &str, params: Value) -> Value {
@@ -56,6 +58,7 @@ fn rating_solid_schedules_resurfacing() {
         store,
         Box::new(MockEngine::default()),
         Box::new(MockCapture::default()),
+        Arc::new(FakeSeparator),
     );
     let today = time::OffsetDateTime::now_utc().date();
 
@@ -91,6 +94,7 @@ fn due_list_surfaces_overdue() {
         store,
         Box::new(MockEngine::default()),
         Box::new(MockCapture::default()),
+        Arc::new(FakeSeparator),
     );
 
     let due = req(&mut app, "due.list", Value::Null);
@@ -107,6 +111,7 @@ fn retention_via_dispatch() {
         store,
         Box::new(MockEngine::default()),
         Box::new(MockCapture::default()),
+        Arc::new(FakeSeparator),
     );
 
     req(

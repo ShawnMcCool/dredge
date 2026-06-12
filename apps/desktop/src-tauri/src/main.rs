@@ -35,6 +35,7 @@ fn main() {
         store,
         Box::new(engine),
         Box::new(server::capture_control::RealCapture::default()),
+        Arc::new(server::stems::DemucsSeparator::default()),
     )));
 
     tauri::Builder::default()

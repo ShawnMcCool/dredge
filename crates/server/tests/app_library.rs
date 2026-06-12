@@ -4,6 +4,8 @@ use server::app::App;
 use server::capture_control::MockCapture;
 use server::control::MockEngine;
 use server::protocol::Request;
+use server::stems::FakeSeparator;
+use std::sync::Arc;
 
 /// 2 s of 440 Hz mono sine at 44.1 kHz (same pattern as engine's decode test).
 fn write_test_wav(path: &std::path::Path) {
@@ -30,6 +32,7 @@ fn test_app() -> (App, tempfile::TempDir, std::path::PathBuf) {
         Store::open_in_memory().unwrap(),
         Box::new(MockEngine::default()),
         Box::new(MockCapture::default()),
+        Arc::new(FakeSeparator),
     );
     (app, dir, wav)
 }

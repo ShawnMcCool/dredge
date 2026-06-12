@@ -1,14 +1,16 @@
 use crate::capture_control::CaptureControl;
 use crate::control::AudioControl;
 use crate::protocol::{Event, Request, Response};
+use crate::stems::{StemSeparator, STEM_NAMES};
 use engine::pipeline::{EngineCmd, EngineEvent};
 use practice::model::{LoopId, LoopKind, LoopRegion, Plan, PlanId, PlanStep, Rating, Song, SongId};
 use practice::runner::{PlanRunner, RepMode, RepSpec};
 use practice::store::{NewLoop, NewRep, NewSection, NewSong, Store};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::{mpsc, Arc, Mutex};
 
 /// Map any displayable error onto the protocol's String error channel.
 trait ErrStr<T> {
@@ -36,14 +38,23 @@ pub struct App {
     store: Store,
     audio: Box<dyn AudioControl>,
     capture: Box<dyn CaptureControl>,
+    separator: Arc<dyn StemSeparator>,
     captures_dir: PathBuf,
+    stems_dir: PathBuf,
     open_song: Option<OpenSong>,
     active_plan: Option<ActivePlan>,
     last_position: Option<(f64, f64, bool)>, // secs, rate, playing
+    /// Background-job events (stem separation); drained by `tick()`.
+    job_tx: mpsc::Sender<Event>,
+    job_rx: mpsc::Receiver<Event>,
+    /// Song ids with a separation thread in flight.
+    separating: Arc<Mutex<HashSet<i64>>>,
 }
 
 struct OpenSong {
     song: Song,
+    /// True when the engine got a 4-stem StemSet for this song.
+    stems: bool,
 }
 
 struct ActivePlan {
@@ -57,21 +68,33 @@ impl App {
         store: Store,
         audio: Box<dyn AudioControl>,
         capture: Box<dyn CaptureControl>,
+        separator: Arc<dyn StemSeparator>,
     ) -> Self {
+        let (job_tx, job_rx) = mpsc::channel();
         Self {
             store,
             audio,
             capture,
+            separator,
             captures_dir: default_captures_dir(),
+            stems_dir: default_stems_dir(),
             open_song: None,
             active_plan: None,
             last_position: None,
+            job_tx,
+            job_rx,
+            separating: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
     /// Override where grabbed captures are written (tests use a tempdir).
     pub fn set_captures_dir(&mut self, dir: PathBuf) {
         self.captures_dir = dir;
+    }
+
+    /// Override the stems cache root (tests use a tempdir).
+    pub fn set_stems_dir(&mut self, dir: PathBuf) {
+        self.stems_dir = dir;
     }
 
     pub fn dispatch(&mut self, req: Request) -> Response {
@@ -119,6 +142,9 @@ impl App {
             }
             "capture.status" => self.capture_status(),
             "capture.grab" => self.capture_grab(p),
+            "stems.separate" => self.stems_separate(p),
+            "stems.status" => self.stems_status(p),
+            "stems.gains" => self.stems_gains(p),
             _ => Err(format!("unknown command: {cmd}")),
         }
     }
@@ -381,6 +407,10 @@ impl App {
     /// return events for broadcast. Call ~every 50 ms.
     pub fn tick(&mut self) -> Vec<Event> {
         let mut events = Vec::new();
+        // background-job reports (stem separation done/failed)
+        while let Ok(ev) = self.job_rx.try_recv() {
+            events.push(ev);
+        }
         let mut last_pos = None;
         for ev in self.audio.poll_events() {
             match ev {
@@ -466,6 +496,98 @@ impl App {
                 });
             }
         }
+    }
+
+    // --- stems -------------------------------------------------------------
+
+    fn stems_cache_dir(&self, file_hash: &str) -> PathBuf {
+        self.stems_dir.join(file_hash)
+    }
+
+    /// All four stem WAVs present in the song's cache dir?
+    fn stems_cached(dir: &Path) -> bool {
+        STEM_NAMES
+            .iter()
+            .all(|name| dir.join(format!("{name}.wav")).is_file())
+    }
+
+    fn stems_separate(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            song_id: SongId,
+        }
+        let p: P = from_params(p)?;
+        let song = self.song_row(p.song_id)?;
+        let cache = self.stems_cache_dir(&song.file_hash);
+        if Self::stems_cached(&cache) {
+            return Ok(json!({"state": "cached"}));
+        }
+        {
+            let mut running = self.separating.lock().unwrap();
+            if running.contains(&p.song_id.0) {
+                // refuse double-start: the existing job keeps running
+                return Ok(json!({"state": "running"}));
+            }
+            if !self.separator.is_available() {
+                return Err(
+                    "demucs not installed — install with: uv tool install demucs \
+                     (CUDA torch pulls ~2.5 GB)"
+                        .into(),
+                );
+            }
+            running.insert(p.song_id.0);
+        }
+        let separator = self.separator.clone();
+        let tx = self.job_tx.clone();
+        let separating = self.separating.clone();
+        let audio_path = PathBuf::from(&song.path);
+        let song_id = p.song_id;
+        std::thread::spawn(move || {
+            let result = separator.separate(&audio_path, &cache);
+            separating.lock().unwrap().remove(&song_id.0);
+            let data = match result {
+                Ok(_) => json!({"song_id": song_id, "state": "done"}),
+                Err(e) => json!({"song_id": song_id, "state": "failed", "error": e}),
+            };
+            let _ = tx.send(Event {
+                event: "stems_progress".into(),
+                data,
+            });
+        });
+        Ok(json!({"state": "running"}))
+    }
+
+    fn stems_status(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            song_id: SongId,
+        }
+        let p: P = from_params(p)?;
+        let song = self.song_row(p.song_id)?;
+        let state = if self.separating.lock().unwrap().contains(&p.song_id.0) {
+            "running"
+        } else if Self::stems_cached(&self.stems_cache_dir(&song.file_hash)) {
+            "cached"
+        } else {
+            "none"
+        };
+        Ok(json!({"state": state}))
+    }
+
+    fn stems_gains(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            gains: [f32; 4],
+        }
+        let p: P = from_params(p)?;
+        let open = self.open_song.as_ref().ok_or("no song open")?;
+        if !open.stems {
+            return Err("no stems loaded for the open song".into());
+        }
+        for (idx, gain) in p.gains.into_iter().enumerate() {
+            self.audio.send(EngineCmd::SetStemGain { idx, gain });
+        }
+        Ok(Value::Null)
     }
 
     // --- capture -----------------------------------------------------------
@@ -651,15 +773,30 @@ impl App {
         let song = self.song_row(p.song_id)?;
         let buf = engine::decode::decode_file(Path::new(&song.path)).err_str()?;
         let peaks = engine::peaks::load_or_compute(&buf, &song.file_hash).err_str()?;
-        self.audio.load(engine::buffer::StemSet::single(buf));
+        // Cached stems auto-load as a 4-stem set; otherwise the plain mix.
+        let cache = self.stems_cache_dir(&song.file_hash);
+        let stems = if Self::stems_cached(&cache) {
+            let mut bufs = Vec::with_capacity(STEM_NAMES.len());
+            for name in STEM_NAMES {
+                bufs.push(
+                    engine::decode::decode_file(&cache.join(format!("{name}.wav"))).err_str()?,
+                );
+            }
+            self.audio.load(engine::buffer::StemSet::new(bufs));
+            true
+        } else {
+            self.audio.load(engine::buffer::StemSet::single(buf));
+            false
+        };
         let out = json!({
             "song": song,
             "sections": self.store.list_sections(p.song_id).err_str()?,
             "loops": self.store.list_loops(p.song_id).err_str()?,
             "plans": self.store.list_plans(p.song_id).err_str()?,
             "peaks": peaks,
+            "stems": stems,
         });
-        self.open_song = Some(OpenSong { song });
+        self.open_song = Some(OpenSong { song, stems });
         Ok(out)
     }
 
@@ -883,6 +1020,13 @@ fn default_captures_dir() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(std::env::temp_dir)
         .join("music/earworm-captures")
+}
+
+/// `~/.local/share/earworm/stems/<file_hash>/{vocals,drums,bass,other}.wav`
+fn default_stems_dir() -> PathBuf {
+    dirs::data_local_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("earworm/stems")
 }
 
 /// Keep filenames boring: alphanumerics, dash, underscore, dot survive;

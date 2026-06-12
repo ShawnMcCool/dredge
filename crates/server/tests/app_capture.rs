@@ -5,6 +5,8 @@ use server::app::App;
 use server::capture_control::MockCapture;
 use server::control::MockEngine;
 use server::protocol::Request;
+use server::stems::FakeSeparator;
+use std::sync::Arc;
 
 fn req(app: &mut App, cmd: &str, params: Value) -> Value {
     let resp = app.dispatch(Request {
@@ -44,6 +46,7 @@ fn nodes_and_status_roundtrip() {
         Store::open_in_memory().unwrap(),
         Box::new(MockEngine::default()),
         Box::new(mock),
+        Arc::new(FakeSeparator),
     );
 
     let nodes = req(&mut app, "capture.nodes", Value::Null);
@@ -90,6 +93,7 @@ fn grab_writes_wav_and_imports() {
         Store::open_in_memory().unwrap(),
         Box::new(MockEngine::default()),
         Box::new(mock),
+        Arc::new(FakeSeparator),
     );
     app.set_captures_dir(dir.path().to_path_buf());
 
@@ -114,6 +118,7 @@ fn grab_with_no_capture_errors() {
         Store::open_in_memory().unwrap(),
         Box::new(MockEngine::default()),
         Box::new(MockCapture::default()),
+        Arc::new(FakeSeparator),
     );
     let resp = app.dispatch(Request {
         id: 1,

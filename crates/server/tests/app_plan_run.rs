@@ -5,6 +5,7 @@ use server::app::App;
 use server::capture_control::MockCapture;
 use server::control::MockEngine;
 use server::protocol::{Event, Request};
+use server::stems::FakeSeparator;
 use std::sync::{Arc, Mutex};
 
 type SharedMock = Arc<Mutex<MockEngine>>;
@@ -47,6 +48,7 @@ fn plan_app() -> (App, SharedMock, tempfile::TempDir, i64) {
         Store::open(&db).unwrap(),
         Box::new(mock.clone()),
         Box::new(MockCapture::default()),
+        Arc::new(FakeSeparator),
     );
 
     let song = req(&mut app, "song.import", json!({"path": wav}));

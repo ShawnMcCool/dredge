@@ -67,6 +67,7 @@ fn main() {
         store,
         Box::new(engine),
         Box::new(RealCapture::default()),
+        Arc::new(server::stems::DemucsSeparator::default()),
     )));
     let _handle = match serve(app, &socket_path, |_| {}) {
         Ok(h) => h,
