@@ -8,6 +8,11 @@ license.workspace = true
 name = "earworm"
 path = "src/main.rs"
 
+[features]
+# embed the built frontend; `tauri dev` disables this to use the vite dev server
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
