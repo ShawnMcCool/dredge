@@ -6,6 +6,7 @@
   import Loops from "./components/Loops.svelte";
   import PlanBuilder from "./components/PlanBuilder.svelte";
   import PlanRunner from "./components/PlanRunner.svelte";
+  import PrepareModal from "./components/PrepareModal.svelte";
   import Sections from "./components/Sections.svelte";
   import StemMixer from "./components/StemMixer.svelte";
   import Transport from "./components/Transport.svelte";
@@ -80,6 +81,9 @@
     {/if}
   </aside>
 </div>
+
+<!-- portal-at-root: the overlay covers all three columns -->
+<PrepareModal />
 
 <style>
   .shell {

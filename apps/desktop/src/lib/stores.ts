@@ -201,16 +201,56 @@ export const captureNodes = writable<CaptureNode[]>([]);
 export const captureStatus = writable<CaptureStatus>({ running: false });
 /** Mixer state for the open song's stems (sliders × mute × solo). */
 export const stemMix = writable<StemMix>(defaultStemMix());
-/** A separation job is in flight (stems_progress clears it). */
-export const stemsRunning = writable(false);
 export const stemsError = writable<string | null>(null);
-/** An analysis job is in flight (analysis_progress clears it). */
-export const analysisRunning = writable(false);
 export const analysisError = writable<string | null>(null);
 /** Fresh suggestions for the Sections lane; consumed (set null) once shown. */
 export const suggestedSections = writable<AnalysisSection[] | null>(null);
 /** Loop edges snap to downbeats while on (only meaningful with analysis). */
 export const gridSnap = writable(true);
+
+// --- prepare flow -----------------------------------------------------------
+
+export type PrepareStepState = "pending" | "running" | "done" | "failed" | "cached";
+
+export interface PrepareState {
+  open: boolean;
+  steps: { analysis: PrepareStepState; stems: PrepareStepState };
+  errors: { analysis?: string; stems?: string };
+}
+
+/** Progress-modal state machine for `prepare()`; null when idle. */
+export const prepareState = writable<PrepareState | null>(null);
+
+type PrepareStep = "analysis" | "stems";
+type ProgressReport = { song_id: number; state: string; error?: string };
+
+/** `prepare()` awaits these; the matching `*_progress` event resolves one and
+ *  is then handled by prepare's own refresh instead of the default branch. */
+const prepareWaiters: Partial<Record<PrepareStep, (r: ProgressReport) => void>> = {};
+let prepareSongId: number | null = null;
+
+function setPrepareStep(step: PrepareStep, state: PrepareStepState, error?: string): void {
+  prepareState.update((s) =>
+    s
+      ? {
+          ...s,
+          steps: { ...s.steps, [step]: state },
+          errors: error ? { ...s.errors, [step]: error } : s.errors,
+        }
+      : s,
+  );
+}
+
+/** A `*_progress` event for the song being prepared — claims the waiter. */
+function takePrepareWaiter(
+  step: PrepareStep,
+  data: ProgressReport,
+): ((r: ProgressReport) => void) | null {
+  const waiter = prepareWaiters[step];
+  if (!waiter || data.song_id !== prepareSongId) return null;
+  delete prepareWaiters[step];
+  return waiter;
+}
 
 /** Loops that due.list contained when the plan started: their first
  *  end-of-step rating is the retention probe (`is_retest: true`). */
@@ -514,38 +554,74 @@ export const actions = {
     await this.applyStemMix();
   },
 
-  /** Kick off background separation; stems_progress reports the outcome. */
-  async separateStems(): Promise<void> {
+  // --- prepare (analysis → stems) ---
+
+  /** One button: structure/beat analysis, then stem separation —
+   *  sequentially, never in parallel (both are GPU-heavy; SongFormer alone
+   *  peaks ~8 GiB of VRAM). The modal mirrors prepareState; each step is
+   *  resolved by its `*_progress` event or a `cached` short-circuit, and a
+   *  failure never blocks the other step. */
+  async prepare(): Promise<void> {
     const open = get(openSong);
-    if (!open) return;
-    stemsError.set(null);
-    try {
-      const out = await cmd<{ state: string }>("stems.separate", { song_id: open.song.id });
-      if (out.state === "running") stemsRunning.set(true);
-      else if (out.state === "cached") await this.openSong(open.song.id);
-    } catch (e) {
-      // shown verbatim: the "not installed" message carries the install hint
-      stemsError.set(e instanceof Error ? e.message : String(e));
+    if (!open || get(prepareState)) return;
+    const id = open.song.id;
+    prepareSongId = id;
+    prepareState.set({
+      open: true,
+      steps: { analysis: "pending", stems: "pending" },
+      errors: {},
+    });
+
+    const run = async (step: "analysis" | "stems", command: string): Promise<void> => {
+      setPrepareStep(step, "running");
+      try {
+        // register before dispatch — the terminal event must not slip past
+        const report = new Promise<{ state: string; error?: string }>((resolve) => {
+          prepareWaiters[step] = resolve;
+        });
+        const out = await cmd<{ state: string }>(command, { song_id: id });
+        if (out.state === "cached") {
+          delete prepareWaiters[step];
+          setPrepareStep(step, "cached");
+          return;
+        }
+        const r = await report;
+        if (r.state === "done") setPrepareStep(step, "done");
+        else setPrepareStep(step, "failed", r.error ?? `${step} failed`);
+      } catch (e) {
+        // shown verbatim: install/setup hints ride on the error message
+        delete prepareWaiters[step];
+        setPrepareStep(step, "failed", e instanceof Error ? e.message : String(e));
+      }
+    };
+
+    await run("analysis", "analysis.run");
+    await run("stems", "stems.separate");
+    prepareSongId = null;
+
+    // refresh exactly as the scattered flows did: re-open auto-loads cached
+    // stems + analysis, loadAnalysis surfaces the section suggestions
+    if (get(openSong)?.song.id === id) {
+      await this.openSong(id);
+      const s = get(prepareState);
+      if (s && (s.steps.analysis === "done" || s.steps.analysis === "cached")) {
+        await this.loadAnalysis(id);
+      }
     }
+    const s = get(prepareState);
+    const ok = (st: PrepareStepState) => st === "done" || st === "cached";
+    if (s && ok(s.steps.analysis) && ok(s.steps.stems)) {
+      // all green: linger just long enough to read the two ✓s
+      setTimeout(() => prepareState.set(null), 1500);
+    }
+    // failures leave the modal open with its close button
+  },
+
+  closePrepare(): void {
+    prepareState.set(null);
   },
 
   // --- analysis ---
-
-  /** Kick off background analysis; analysis_progress reports the outcome.
-   *  Cached results surface immediately as section suggestions. */
-  async runAnalysis(): Promise<void> {
-    const open = get(openSong);
-    if (!open) return;
-    analysisError.set(null);
-    try {
-      const out = await cmd<{ state: string }>("analysis.run", { song_id: open.song.id });
-      if (out.state === "running") analysisRunning.set(true);
-      else if (out.state === "cached") await this.loadAnalysis(open.song.id);
-    } catch (e) {
-      // shown verbatim: the "script not found" message carries the fix
-      analysisError.set(e instanceof Error ? e.message : String(e));
-    }
-  },
 
   /** Pull the cached analysis into the open song and surface suggestions. */
   async loadAnalysis(songId: number): Promise<void> {
@@ -626,7 +702,12 @@ export async function initEvents(): Promise<() => void> {
         break;
       case "stems_progress": {
         const data = ev.data as { song_id: number; state: string; error?: string };
-        stemsRunning.set(false);
+        const waiter = takePrepareWaiter("stems", data);
+        if (waiter) {
+          // prepare() owns the modal update and the end-of-flow refresh
+          waiter(data);
+          break;
+        }
         if (data.state === "done") {
           // re-opening the song auto-loads the freshly cached stems
           if (get(openSong)?.song.id === data.song_id) void actions.openSong(data.song_id);
@@ -637,7 +718,11 @@ export async function initEvents(): Promise<() => void> {
       }
       case "analysis_progress": {
         const data = ev.data as { song_id: number; state: string; error?: string };
-        analysisRunning.set(false);
+        const waiter = takePrepareWaiter("analysis", data);
+        if (waiter) {
+          waiter(data);
+          break;
+        }
         if (data.state === "done") {
           if (get(openSong)?.song.id === data.song_id) void actions.loadAnalysis(data.song_id);
         } else if (data.state === "failed") {
@@ -645,6 +730,10 @@ export async function initEvents(): Promise<() => void> {
         }
         break;
       }
+      case "library_changed":
+        // socket-driven imports (incl. capture.grab) land in the sidebar
+        void actions.refreshSongs();
+        break;
     }
   });
 }

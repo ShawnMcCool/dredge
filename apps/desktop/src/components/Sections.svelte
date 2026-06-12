@@ -2,7 +2,6 @@
   import {
     actions,
     analysisError,
-    analysisRunning,
     openSong,
     selection,
     suggestedSections,
@@ -132,11 +131,6 @@
   </ul>
   <div class="bar">
     <Button onclick={add}>+ add</Button>
-    {#if $analysisRunning}
-      <span class="status mono">analyzing…</span>
-    {:else}
-      <Button onclick={() => actions.runAnalysis()}>Analyze</Button>
-    {/if}
     {#if hasSaved && hasSuggested}
       <Button onclick={replaceWithSuggestions}>replace with suggestions</Button>
     {/if}
@@ -173,12 +167,6 @@
   .row.suggested input {
     color: var(--muted);
     border-color: var(--accent-dim);
-  }
-
-  .status {
-    font-size: 11px;
-    color: var(--muted);
-    align-self: center;
   }
 
   .error {

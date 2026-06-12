@@ -1,16 +1,9 @@
 <script lang="ts">
   // Stem mixer strip: four channels (vocals/drums/bass/other) with level,
   // mute, solo — all changes collapse into one stems.gains call. When the
-  // song has no cached stems yet, a single quiet "Separate stems" button.
-  import {
-    actions,
-    BASS_STEM,
-    openSong,
-    STEM_LABELS,
-    stemMix,
-    stemsError,
-    stemsRunning,
-  } from "../lib/stores";
+  // song has no cached stems yet, a quiet pointer to PREPARE (the modal owns
+  // separation progress now).
+  import { actions, BASS_STEM, openSong, STEM_LABELS, stemMix, stemsError } from "../lib/stores";
   import Button from "../lib/ui/Button.svelte";
   import Fader from "../lib/ui/Fader.svelte";
   import Toolbar from "../lib/ui/Toolbar.svelte";
@@ -55,10 +48,8 @@
             </span>
           </div>
         {/each}
-      {:else if $stemsRunning}
-        <span class="status mono">separating stems…</span>
       {:else}
-        <Button variant="chip" onclick={() => actions.separateStems()}>Separate stems</Button>
+        <span class="status mono">no stems yet — PREPARE (a)</span>
       {/if}
       {#if $stemsError}
         <span class="error">{$stemsError}</span>

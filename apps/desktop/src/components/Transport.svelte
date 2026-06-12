@@ -8,6 +8,9 @@
   const RATE_PRESETS = [0.5, 0.7, 0.85, 1.0];
   const SEMITONE_CHIPS = [-2, -1, 0, 1, 2];
 
+  // both jobs cached → quiet RE-PREPARE; anything missing → accent PREPARE
+  let prepared = $derived($openSong !== null && $openSong.stems && $openSong.analysis !== null);
+
   function fmt(secs: number): string {
     const s = Math.max(secs, 0);
     const m = Math.floor(s / 60);
@@ -94,6 +97,15 @@
         BASS FOCUS
       </Button>
       <Button variant="toggle" active={$muted} onclick={() => actions.mute(!$muted)}>MUTE</Button>
+      <Button
+        variant="toggle"
+        accent={!prepared}
+        disabled={!$openSong}
+        title="analysis + stems (a)"
+        onclick={() => void actions.prepare()}
+      >
+        {prepared ? "RE-PREPARE" : "PREPARE"}
+      </Button>
     </Group>
   </Toolbar>
 </div>

@@ -21,10 +21,10 @@
 
 ### Task 3: Prepare flow (stores + modal component + button)
 
-- [ ] `stores.ts`: `prepare()` action + state machine store `prepareState: { open, steps: { analysis: "pending|running|done|failed|cached", stems: ... }, errors: {} } | null`. Sequence: `analysis.run` → wait for `analysis_progress` terminal (or `{state:"cached"}` response short-circuits) → `stems.separate` → wait for `stems_progress` terminal → on any terminal pair: refresh via `openSong(current)` (loads stems + analysis + triggers section suggestions exactly as today). Auto-close modal 1.5 s after all-success; failures leave it open with a close Button.
-- [ ] `components/PrepareModal.svelte`: Modal with two rows (step name, status glyph: `·` pending / spinner `◌` animated / `✓` done-or-cached / `✗` failed + muted error text) and the overall bar (simple div fill 0/50/100%, accent).
-- [ ] **PREPARE Button** in the transport toolbar's last Group (accent when nothing cached yet; label `RE-PREPARE`, non-accent, when both cached — state from `openSong` response fields `stems`/`analysis`). Keybinding **`a`** triggers it (help footer updated). Remove the "Separate stems" button from StemMixer and the "Analyze" button from Sections (the suggestions flow stays, fed by the analysis-done refresh).
-- [ ] `pnpm build && pnpm vitest run` clean. Commit: `feat(desktop): one-button prepare with progress modal`
+- [x] `stores.ts`: `prepare()` action + state machine store `prepareState: { open, steps: { analysis: "pending|running|done|failed|cached", stems: ... }, errors: {} } | null`. Sequence: `analysis.run` → wait for `analysis_progress` terminal (or `{state:"cached"}` response short-circuits) → `stems.separate` → wait for `stems_progress` terminal → on any terminal pair: refresh via `openSong(current)` (loads stems + analysis + triggers section suggestions exactly as today). Auto-close modal 1.5 s after all-success; failures leave it open with a close Button.
+- [x] `components/PrepareModal.svelte`: Modal with two rows (step name, status glyph: `·` pending / spinner `◌` animated / `✓` done-or-cached / `✗` failed + muted error text) and the overall bar (simple div fill 0/50/100%, accent).
+- [x] **PREPARE Button** in the transport toolbar's last Group (accent when nothing cached yet; label `RE-PREPARE`, non-accent, when both cached — state from `openSong` response fields `stems`/`analysis`). Keybinding **`a`** triggers it (help footer updated). Remove the "Separate stems" button from StemMixer and the "Analyze" button from Sections (the suggestions flow stays, fed by the analysis-done refresh).
+- [x] `pnpm build && pnpm vitest run` clean. Commit: `feat(desktop): one-button prepare with progress modal`
 
 ### Task 4: Visual verification
 

@@ -16,7 +16,7 @@ import {
 } from "./stores";
 
 export const KEY_HELP =
-  "space play/pause · r restart loop · [ ] rate ∓5% · l loop selection · p quick practice · b bass focus · m mute bass stem · g grid snap · esc clear · 1/2/3 rate miss/shaky/solid · ctrl ± 0 zoom";
+  "space play/pause · a prepare · r restart loop · [ ] rate ∓5% · l loop selection · p quick practice · b bass focus · m mute bass stem · g grid snap · esc clear · 1/2/3 rate miss/shaky/solid · ctrl ± 0 zoom";
 
 function isTyping(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -93,6 +93,10 @@ async function handle(e: KeyboardEvent): Promise<void> {
     case "Escape":
       if (get(quickPromptVisible)) await actions.quickDiscard();
       else selection.set(null);
+      break;
+    case "a":
+      // one button: analysis then stems, with the progress modal
+      if (get(openSong)) await actions.prepare();
       break;
     case "b":
       await actions.bassFocus(!get(bassFocusOn));
