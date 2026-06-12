@@ -275,6 +275,14 @@ fn run_capture(
     Ok(())
 }
 
+/// Sample rate from a WAV file's header — cheap (no decode).
+pub fn wav_header_rate(path: &std::path::Path) -> crate::error::Result<u32> {
+    Ok(hound::WavReader::open(path)
+        .map_err(|e| std::io::Error::other(e.to_string()))?
+        .spec()
+        .sample_rate)
+}
+
 /// Write interleaved stereo f32 to a 16-bit WAV at 48 kHz. Returns Ok(()).
 pub fn write_wav(path: &std::path::Path, interleaved: &[f32]) -> crate::error::Result<()> {
     if let Some(dir) = path.parent() {

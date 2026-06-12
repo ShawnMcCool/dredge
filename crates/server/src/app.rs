@@ -142,9 +142,20 @@ fn open_decode(song: &Song, stems_cache: &Path) -> Result<OpenDecoded, String> {
     })
 }
 
-/// Decode one cached stem WAV for the open path.
+/// Decode one cached stem WAV for the open path. Legacy caches (written at
+/// 44.1 kHz before stems were normalized at separation time) are rewritten
+/// at 48 kHz from the buffer just decoded, so the *next* open of this song
+/// skips the sinc resample entirely. The rewrite is best-effort — this open
+/// already has its audio either way.
 fn open_stem(path: &Path) -> Result<engine::buffer::SongBuffer, String> {
-    engine::decode::decode_file(path).err_str()
+    let header_rate = engine::capture::wav_header_rate(path).err_str()?;
+    let buf = engine::decode::decode_file(path).err_str()?;
+    if header_rate != engine::buffer::SAMPLE_RATE {
+        if let Err(e) = crate::stems::rewrite_wav_48k(path, &buf.data) {
+            eprintln!("earworm: stem cache upgrade failed for {}: {e}", path.display());
+        }
+    }
+    Ok(buf)
 }
 
 /// Lock-free product of `song.import`'s slow phase.

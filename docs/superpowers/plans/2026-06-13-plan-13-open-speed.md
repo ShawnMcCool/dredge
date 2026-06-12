@@ -15,10 +15,10 @@
 
 ### Task 2: 48 kHz stem caches
 
-- [ ] `stems.rs`: after demucs (and in `FakeSeparator`), post-process each produced WAV: if its sample rate ≠ 48000, decode via `engine::decode::decode_file` (which resamples to 48k) and rewrite with `engine::capture::write_wav` (48k). One sinc pass at separation time, never again at open.
-- [ ] Lazy upgrade for existing caches: in the open slow-phase, after decoding a stem, if the source WAV header wasn't 48k, rewrite it (same helpers) so the *next* open is free. Cheap guard: read the header rate (hound `WavReader::spec()`), don't re-decode twice.
-- [ ] Tests: FakeSeparator output is 48k (assert header); a seeded 44.1k cache WAV gets rewritten to 48k after one open (app_stems-style test).
-- [ ] Commit: `perf(server): stem caches normalized to 48k at separation; lazy upgrade on open`
+- [x] `stems.rs`: after demucs (and in `FakeSeparator`), post-process each produced WAV: if its sample rate ≠ 48000, decode via `engine::decode::decode_file` (which resamples to 48k) and rewrite with `engine::capture::write_wav` (48k). One sinc pass at separation time, never again at open.
+- [x] Lazy upgrade for existing caches: in the open slow-phase, after decoding a stem, if the source WAV header wasn't 48k, rewrite it (same helpers) so the *next* open is free. Cheap guard: read the header rate (hound `WavReader::spec()`), don't re-decode twice.
+- [x] Tests: FakeSeparator output is 48k (assert header); a seeded 44.1k cache WAV gets rewritten to 48k after one open (app_stems-style test).
+- [x] Commit: `perf(server): stem caches normalized to 48k at separation; lazy upgrade on open`
 
 ### Task 3: Loading indication
 

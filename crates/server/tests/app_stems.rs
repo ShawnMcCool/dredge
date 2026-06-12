@@ -150,6 +150,49 @@ fn open_autoloads_cached_stems() {
     assert_eq!(mock.loaded.as_ref().unwrap().stems.len(), 4);
 }
 
+/// Seed a pre-plan-13 stem cache entry: 1 s of stereo sine at 44.1 kHz.
+fn write_44k_stem(path: &std::path::Path) {
+    let spec = hound::WavSpec {
+        channels: 2,
+        sample_rate: 44_100,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut w = hound::WavWriter::create(path, spec).unwrap();
+    for i in 0..44_100 {
+        let v = (i as f32 / 44_100.0 * 440.0 * std::f32::consts::TAU).sin() * 0.5;
+        let s = (v * i16::MAX as f32) as i16;
+        w.write_sample(s).unwrap();
+        w.write_sample(s).unwrap();
+    }
+    w.finalize().unwrap();
+}
+
+#[test]
+fn open_lazy_upgrades_legacy_44k_cache_to_48k() {
+    let mut ctx = setup(Arc::new(FakeSeparator));
+
+    // seed a legacy 44.1 kHz cache by hand (pre-normalization separations)
+    let cache = ctx.stems_dir.join(&ctx.file_hash);
+    std::fs::create_dir_all(&cache).unwrap();
+    for name in STEM_NAMES {
+        write_44k_stem(&cache.join(format!("{name}.wav")));
+    }
+
+    // one open: stems load fine AND every cache WAV is rewritten at 48 kHz
+    let opened = req(&mut ctx.app, "song.open", json!({"song_id": ctx.song_id}));
+    assert_eq!(opened["stems"], true);
+    assert_eq!(ctx.mock.lock().unwrap().loaded.as_ref().unwrap().stems.len(), 4);
+    for name in STEM_NAMES {
+        let path = cache.join(format!("{name}.wav"));
+        assert_eq!(
+            engine::capture::wav_header_rate(&path).unwrap(),
+            48_000,
+            "{name}.wav not upgraded"
+        );
+    }
+}
+
 #[test]
 fn gains_route_to_engine() {
     let mut ctx = setup(Arc::new(FakeSeparator));
