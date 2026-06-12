@@ -4,3 +4,20 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
+thiserror.workspace = true
+symphonia = { version = "0.5", features = ["mp3", "flac", "vorbis", "wav", "pcm", "isomp4", "aac"] }
+rubato = "0.16"
+rtrb = "0.3"
+arc-swap = "1"
+pipewire = "0.10"
+libspa = "0.10"
+blake3 = "1"
+serde.workspace = true
+serde_json.workspace = true
+dirs = "6"
+
+[dev-dependencies]
+hound = "3"
+
+[build-dependencies]
+pkg-config = "0.3"

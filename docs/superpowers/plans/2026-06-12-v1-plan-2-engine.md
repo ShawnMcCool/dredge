@@ -21,7 +21,7 @@
 - Create: `crates/engine/build.rs`, `crates/engine/src/ffi.rs`
 - Modify: `crates/engine/src/lib.rs`
 
-- [ ] **Step 1: Dependencies and build script**
+- [x] **Step 1: Dependencies and build script**
 
 `crates/engine/Cargo.toml`:
 ```toml
@@ -62,7 +62,7 @@ fn main() {
 }
 ```
 
-- [ ] **Step 2: Write the FFI module with a link-proof test**
+- [x] **Step 2: Write the FFI module with a link-proof test**
 
 `crates/engine/src/ffi.rs` — hand-written bindings for the small C API in `/usr/include/rubberband/rubberband-c.h`. **Verify every signature and constant against that header before finishing this task** (read the header; do not trust memory):
 
@@ -131,12 +131,12 @@ mod tests {
 
 `lib.rs`: `pub mod ffi;` (keep the existing doc comment).
 
-- [ ] **Step 3: Run test**
+- [x] **Step 3: Run test**
 
 Run: `cargo test -p engine`
 Expected: `can_create_and_destroy_r3_realtime_stretcher` PASS (proves linkage). If constants disagree with the header, fix the constants, not the header.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A && git commit -m "feat(engine): rubberband 4 FFI binding (R3 realtime), pkg-config link"
