@@ -44,7 +44,8 @@ fn seeded_store() -> (Store, i64, LoopId) {
 }
 
 fn fmt(d: time::Date) -> String {
-    d.format(format_description!("[year]-[month]-[day]")).unwrap()
+    d.format(format_description!("[year]-[month]-[day]"))
+        .unwrap()
 }
 
 #[test]

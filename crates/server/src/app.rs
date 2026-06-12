@@ -238,8 +238,8 @@ impl App {
             }
         }
         let p: P = from_params(p)?;
-        let scale = 2f64.powf((p.semitones + p.cents / 100.0) / 12.0)
-            * if p.octave_up { 2.0 } else { 1.0 };
+        let scale =
+            2f64.powf((p.semitones + p.cents / 100.0) / 12.0) * if p.octave_up { 2.0 } else { 1.0 };
         self.send_ok(EngineCmd::SetPitchScale(scale))
     }
 

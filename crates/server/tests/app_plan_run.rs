@@ -131,11 +131,7 @@ fn wraps_drive_progression_through_modes() {
     assert_eq!(rep_changes[2]["step_idx"], 2);
 
     // wrap 4: silent half → engine got Mute(true)
-    assert!(mock
-        .lock()
-        .unwrap()
-        .sent
-        .contains(&EngineCmd::Mute(true)));
+    assert!(mock.lock().unwrap().sent.contains(&EngineCmd::Mute(true)));
 
     // wrap 5: plan finished → Pause
     let last_tick = ticks.last().unwrap();
@@ -160,11 +156,7 @@ fn skip_step_jumps() {
     req(&mut app, "plan.start", json!({"plan_id": plan_id}));
     let skipped = req(&mut app, "plan.skip_step", Value::Null);
     assert_eq!(skipped["step_idx"], 1);
-    assert!(mock
-        .lock()
-        .unwrap()
-        .sent
-        .contains(&EngineCmd::SetRate(0.8)));
+    assert!(mock.lock().unwrap().sent.contains(&EngineCmd::SetRate(0.8)));
 }
 
 #[test]

@@ -419,7 +419,7 @@ git add -A && git commit -m "feat(server): json-lines unix socket with event bro
 **Files:**
 - Create: `crates/server/src/bin/earwormd.rs`
 
-- [ ] **Step 1: Implement**
+- [x] **Step 1: Implement**
 
 ```rust
 // earwormd — headless earworm: real engine + control socket.
@@ -428,7 +428,7 @@ git add -A && git commit -m "feat(server): json-lines unix socket with event bro
 ```
 Parse args by hand (no clap). Create data dir, `Store::open`, `engine::Engine::start()`, `App::new`, `serve`, then park the main thread (`loop { thread::sleep(1s) }`; Ctrl-C kills it, ServerHandle Drop cleanup is best-effort).
 
-- [ ] **Step 2: Smoke test**
+- [x] **Step 2: Smoke test**
 
 ```bash
 cargo build -p server --release
@@ -439,7 +439,7 @@ kill %1
 ```
 Expected: `{"id":1,"ok":true,"data":[]}`. (If `nc` lacks `-q`, use a tiny python one-liner.) Requires PipeWire — present on this machine.
 
-- [ ] **Step 3: Full gate + commit**
+- [x] **Step 3: Full gate + commit**
 
 Run: `cargo test && cargo clippy --workspace -- -D warnings && cargo fmt`
 

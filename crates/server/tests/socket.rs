@@ -9,8 +9,15 @@ use std::os::unix::net::UnixStream;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-fn start_server(name: &str) -> (server::socket::ServerHandle, Arc<Mutex<MockEngine>>, std::path::PathBuf) {
-    let path = std::env::temp_dir().join(format!("earworm-test-{}-{name}.sock", std::process::id()));
+fn start_server(
+    name: &str,
+) -> (
+    server::socket::ServerHandle,
+    Arc<Mutex<MockEngine>>,
+    std::path::PathBuf,
+) {
+    let path =
+        std::env::temp_dir().join(format!("earworm-test-{}-{name}.sock", std::process::id()));
     let mock = Arc::new(Mutex::new(MockEngine::default()));
     let app = App::new(Store::open_in_memory().unwrap(), Box::new(mock.clone()));
     let handle = serve(Arc::new(Mutex::new(app)), &path).unwrap();
@@ -27,7 +34,9 @@ fn send_line(stream: &mut UnixStream, line: &str) {
 fn request_response_roundtrip() {
     let (_handle, _mock, path) = start_server("roundtrip");
     let mut stream = UnixStream::connect(&path).unwrap();
-    stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
     send_line(&mut stream, r#"{"id":7,"cmd":"song.list"}"#);
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     let mut line = String::new();
@@ -42,7 +51,9 @@ fn request_response_roundtrip() {
 fn subscribe_receives_events() {
     let (_handle, mock, path) = start_server("subscribe");
     let mut stream = UnixStream::connect(&path).unwrap();
-    stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
     let mut reader = BufReader::new(stream.try_clone().unwrap());
 
     send_line(&mut stream, r#"{"id":1,"cmd":"subscribe"}"#);
@@ -66,7 +77,9 @@ fn subscribe_receives_events() {
 fn bad_json_gets_error_response() {
     let (_handle, _mock, path) = start_server("badjson");
     let mut stream = UnixStream::connect(&path).unwrap();
-    stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
     send_line(&mut stream, "not json");
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     let mut line = String::new();
