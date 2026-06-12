@@ -340,7 +340,7 @@ git add -A && git commit -m "feat(engine): waveform peaks with disk cache"
 - Create: `crates/engine/src/looper.rs`
 - Modify: `crates/engine/src/lib.rs` (add `pub mod looper;`)
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `crates/engine/src/looper.rs`:
 ```rust
@@ -487,7 +487,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run (fail), implement**
+- [x] **Step 2: Run (fail), implement**
 
 Implementation core of `read` (per-frame; clarity over micro-optimization — at 48 kHz this is nowhere near a bottleneck):
 
@@ -557,7 +557,7 @@ Implementation core of `read` (per-frame; clarity over micro-optimization — at
 
 Note the period check: positions emitted per cycle are `start..fade_start` then `xfade` blended frames = `end - start` exactly.
 
-- [ ] **Step 3: Run tests, verify pass; commit**
+- [x] **Step 3: Run tests, verify pass; commit**
 
 Run: `cargo test -p engine looper` — 5 PASS.
 
