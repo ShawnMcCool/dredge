@@ -16,8 +16,8 @@
 
 ### Task 1: Fader primitive + math tests
 
-- [ ] `lib/ui/Fader.svelte` per spec above. Extract the pure value math to `lib/ui/fader-math.ts`: `posToValue(pos01, min, max, step)` and `valueToPos01(v, min, max)` with clamping/step-rounding — vitest both (5+ cases incl. step rounding at bounds, min==max guard).
-- [ ] `pnpm vitest run && pnpm build` clean. Commit: `feat(desktop): custom Fader primitive (webkit-proof slider)`
+- [x] `lib/ui/Fader.svelte` per spec above. Extract the pure value math to `lib/ui/fader-math.ts`: `posToValue(pos01, min, max, step)` and `valueToPos01(v, min, max)` with clamping/step-rounding — vitest both (5+ cases incl. step rounding at bounds, min==max guard).
+- [x] `pnpm vitest run && pnpm build` clean. Commit: `feat(desktop): custom Fader primitive (webkit-proof slider)`
 
 ### Task 2: Adopt everywhere
 
