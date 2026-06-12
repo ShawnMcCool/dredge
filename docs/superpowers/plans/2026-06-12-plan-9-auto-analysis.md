@@ -22,10 +22,11 @@ Rust side mirrors the stems pattern exactly: `Analyzer` trait (Real = subprocess
 
 **Files:** Create `scripts/analyze` (extensionless, executable) + `scripts/analyze_impl.py`.
 
-- [ ] `scripts/analyze` = bash bootstrap: ensures `~/.local/share/earworm/analyze-venv` exists (`uv venv --python 3.12` + `uv pip install --python ...` of the beat_this dep set), then `exec`s the venv python on `analyze_impl.py "$@"`. Idempotent, quiet when venv is ready; all diagnostics to **stderr** (stdout is the JSON contract).
-- [ ] `analyze_impl.py`: args `<audio> [--no-sections]`. Runs beat_this → beats/downbeats; bpm = median inter-beat 60/Δ. Sections v1 = novelty: librosa CQT-chroma + MFCC stacked self-similarity, `librosa.segment` novelty peaks (or `librosa.onset` on the SSM diagonal — implementer's judgment), boundaries snapped to nearest downbeat, merged below 4 bars, labeled `A B C ...` (repeating segments may share a label via simple chroma-mean clustering — best effort, don't gold-plate). Output the JSON contract; `engine` field reports what produced sections.
-- [ ] Verify live on `/home/shawn/downloads/Deftones - Kimdracula (Bass Only).mp3`: sane bpm, downbeats ≈ every 4 beats, ≥3 sections with boundaries on downbeats. Print the JSON to the report.
-- [ ] Commit: `feat(analyze): wrapper script — beat grid + novelty sections behind a JSON contract`
+- [x] `scripts/analyze` = bash bootstrap: ensures `~/.local/share/earworm/analyze-venv` exists (`uv venv --python 3.12` + `uv pip install --python ...` of the beat_this dep set), then `exec`s the venv python on `analyze_impl.py "$@"`. Idempotent, quiet when venv is ready; all diagnostics to **stderr** (stdout is the JSON contract).
+- [x] `analyze_impl.py`: args `<audio> [--no-sections]`. Runs beat_this → beats/downbeats; bpm = median inter-beat 60/Δ. Sections v1 = novelty: librosa CQT-chroma + MFCC stacked self-similarity, `librosa.segment` novelty peaks (or `librosa.onset` on the SSM diagonal — implementer's judgment), boundaries snapped to nearest downbeat, merged below 4 bars, labeled `A B C ...` (repeating segments may share a label via simple chroma-mean clustering — best effort, don't gold-plate). Output the JSON contract; `engine` field reports what produced sections.
+- [x] Verify live on `/home/shawn/downloads/Deftones - Kimdracula (Bass Only).mp3`: sane bpm, downbeats ≈ every 4 beats, ≥3 sections with boundaries on downbeats. Print the JSON to the report.
+  - Verified: bpm 157.89, 408 beats / 130 downbeats (median bar 1.54 s = 4 beats), 13 sections, all boundaries on downbeats. Cold bootstrap (venv + torch download) works; warm run ≈ 3.5 s.
+- [x] Commit: `feat(analyze): wrapper script — beat grid + novelty sections behind a JSON contract`
 
 ### Task 2: SongFormer attempt (time-boxed)
 

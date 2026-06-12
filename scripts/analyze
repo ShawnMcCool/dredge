@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# earworm audio analysis wrapper.
+#
+# Bootstraps its own uv venv on first run (~/.local/share/earworm/analyze-venv,
+# override with $EARWORM_ANALYZE_VENV), then execs analyze_impl.py inside it.
+#
+# Contract: stdout carries EXACTLY ONE JSON object (the analysis result);
+# every diagnostic — including bootstrap output — goes to stderr.
+set -euo pipefail
+
+VENV="${EARWORM_ANALYZE_VENV:-$HOME/.local/share/earworm/analyze-venv}"
+PY="$VENV/bin/python"
+HERE="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+
+if [ ! -x "$PY" ] || ! "$PY" -c "import beat_this" >/dev/null 2>&1; then
+  echo "earworm-analyze: bootstrapping venv at $VENV (first run — downloads torch, may take minutes)" >&2
+  uv venv --python 3.12 "$VENV" 1>&2
+  uv pip install --python "$PY" \
+    "beat_this @ git+https://github.com/CPJKU/beat_this" \
+    torch soundfile librosa einops rotary-embedding-torch 1>&2
+  echo "earworm-analyze: venv ready" >&2
+fi
+
+exec "$PY" "$HERE/analyze_impl.py" "$@"
