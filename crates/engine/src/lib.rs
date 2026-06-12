@@ -1,6 +1,7 @@
 //! Audio engine: decode, stretch/pitch, sample-accurate looping (stub).
 
 pub mod buffer;
+pub mod capture;
 pub mod decode;
 pub mod engine;
 pub mod error;

@@ -130,7 +130,7 @@ git add -A && git commit -m "feat(engine): rolling capture ring buffer"
 PipeWire-coupled — no unit tests; verified by Task 6's live smoke. Keep all
 PipeWire code in this module.
 
-- [ ] **Step 1: Implement discovery**
+- [x] **Step 1: Implement discovery**
 
 ```rust
 #[derive(Debug, Clone, serde::Serialize, PartialEq)]
@@ -148,7 +148,7 @@ pub fn list_output_streams() -> crate::error::Result<Vec<CaptureNode>> { ... }
 
 Implementation: mainloop + context + core, registry listener `global` callback; filter `props["media.class"] == "Stream/Output/Audio"`; collect (id, application.name, media.name) into an `Rc<RefCell<Vec<_>>>`; quit the loop via a 300 ms timer source; join and return. (Same MainLoopRc/ContextRc API family as `output.rs` — follow that module's idioms for 0.10.)
 
-- [ ] **Step 2: Implement capture session**
+- [x] **Step 2: Implement capture session**
 
 ```rust
 pub struct CaptureSession {
@@ -172,7 +172,7 @@ Stream details: capture stream, `target.object` = node id (as string prop, `TARG
 
 If targeting a Stream/Output/Audio node by `target.object` fails to negotiate on this PipeWire version (it links to the stream's monitor implicitly; behavior verified in Task 6), the documented fallback is capturing the node's peer **sink monitor** filtered to that stream — but try direct stream targeting first; `pw-record --target <id>` does exactly this and works on PipeWire 1.6.
 
-- [ ] **Step 3: WAV snapshot helper**
+- [x] **Step 3: WAV snapshot helper**
 
 ```rust
 /// Write interleaved stereo f32 to a 16-bit WAV at 48 kHz. Returns the path.
@@ -180,7 +180,7 @@ pub fn write_wav(path: &std::path::Path, interleaved: &[f32]) -> crate::error::R
 ```
 (hound, i16 conversion with clamp; create parent dirs.)
 
-- [ ] **Step 4: Compile gate + commit**
+- [x] **Step 4: Compile gate + commit**
 
 Run: `cargo build -p engine && cargo clippy -p engine -- -D warnings`
 

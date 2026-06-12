@@ -15,9 +15,9 @@ blake3 = "1"
 serde.workspace = true
 serde_json.workspace = true
 dirs = "6"
+hound = "3"
 
 [dev-dependencies]
-hound = "3"
 
 [build-dependencies]
 pkg-config = "0.3"
