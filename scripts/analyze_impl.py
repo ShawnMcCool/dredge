@@ -14,12 +14,41 @@ still ships the beat grid (sections: [], engine: "beat_this").
 
 import argparse
 import json
+import os
 import string
+import subprocess
 import sys
 
 
 def log(*args):
     print("earworm-analyze:", *args, file=sys.stderr, flush=True)
+
+
+def songformer_python():
+    """Python of the optional SongFormer venv, or None when not installed."""
+    venv = os.environ.get(
+        "EARWORM_SONGFORMER_VENV",
+        os.path.expanduser("~/.local/share/earworm/songformer-venv"),
+    )
+    py = os.path.join(venv, "bin", "python")
+    return py if os.access(py, os.X_OK) else None
+
+
+def songformer_sections(audio_path, py):
+    """Run scripts/songformer_impl.py in its own venv; raises on any failure."""
+    impl = os.path.join(os.path.dirname(os.path.abspath(__file__)), "songformer_impl.py")
+    out = subprocess.run(
+        [py, impl, audio_path],
+        stdout=subprocess.PIPE,
+        stderr=sys.stderr,
+        timeout=1800,
+        check=True,
+    )
+    sections = json.loads(out.stdout)
+    return [
+        {"label": s["label"], "start": round(float(s["start"]), 4), "end": round(float(s["end"]), 4)}
+        for s in sections
+    ]
 
 
 def beat_grid(audio_path):
@@ -156,28 +185,48 @@ def main():
     ap = argparse.ArgumentParser(description="earworm beat + section analysis")
     ap.add_argument("audio")
     ap.add_argument("--no-sections", action="store_true")
+    ap.add_argument(
+        "--sections-engine",
+        choices=["auto", "novelty", "songformer"],
+        default="auto",
+        help="auto = songformer when its venv exists, else novelty",
+    )
     args = ap.parse_args()
+
+    sections = []
+    engine = "beat_this"
+
+    # SongFormer runs FIRST: it needs ~6 GB of VRAM, so the subprocess goes
+    # out before this process loads beat_this onto the GPU.
+    if not args.no_sections:
+        sf_py = songformer_python()
+        if args.sections_engine == "songformer" or (args.sections_engine == "auto" and sf_py):
+            try:
+                sections = songformer_sections(args.audio, sf_py)
+                engine = "songformer"
+                log(f"songformer sections: {len(sections)}")
+            except Exception as e:  # fall back to novelty, never die
+                log(f"songformer failed, falling back to novelty: {e!r}")
 
     beats, downbeats = beat_grid(args.audio)
     bpm = median_bpm(beats)
     log(f"{len(beats)} beats, {len(downbeats)} downbeats, bpm {bpm}")
 
-    sections = []
-    engine = "beat_this"
     if not args.no_sections and beats:
-        try:
-            import soundfile as sf
+        if not sections:
+            try:
+                import soundfile as sf
 
-            info = sf.info(args.audio)
-            duration = round(info.frames / info.samplerate, 4)
-        except Exception:
-            duration = round(beats[-1], 4)
-        try:
-            sections = novelty_sections(args.audio, beats, downbeats, duration)
-            engine = "beat_this+novelty"
-            log(f"novelty sections: {len(sections)}")
-        except Exception as e:  # beat grid must ship regardless
-            log(f"section detection failed, shipping beat grid only: {e!r}")
+                info = sf.info(args.audio)
+                duration = round(info.frames / info.samplerate, 4)
+            except Exception:
+                duration = round(beats[-1], 4)
+            try:
+                sections = novelty_sections(args.audio, beats, downbeats, duration)
+                engine = "beat_this+novelty"
+                log(f"novelty sections: {len(sections)}")
+            except Exception as e:  # beat grid must ship regardless
+                log(f"section detection failed, shipping beat grid only: {e!r}")
 
     json.dump(
         {
