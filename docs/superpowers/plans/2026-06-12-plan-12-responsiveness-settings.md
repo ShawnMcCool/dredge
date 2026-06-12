@@ -33,12 +33,12 @@
 
 ### Task 3: Durable settings + menu
 
-- [ ] Store migration **v3**: `settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL)` + `Store::{get_setting, set_setting}` (serde_json round-trip, tests in store suite style).
-- [ ] Commands: `settings.get_all` → `{key: value, ...}`; `settings.set {key, value}` (value = arbitrary JSON). Both trivial dispatch arms + one app test.
-- [ ] Known keys (constants in stores.ts): `ui_scale` (number, default per-screen heuristic), `grid_snap_default` (bool, default true), `capture_buffer_secs` (number, default 180 — pass into `capture.start` when the UI calls it).
-- [ ] `zoom.ts` rework: read `ui_scale` from `settings.get_all` at init (one-time migration: if absent and localStorage `earworm-zoom` exists, adopt + persist it); ctrl±/0 still work and write through to `settings.set`. localStorage no longer authoritative.
-- [ ] `SettingsModal.svelte`: gear Button (icon variant, `⚙` or `settings` text chip) at the right end of the tabs row + `,` keybinding. Rows: **UI scale** (horizontal Fader 0.75–2.5 step 0.05, live-applied via `setZoom` on drag, readout %), **grid snap by default** (toggle Button), **capture buffer** (chips 60/120/180/300 s). All writes immediate via `settings.set`. Help footer gains `, settings`.
-- [ ] `pnpm build && pnpm vitest run` clean. Commit: `feat: durable settings table + settings modal (ui scale, grid snap, capture buffer)`
+- [x] Store migration **v3**: `settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL)` + `Store::{get_setting, set_setting}` (serde_json round-trip, tests in store suite style). *(Plus `all_settings` for `settings.get_all`.)*
+- [x] Commands: `settings.get_all` → `{key: value, ...}`; `settings.set {key, value}` (value = arbitrary JSON). Both trivial dispatch arms + one app test (`tests/app_settings.rs`).
+- [x] Known keys (constants in stores.ts): `ui_scale` (number, default per-screen heuristic), `grid_snap_default` (bool, default true), `capture_buffer_secs` (number, default 180 — pass into `capture.start` when the UI calls it).
+- [x] `zoom.ts` rework: read `ui_scale` from `settings.get_all` at init (one-time migration: if absent and localStorage `earworm-zoom` exists, adopt + persist it); ctrl±/0 still work and write through to `settings.set`. localStorage no longer authoritative.
+- [x] `SettingsModal.svelte`: gear Button (icon variant, `⚙` or `settings` text chip) at the right end of the tabs row + `,` keybinding. Rows: **UI scale** (horizontal Fader 0.75–2.5 step 0.05, live-applied via `setZoom` on drag, readout %), **grid snap by default** (toggle Button), **capture buffer** (chips 60/120/180/300 s). All writes immediate via `settings.set`. Help footer gains `, settings`.
+- [x] `pnpm build && pnpm vitest run` clean. Commit: `feat: durable settings table + settings modal (ui scale, grid snap, capture buffer)`
 
 ### Task 4: Visual verification
 

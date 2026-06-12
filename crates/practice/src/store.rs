@@ -68,6 +68,14 @@ CREATE TABLE analysis (
 );
 ";
 
+/// v3: durable app settings (arbitrary JSON values per key).
+const SCHEMA_V3: &str = "
+CREATE TABLE settings (
+    key TEXT PRIMARY KEY,
+    value_json TEXT NOT NULL
+);
+";
+
 pub struct Store {
     conn: rusqlite::Connection,
 }
@@ -162,6 +170,10 @@ impl Store {
         if version < 2 {
             self.conn.execute_batch(SCHEMA_V2)?;
             self.conn.pragma_update(None, "user_version", 2)?;
+        }
+        if version < 3 {
+            self.conn.execute_batch(SCHEMA_V3)?;
+            self.conn.pragma_update(None, "user_version", 3)?;
         }
         Ok(())
     }
@@ -458,6 +470,43 @@ impl Store {
             })
         })?;
         rows.next().transpose().map_err(Into::into)
+    }
+
+    /// Upsert one durable setting (arbitrary JSON value).
+    pub fn set_setting(&self, key: &str, value: &serde_json::Value) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO settings (key, value_json) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value_json = ?2",
+            params![key, serde_json::to_string(value)?],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_setting(&self, key: &str) -> Result<Option<serde_json::Value>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT value_json FROM settings WHERE key = ?1")?;
+        let mut rows = stmt.query_map(params![key], |row| {
+            let v: String = row.get(0)?;
+            serde_json::from_str(&v).map_err(json_err)
+        })?;
+        rows.next().transpose().map_err(Into::into)
+    }
+
+    pub fn all_settings(&self) -> Result<Vec<(String, serde_json::Value)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT key, value_json FROM settings ORDER BY key")?;
+        let rows = stmt
+            .query_map([], |row| {
+                let v: String = row.get(1)?;
+                Ok((
+                    row.get::<_, String>(0)?,
+                    serde_json::from_str(&v).map_err(json_err)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
     }
 
     /// Latest retest rating per loop — the retention metric.

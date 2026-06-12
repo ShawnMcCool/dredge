@@ -349,8 +349,31 @@ impl App {
             "analysis.run" => self.analysis_run(p),
             "analysis.status" => self.analysis_status(p),
             "analysis.get" => self.analysis_get(p),
+            "settings.get_all" => self.settings_get_all(),
+            "settings.set" => self.settings_set(p),
             _ => Err(format!("unknown command: {cmd}")),
         }
+    }
+
+    // --- settings -----------------------------------------------------------
+
+    fn settings_get_all(&mut self) -> Result<Value, String> {
+        let mut map = serde_json::Map::new();
+        for (key, value) in self.store.all_settings().err_str()? {
+            map.insert(key, value);
+        }
+        Ok(Value::Object(map))
+    }
+
+    fn settings_set(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            key: String,
+            value: Value,
+        }
+        let p: P = from_params(p)?;
+        self.store.set_setting(&p.key, &p.value).err_str()?;
+        Ok(Value::Null)
     }
 
     // --- ratings / scheduling ---------------------------------------------

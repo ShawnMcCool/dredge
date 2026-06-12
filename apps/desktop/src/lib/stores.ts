@@ -210,6 +210,19 @@ export const suggestedSections = writable<AnalysisSection[] | null>(null);
 /** Loop edges snap to downbeats while on (only meaningful with analysis). */
 export const gridSnap = writable(true);
 
+// --- durable settings -------------------------------------------------------
+
+/** Known keys in the server-side `settings` table. */
+export const UI_SCALE = "ui_scale";
+export const GRID_SNAP_DEFAULT = "grid_snap_default";
+export const CAPTURE_BUFFER_SECS = "capture_buffer_secs";
+
+/** Local mirror of the settings table; `loadSettings` fills it at launch and
+ *  `setSetting` writes through. */
+export const settings = writable<Record<string, unknown>>({});
+/** Settings modal visibility (gear button or `,`). */
+export const settingsOpen = writable(false);
+
 // --- prepare flow -----------------------------------------------------------
 
 export type PrepareStepState = "pending" | "running" | "done" | "failed" | "cached";
@@ -269,6 +282,22 @@ export { loopName };
 // --- actions ----------------------------------------------------------------
 
 export const actions = {
+  // --- settings ---
+
+  /** Pull the durable settings once at launch and apply the ones that act
+   *  as session defaults (grid snap). */
+  async loadSettings(): Promise<void> {
+    const all = await cmd<Record<string, unknown>>("settings.get_all");
+    settings.set(all);
+    if (typeof all[GRID_SNAP_DEFAULT] === "boolean") gridSnap.set(all[GRID_SNAP_DEFAULT]);
+  },
+
+  /** Write-through: update the local mirror, persist server-side. */
+  async setSetting(key: string, value: unknown): Promise<void> {
+    settings.update((s) => ({ ...s, [key]: value }));
+    await cmd("settings.set", { key, value });
+  },
+
   async refreshSongs(): Promise<void> {
     songs.set(await cmd<Song[]>("song.list"));
   },
@@ -509,7 +538,8 @@ export const actions = {
   },
 
   async startCapture(nodeId: number): Promise<void> {
-    await cmd("capture.start", { node_id: nodeId });
+    const buffer = Number(get(settings)[CAPTURE_BUFFER_SECS] ?? 180);
+    await cmd("capture.start", { node_id: nodeId, buffer_secs: buffer });
     await this.refreshCaptureStatus();
   },
 

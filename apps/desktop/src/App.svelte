@@ -9,18 +9,22 @@
   import PlanRunner from "./components/PlanRunner.svelte";
   import PrepareModal from "./components/PrepareModal.svelte";
   import Sections from "./components/Sections.svelte";
+  import SettingsModal from "./components/SettingsModal.svelte";
   import StemMixer from "./components/StemMixer.svelte";
   import Transport from "./components/Transport.svelte";
   import Waveform from "./components/Waveform.svelte";
+  import Button from "./lib/ui/Button.svelte";
   import { installKeys, KEY_HELP } from "./lib/keys";
   import { initZoom } from "./lib/zoom";
   import {
+    actions,
     initEvents,
     pendingRatings,
     planStatus,
     quickPromptVisible,
     quickSavedName,
     sessionSummary,
+    settingsOpen,
   } from "./lib/stores";
 
   const TABS = ["sections", "loops", "plan", "capture", "due"] as const;
@@ -35,7 +39,8 @@
   );
 
   onMount(() => {
-    void initZoom();
+    // settings drive zoom (ui_scale) and session defaults — load first
+    void actions.loadSettings().then(() => initZoom());
     const unlisten = initEvents();
     const uninstall = installKeys();
     return () => {
@@ -63,6 +68,11 @@
         {#each TABS as t (t)}
           <button class="tab" class:active={tab === t} onclick={() => (tab = t)}>{t}</button>
         {/each}
+        <span class="gear">
+          <Button variant="icon" title="settings" onclick={() => settingsOpen.set(true)}>
+            ⚙
+          </Button>
+        </span>
       </nav>
       {#key tab}
         <div class="fade-in">
@@ -86,6 +96,7 @@
 <!-- portal-at-root: the overlays cover all three columns -->
 <PrepareModal />
 <ExitModal />
+<SettingsModal />
 
 <style>
   .shell {
@@ -156,5 +167,9 @@
 
   .tab.active {
     color: var(--accent);
+  }
+
+  .gear {
+    margin-left: auto;
   }
 </style>
