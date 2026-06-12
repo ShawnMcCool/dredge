@@ -63,7 +63,7 @@ fn main() {
     };
 
     let app = Arc::new(Mutex::new(App::new(store, Box::new(engine))));
-    let _handle = match serve(app, &socket_path) {
+    let _handle = match serve(app, &socket_path, |_| {}) {
         Ok(h) => h,
         Err(e) => {
             eprintln!(

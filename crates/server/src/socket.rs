@@ -1,5 +1,5 @@
 use crate::app::App;
-use crate::protocol::{Request, Response};
+use crate::protocol::{Event, Request, Response};
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -36,7 +36,16 @@ impl Drop for ServerHandle {
 /// Bind the JSON-lines control socket and start the accept + pump loop.
 /// One thread accepts clients and ticks the app every ~50 ms, broadcasting
 /// tick events to subscribed clients; each client gets a reader thread.
-pub fn serve(app: Arc<Mutex<App>>, path: &Path) -> std::io::Result<ServerHandle> {
+///
+/// This is the *only* pump wherever `App` lives — embedders that need the
+/// events too (e.g. the desktop shell forwarding to its webview) pass
+/// `on_events`, which is invoked with each non-empty tick batch before the
+/// socket broadcast. Headless use passes `|_| {}`.
+pub fn serve(
+    app: Arc<Mutex<App>>,
+    path: &Path,
+    on_events: impl Fn(&[Event]) + Send + 'static,
+) -> std::io::Result<ServerHandle> {
     let _ = std::fs::remove_file(path); // stale socket from a dead process
     let listener = UnixListener::bind(path)?;
     listener.set_nonblocking(true)?;
@@ -61,6 +70,7 @@ pub fn serve(app: Arc<Mutex<App>>, path: &Path) -> std::io::Result<ServerHandle>
                 }
                 let events = app.lock().unwrap().tick();
                 if !events.is_empty() {
+                    on_events(&events);
                     let mut lines = String::new();
                     for ev in &events {
                         if let Ok(json) = serde_json::to_string(ev) {

@@ -48,7 +48,13 @@ git add -A && git commit -m "feat(desktop): tauri 2 + svelte 5 scaffold with des
 - Modify: `apps/desktop/src-tauri/src/main.rs`
 - Create: `apps/desktop/src-tauri/src/host.rs`
 
-- [ ] **Step 1: Implement**
+- [x] **Step 1: Implement**
+
+> As-built note: `serve` already owned the tick-pump, so the plan's
+> "simplest correct resolution" was taken — `serve(app, path, on_events)`
+> now accepts a hook called with each non-empty tick batch; desktop forwards
+> those to the webview (`host::start_server`), earwormd passes `|_| {}`.
+> No `start_pump` thread exists in the desktop crate; there is exactly one pump.
 
 `host.rs`:
 ```rust
@@ -80,12 +86,12 @@ pub fn start_pump(handle: tauri::AppHandle, app: Arc<Mutex<App>>) {
 
 **Check against the as-built Plan-3 API first:** `serve`'s exact signature/handle type, and whether `App::tick` already broadcasts to socket subscribers internally (if the socket layer owns the pump, desktop must NOT double-tick — in that case have `serve` return events or add a `tick_hook`; simplest correct resolution: move the tick-pump INTO `server::socket` behind a callback parameter `serve(app, path, on_events: impl Fn(&[Event]))` so there is exactly one pump wherever App lives. Refactor minimally if needed and keep server tests green).
 
-- [ ] **Step 2: Verify**
+- [x] **Step 2: Verify**
 
 Run: `cargo check -p earworm-desktop && cargo test -p server`
 Expected: compiles; server suite still green (especially if `serve` was refactored).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add -A && git commit -m "feat(desktop): embed app dispatcher, event pump, shared control socket"

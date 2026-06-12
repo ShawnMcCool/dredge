@@ -20,7 +20,7 @@ fn start_server(
         std::env::temp_dir().join(format!("earworm-test-{}-{name}.sock", std::process::id()));
     let mock = Arc::new(Mutex::new(MockEngine::default()));
     let app = App::new(Store::open_in_memory().unwrap(), Box::new(mock.clone()));
-    let handle = serve(Arc::new(Mutex::new(app)), &path).unwrap();
+    let handle = serve(Arc::new(Mutex::new(app)), &path, |_| {}).unwrap();
     (handle, mock, path)
 }
 
@@ -71,6 +71,38 @@ fn subscribe_receives_events() {
     reader.read_line(&mut line).unwrap();
     let ev: Value = serde_json::from_str(&line).unwrap();
     assert_eq!(ev["event"], "loop_wrapped");
+}
+
+#[test]
+fn on_events_hook_receives_tick_events() {
+    let path = std::env::temp_dir().join(format!("earworm-test-{}-hook.sock", std::process::id()));
+    let mock = Arc::new(Mutex::new(MockEngine::default()));
+    let app = App::new(Store::open_in_memory().unwrap(), Box::new(mock.clone()));
+    let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let sink = seen.clone();
+    let _handle = serve(Arc::new(Mutex::new(app)), &path, move |events| {
+        sink.lock()
+            .unwrap()
+            .extend(events.iter().map(|e| e.event.clone()));
+    })
+    .unwrap();
+
+    mock.lock()
+        .unwrap()
+        .queued_events
+        .push_back(EngineEvent::LoopWrapped);
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    loop {
+        if seen.lock().unwrap().iter().any(|e| e == "loop_wrapped") {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "hook never saw loop_wrapped"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
 #[test]
