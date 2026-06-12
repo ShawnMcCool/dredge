@@ -347,7 +347,7 @@ git add -A && git commit -m "feat(practice): tempo curves (dwell/ladder/oscillat
 - Create: `crates/practice/src/junction.rs`
 - Modify: `crates/practice/src/lib.rs` (add `pub mod junction;`)
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `crates/practice/src/junction.rs`:
 ```rust
@@ -428,12 +428,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run tests, verify failure**
+- [x] **Step 2: Run tests, verify failure**
 
 Run: `cargo test -p practice junction`
 Expected: panics on `todo!()`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```rust
     let mut ordered: Vec<&Section> = sections.iter().collect();
@@ -454,12 +454,12 @@ Expected: panics on `todo!()`.
         .collect()
 ```
 
-- [ ] **Step 4: Run tests, verify pass**
+- [x] **Step 4: Run tests, verify pass**
 
 Run: `cargo test -p practice junction`
 Expected: 5 PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A && git commit -m "feat(practice): junction loop derivation from adjacent sections"
