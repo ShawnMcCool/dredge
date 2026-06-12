@@ -39,4 +39,4 @@
 
 ### Task 5: Gate
 
-- [ ] `cargo test && cargo clippy --workspace -- -D warnings && pnpm vitest run && pnpm build`. Commit final state.
+- [x] `cargo test && cargo clippy --workspace -- -D warnings && pnpm vitest run && pnpm build`. Commit final state.
