@@ -22,7 +22,7 @@
   Stems auto-load on open: decode all stem WAVs also outside the lock (they're part of the slow phase).
 - [x] `socket.rs` request loop and `host.rs` both call `dispatch_shared`. The tick pump and other clients now stall at most for the short lock phases.
 - [x] Tests: existing suites stay green (they exercise `App::dispatch`). Add one: `dispatch_shared` on `song.open` returns the same payload as `App::dispatch` (parity test with a small WAV). *(`crates/server/tests/dispatch_shared.rs` — byte-identical serialized responses, plus import-dedupe parity.)*
-- [ ] Measured proof (in Task 5's live check): while `song.open` of a ~4-minute file is in flight, a concurrent `status` over the socket answers in < 250 ms (was: blocked for the whole decode). *(Before measured on pre-change earwormd: status blocked 2089 ms during a 2.15 s open.)*
+- [x] Measured proof (in Task 5's live check): while `song.open` of a ~4-minute file is in flight, a concurrent `status` over the socket answers in < 250 ms (was: blocked for the whole decode). *(Before: 1 status reply in 2089 ms — blocked for the whole 2.15 s decode. After: 99 replies during the 2.06 s open, max 23.6 ms, median 0.1 ms.)*
 - [x] Commit: `perf(server,desktop): async dispatch; heavy commands decode outside the app lock`
 
 ### Task 2: Escape → exit confirmation
@@ -47,6 +47,6 @@
 
 ### Task 5: Live responsiveness proof + gate
 
-- [ ] Generate a 4-minute file (`ffmpeg ... anoisesrc=d=240` or sine), import via socket to the temp DB, then: send `song.open` from one socket client and immediately hammer `status` from another, timing each reply (python, monotonic clock). Assert max `status` latency < 250 ms while open is in flight. Report the numbers.
-- [ ] Full gate: `cargo test && cargo clippy --workspace -- -D warnings && cargo fmt && pnpm vitest run && pnpm build`. README: settings + escape notes (two lines).
-- [ ] Commit: `feat: plan 12 complete — responsive dispatch, exit confirm, settings`
+- [x] Generate a 4-minute file (`ffmpeg ... anoisesrc=d=240` or sine), import via socket to the temp DB, then: send `song.open` from one socket client and immediately hammer `status` from another, timing each reply (python, monotonic clock). Assert max `status` latency < 250 ms while open is in flight. Report the numbers. *(Live desktop app, default socket, temp DB: max 23.6 ms / median 0.1 ms over 99 status calls while a 2.06 s open ran. Pre-change baseline: 2089 ms.)*
+- [x] Full gate: `cargo test && cargo clippy --workspace -- -D warnings && cargo fmt && pnpm vitest run && pnpm build`. README: settings + escape notes (two lines). *(123 rust tests + 31 vitest, clippy clean.)*
+- [x] Commit: `feat: plan 12 complete — responsive dispatch, exit confirm, settings`

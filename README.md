@@ -41,6 +41,10 @@ and a practice engine.
   derive bar-aware junction loops. Runs through the repo-shipped
   `scripts/analyze` wrapper, which bootstraps its own venv on first use —
   swapping models never touches Rust.
+- **Durable settings** (`,` or the gear button): UI scale, grid-snap default,
+  capture buffer length — stored server-side in the practice DB.
+- **Escape asks before quitting**: `esc` walks back quick-prompt → selection →
+  an exit confirmation (`enter`/`y` exits, `esc`/`n` stays).
 - **Scriptable**: a JSON-lines control socket at `$XDG_RUNTIME_DIR/earworm.sock`
   (mpv-style) drives everything the UI can do — foot pedals, shell scripts,
   whatever. The desktop UI and the socket share one session.
@@ -89,7 +93,7 @@ printf '%s\n' '{"id":1,"cmd":"song.import","params":{"path":"/path/song.flac"}}'
 
 Commands: `song.*`, `section.replace`, `loop.*`, `junctions.derive`, `plan.*`,
 `practice.quick*`, `rep.rate`, `due.list`, `retention`, `capture.*`, `stems.*`,
-`analysis.*`, transport
+`analysis.*`, `settings.*`, transport
 (`play/pause/seek/rate/pitch/loop.set/bass_focus/mute`), `subscribe` for the
 event stream.
 
