@@ -16,7 +16,7 @@
 - Modify: `crates/server/src/app.rs`
 - Test: `crates/server/tests/app_quick.rs`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `app_quick.rs` (setup helpers as in `app_plan_run.rs`: import + open a generated WAV, shared `Arc<Mutex<MockEngine>>`):
 
@@ -26,7 +26,7 @@
 4. `quick_discard_leaves_no_trace` — finish a session, `practice.quick_discard` → ok; `loop.list` empty; starting a new `practice.quick` works.
 5. `quick_requires_open_song_and_valid_span` — without open song → error; `start >= end` → error.
 
-- [ ] **Step 2: Implement**
+- [x] **Step 2: Implement**
 
 - `App.ephemeral: Option<LoopRegion>` field.
 - `"practice.quick" {start, end}`: validate open song + `0 <= start < end <= duration`; clamp end to duration. Region: `LoopRegion { id: LoopId(0), song_id, name: auto, kind: Manual, start, end }`, auto-name `format!("riff {}–{}", fmt_ts(start), fmt_ts(end))` with `fmt_ts` = `M:SS.t`. Steps: `ListenFirst{loop_id: LoopId(0), reps: 2}`, `PlayReps{loop_id: LoopId(0), reps: 6, curve: Oscillate{low: 0.7, high: 1.0, period: 3}}`. Build `ActivePlan { plan_id: PlanId(0), runner, loops: {LoopId(0) => region} }`, set `ephemeral`, apply first rep (existing `apply_rep`). Starting a quick session replaces any active plan; `plan.start` and `plan.stop` clear `ephemeral`.
@@ -34,7 +34,7 @@
 - `"practice.quick_rate" {rating}`: require `ephemeral` Some (any time after start — mid-session rating is allowed and just ends it: stop plan, Pause). Persist: `store.insert_loop` (region fields), `store.record_rep` (mode `"play"`, rate = last position rate or 1.0, rating, is_retest false), resurfacing `next_state` + upsert (same code path as `rep.rate` — extract a private helper to avoid duplication), sidecar write, clear `ephemeral`, return `{loop: <persisted>, interval_idx, due_on}`.
 - `"practice.quick_discard"`: clear `ephemeral`; if its plan is still active, stop + Pause. Always ok.
 
-- [ ] **Step 3: Run (fail→pass), full server suite, commit**
+- [x] **Step 3: Run (fail→pass), full server suite, commit**
 
 Run: `cargo test -p server`
 

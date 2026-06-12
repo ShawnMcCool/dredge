@@ -3,8 +3,11 @@ use crate::control::AudioControl;
 use crate::protocol::{Event, Request, Response};
 use crate::stems::{StemSeparator, STEM_NAMES};
 use engine::pipeline::{EngineCmd, EngineEvent};
-use practice::model::{LoopId, LoopKind, LoopRegion, Plan, PlanId, PlanStep, Rating, Song, SongId};
+use practice::model::{
+    LoopId, LoopKind, LoopRegion, Plan, PlanId, PlanStep, Rating, Song, SongId, TempoCurve,
+};
 use practice::runner::{PlanRunner, RepMode, RepSpec};
+use practice::schedule::Resurfacing;
 use practice::store::{NewLoop, NewRep, NewSection, NewSong, Store};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -43,6 +46,10 @@ pub struct App {
     stems_dir: PathBuf,
     open_song: Option<OpenSong>,
     active_plan: Option<ActivePlan>,
+    /// Unsaved region of an ephemeral quick session (`LoopId(0)` sentinel);
+    /// while set, `tick()` skips rep journaling — `practice.quick_rate` is
+    /// the single persistence point.
+    ephemeral: Option<LoopRegion>,
     last_position: Option<(f64, f64, bool)>, // secs, rate, playing
     /// Background-job events (stem separation); drained by `tick()`.
     job_tx: mpsc::Sender<Event>,
@@ -80,6 +87,7 @@ impl App {
             stems_dir: default_stems_dir(),
             open_song: None,
             active_plan: None,
+            ephemeral: None,
             last_position: None,
             job_tx,
             job_rx,
@@ -131,6 +139,9 @@ impl App {
             "plan.start" => self.plan_start(p),
             "plan.stop" => self.plan_stop(),
             "plan.skip_step" => self.plan_skip_step(),
+            "practice.quick" => self.quick_start(p),
+            "practice.quick_rate" => self.quick_rate(p),
+            "practice.quick_discard" => self.quick_discard(),
             "rep.rate" => self.rep_rate(p),
             "due.list" => self.due_list(),
             "retention" => self.retention(p),
@@ -171,19 +182,25 @@ impl App {
                 is_retest: p.is_retest,
             })
             .err_str()?;
-        let today = today_utc();
+        let next = self.reschedule(p.loop_id, p.rating)?;
+        Ok(json!({
+            "interval_idx": next.interval_idx,
+            "due_on": next.due_on.format(DATE_FMT).err_str()?,
+        }))
+    }
+
+    /// Advance the resurfacing ladder after a rated practice — shared by
+    /// `rep.rate` and `practice.quick_rate`.
+    fn reschedule(&mut self, loop_id: LoopId, rating: Rating) -> Result<Resurfacing, String> {
         let prev = self
             .store
             .all_resurfacing()
             .err_str()?
             .into_iter()
-            .find(|r| r.loop_id == p.loop_id);
-        let next = practice::schedule::next_state(prev, p.loop_id, p.rating, today);
+            .find(|r| r.loop_id == loop_id);
+        let next = practice::schedule::next_state(prev, loop_id, rating, today_utc());
         self.store.upsert_resurfacing(next).err_str()?;
-        Ok(json!({
-            "interval_idx": next.interval_idx,
-            "due_on": next.due_on.format(DATE_FMT).err_str()?,
-        }))
+        Ok(next)
     }
 
     fn due_list(&mut self) -> Result<Value, String> {
@@ -344,6 +361,7 @@ impl App {
             runner,
             loops,
         });
+        self.ephemeral = None;
         self.apply_rep(spec)?;
         serde_json::to_value(spec).err_str()
     }
@@ -365,6 +383,7 @@ impl App {
 
     fn plan_stop(&mut self) -> Result<Value, String> {
         self.active_plan = None;
+        self.ephemeral = None;
         self.send_ok(EngineCmd::Pause)
     }
 
@@ -401,6 +420,116 @@ impl App {
             .send(EngineCmd::Mute(spec.mode == RepMode::RecallSilent));
         self.audio.send(EngineCmd::Play);
         Ok(())
+    }
+
+    // --- ephemeral practice (select → `p` → play) ---------------------------
+
+    /// Instant micro-session on a raw span: listen ×2 → 6 play reps on the
+    /// oscillate curve. Nothing persists unless the user rates it.
+    fn quick_start(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            start: f64,
+            end: f64,
+        }
+        let p: P = from_params(p)?;
+        let song = &self.open_song.as_ref().ok_or("no song open")?.song;
+        let end = p.end.min(song.duration_secs);
+        if p.start < 0.0 || p.start >= end {
+            return Err(format!("invalid span: {}–{}", p.start, p.end));
+        }
+        let region = LoopRegion {
+            id: LoopId(0), // unsaved sentinel — never reaches the DB
+            song_id: song.id,
+            name: format!("riff {}–{}", fmt_ts(p.start), fmt_ts(end)),
+            start: p.start,
+            end,
+            kind: LoopKind::Manual,
+        };
+        let runner = PlanRunner::new(Plan {
+            id: PlanId(0),
+            song_id: song.id,
+            name: region.name.clone(),
+            steps: vec![
+                PlanStep::ListenFirst {
+                    loop_id: LoopId(0),
+                    reps: 2,
+                },
+                PlanStep::PlayReps {
+                    loop_id: LoopId(0),
+                    reps: 6,
+                    curve: TempoCurve::Oscillate {
+                        low: 0.7,
+                        high: 1.0,
+                        period: 3,
+                    },
+                },
+            ],
+        });
+        let spec = runner.current().ok_or("plan has no reps")?;
+        // a quick session replaces whatever plan was running
+        self.active_plan = Some(ActivePlan {
+            plan_id: PlanId(0),
+            runner,
+            loops: HashMap::from([(LoopId(0), region.clone())]),
+        });
+        self.ephemeral = Some(region);
+        self.apply_rep(spec)?;
+        serde_json::to_value(spec).err_str()
+    }
+
+    /// The single persistence point: auto-named loop saved, the rated rep
+    /// recorded, resurfacing scheduled. Mid-session rating just ends it.
+    fn quick_rate(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            rating: Rating,
+        }
+        let p: P = from_params(p)?;
+        let region = self.ephemeral.take().ok_or("no quick session")?;
+        if self.active_plan.is_some() {
+            self.active_plan = None;
+            self.audio.send(EngineCmd::Pause);
+        }
+        let saved = self
+            .store
+            .insert_loop(
+                region.song_id,
+                NewLoop {
+                    name: &region.name,
+                    start: region.start,
+                    end: region.end,
+                    kind: region.kind,
+                },
+            )
+            .err_str()?;
+        let rate = self.last_position.map(|(_, r, _)| r).unwrap_or(1.0);
+        self.store
+            .record_rep(NewRep {
+                loop_id: saved.id,
+                plan_id: None,
+                mode: "play".into(),
+                rate,
+                rating: Some(p.rating),
+                is_retest: false,
+            })
+            .err_str()?;
+        let next = self.reschedule(saved.id, p.rating)?;
+        self.write_sidecar_for(saved.song_id);
+        Ok(json!({
+            "loop": saved,
+            "interval_idx": next.interval_idx,
+            "due_on": next.due_on.format(DATE_FMT).err_str()?,
+        }))
+    }
+
+    /// Discard leaves no trace; always ok, even without a session.
+    fn quick_discard(&mut self) -> Result<Value, String> {
+        if self.ephemeral.take().is_some() && self.active_plan.is_some() {
+            self.active_plan = None;
+            self.audio.send(EngineCmd::Pause);
+        }
+        Ok(Value::Null)
     }
 
     /// Drain engine events, drive the plan runner (loop-wrap = rep done) and
@@ -454,16 +583,20 @@ impl App {
         ap.runner.advance();
         let next = ap.runner.current();
 
-        // journal the rep that just completed (unrated)
-        if let Err(e) = self.store.record_rep(NewRep {
-            loop_id: done.loop_id,
-            plan_id: Some(plan_id),
-            mode: mode_str(done.mode).into(),
-            rate: done.rate,
-            rating: None,
-            is_retest: false,
-        }) {
-            eprintln!("earworm: rep journal write failed: {e}");
+        // journal the rep that just completed (unrated); ephemeral sessions
+        // persist nothing until quick_rate (the FK on reps.loop_id would
+        // reject the LoopId(0) sentinel anyway)
+        if self.ephemeral.is_none() {
+            if let Err(e) = self.store.record_rep(NewRep {
+                loop_id: done.loop_id,
+                plan_id: Some(plan_id),
+                mode: mode_str(done.mode).into(),
+                rate: done.rate,
+                rating: None,
+                is_retest: false,
+            }) {
+                eprintln!("earworm: rep journal write failed: {e}");
+            }
         }
 
         match next {
@@ -1046,6 +1179,12 @@ fn sanitize_filename(s: &str) -> String {
     } else {
         trimmed.into()
     }
+}
+
+/// `M:SS.t` — tenths are enough to recognize a riff by eye.
+fn fmt_ts(secs: f64) -> String {
+    let tenths = (secs * 10.0).round() as i64;
+    format!("{}:{:02}.{}", tenths / 600, tenths % 600 / 10, tenths % 10)
 }
 
 fn mode_str(mode: RepMode) -> &'static str {
