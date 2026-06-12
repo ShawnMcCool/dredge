@@ -233,7 +233,7 @@ git add -A && git commit -m "feat(desktop): transport bar and keyboard-first con
 **Files:**
 - Create: `apps/desktop/src/components/Library.svelte`, `Sections.svelte`, `Loops.svelte`, `PlanBuilder.svelte`
 
-- [ ] **Step 1: Implement**
+- [x] **Step 1: Implement**
 
 - **Library** (left rail): song list (title, artist, duration); click → `openSong`; "+ import" → tauri dialog open (audio filter: mp3 flac ogg wav m4a) → `importSong(path)` → auto-open.
 - **Sections** (right panel, tab 1): ordered list; add (name + start/end prefilled from selection), edit times inline, delete, reorder (↑↓ buttons); save = `section.replace` with the whole lane (server re-derives junction loops — refresh loops store after).
@@ -243,7 +243,7 @@ git add -A && git commit -m "feat(desktop): transport bar and keyboard-first con
 
 A "suggested plan" button: given selected loops A,B,…: generates the evidence-based default — Listen(A,2) → Play(A,4, oscillate 0.7/1.0/3) → repeat per loop → Rotation(all, 2 rounds, 2/visit, dwell 0.85) → Recall(first loop, 2) — one click from sections to a research-shaped session.
 
-- [ ] **Step 2: Verify + commit**
+- [x] **Step 2: Verify + commit**
 
 Run: `pnpm build` — clean.
 
