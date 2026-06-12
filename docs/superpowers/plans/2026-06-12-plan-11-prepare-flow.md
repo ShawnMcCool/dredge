@@ -10,8 +10,8 @@
 
 ### Task 1: `Modal` UI primitive
 
-- [ ] `lib/ui/Modal.svelte`: fixed overlay (`rgba(0,0,0,.6)`), centered panel (bg `--bg-raised` or existing panel token, 1 px `--line` border, 2 px radius, `min(420px, 90vw)`), `title` prop, `closable` prop (when true: Esc + click-outside + an × Button close via `onclose`). No animation beyond the existing 120 ms fade. Render via `{#if open}` portal-at-root pattern (App.svelte hosts it).
-- [ ] `pnpm build` clean. Commit: `feat(desktop): Modal primitive`
+- [x] `lib/ui/Modal.svelte`: fixed overlay (`rgba(0,0,0,.6)`), centered panel (bg `--bg-raised` or existing panel token, 1 px `--line` border, 2 px radius, `min(420px, 90vw)`), `title` prop, `closable` prop (when true: Esc + click-outside + an × Button close via `onclose`). No animation beyond the existing 120 ms fade. Render via `{#if open}` portal-at-root pattern (App.svelte hosts it).
+- [x] `pnpm build` clean. Commit: `feat(desktop): Modal primitive`
 
 ### Task 2: Server — `library_changed` + small affordances
 
