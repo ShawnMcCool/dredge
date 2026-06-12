@@ -36,10 +36,10 @@ target/release/earwormd --socket /tmp/prep.sock --db /tmp/prep.db &  # import vi
 # launch the UI on that db with the song auto-opened
 EARWORM_DB=/tmp/prep.db EARWORM_OPEN=1 target/release/earworm &
 ```
-- [ ] Trigger PREPARE without a mouse: `hyprctl dispatch sendshortcut ", a, address:$ADDR"` (focus the window first; if sendshortcut is unavailable in this Hyprland, fall back to a temporary `EARWORM_AUTOPREPARE=1` env read in stores init — and keep it, undocumented, it's harmless).
-- [ ] Screenshot the modal mid-run (analysis running) and after completion (both ✓, then auto-closed → stem mixer + beat grid visible). Read the PNGs yourself; iterate until the modal matches the design language. Leave as /tmp/ew-prep-*.png. Note: with the user's game using VRAM, SongFormer may fall back to novelty — fine, the modal still shows analysis ✓.
-- [ ] Kill app, clean temp files. Commit: `fix(desktop): prepare modal verification` (if fixes)
+- [x] Trigger PREPARE without a mouse: `hyprctl dispatch sendshortcut ", a, address:$ADDR"` (focus the window first; if sendshortcut is unavailable in this Hyprland, fall back to a temporary `EARWORM_AUTOPREPARE=1` env read in stores init — and keep it, undocumented, it's harmless). *(sendshortcut worked — no fallback needed; keypress lands ~1 s after dispatch.)*
+- [x] Screenshot the modal mid-run (analysis running) and after completion (both ✓, then auto-closed → stem mixer + beat grid visible). Read the PNGs yourself; iterate until the modal matches the design language. Leave as /tmp/ew-prep-*.png. Note: with the user's game using VRAM, SongFormer may fall back to novelty — fine, the modal still shows analysis ✓. *(SongFormer actually ran; modal matched on first pass — no fixes.)*
+- [x] Kill app, clean temp files. Commit: `fix(desktop): prepare modal verification` (if fixes) *(no fixes needed)*
 
 ### Task 5: Gate
 
-- [ ] `cargo test && cargo clippy --workspace -- -D warnings && cargo fmt && pnpm vitest run && pnpm build`; README: PREPARE replaces the two buttons (one-line edit). Commit final state.
+- [x] `cargo test && cargo clippy --workspace -- -D warnings && cargo fmt && pnpm vitest run && pnpm build`; README: PREPARE replaces the two buttons (one-line edit). Commit final state. *(121 cargo tests + 31 vitest tests, clippy/fmt/build clean.)*

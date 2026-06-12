@@ -34,7 +34,8 @@ and a practice engine.
   it yourself. No cloud, ever.
 - **Bass focus** (`b`): octave-up + low-pass — the transcriber's trick for
   hearing buried bass lines.
-- **Analyze** (v4): one click per song — beats/downbeats/BPM (beat_this) plus
+- **Analyze** (v4): one **PREPARE** button (`a`) runs analysis then stem
+  separation with a progress modal — beats/downbeats/BPM (beat_this) plus
   suggested sections (SongFormer, novelty fallback). Beat ticks on the
   waveform, loop edges snap to downbeats (`g` toggles), and saved sections
   derive bar-aware junction loops. Runs through the repo-shipped
