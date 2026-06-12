@@ -197,6 +197,8 @@ export const quickActive = writable(false);
 export const quickPromptVisible = writable(false);
 /** Name of the loop a quick rating just saved — brief confirmation. */
 export const quickSavedName = writable<string | null>(null);
+/** Escape with nothing else to dismiss → "exit earworm?" confirm. */
+export const exitPromptVisible = writable(false);
 export const captureNodes = writable<CaptureNode[]>([]);
 export const captureStatus = writable<CaptureStatus>({ running: false });
 /** Mixer state for the open song's stems (sliders × mute × solo). */

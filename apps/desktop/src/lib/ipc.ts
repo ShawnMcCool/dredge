@@ -22,6 +22,11 @@ export function initialSong(): Promise<number | null> {
   return invoke<number | null>("initial_song");
 }
 
+/** Confirmed exit — the host process terminates. */
+export function quit(): Promise<void> {
+  return invoke("quit");
+}
+
 export type EwEvent = { event: string; data: any };
 
 export function onEvent(handler: (e: EwEvent) => void): Promise<() => void> {

@@ -44,6 +44,12 @@ pub fn initial_song() -> Option<i64> {
     std::env::var("EARWORM_OPEN").ok()?.parse().ok()
 }
 
+/// Confirmed exit (the exit modal's `exit` button).
+#[tauri::command]
+pub fn quit(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
 /// Start the shared socket + pump; tick events are mirrored to the webview.
 pub fn start_server(
     handle: tauri::AppHandle,

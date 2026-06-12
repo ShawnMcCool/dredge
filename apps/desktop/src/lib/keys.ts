@@ -7,6 +7,7 @@ import {
   BASS_STEM,
   bassFocusOn,
   currentLoop,
+  exitPromptVisible,
   gridSnap,
   openSong,
   pendingRatings,
@@ -91,8 +92,12 @@ async function handle(e: KeyboardEvent): Promise<void> {
       break;
     }
     case "Escape":
-      if (get(quickPromptVisible)) await actions.quickDiscard();
-      else selection.set(null);
+      // a closable Modal may have consumed this Escape already
+      if (e.defaultPrevented) break;
+      if (get(exitPromptVisible)) exitPromptVisible.set(false);
+      else if (get(quickPromptVisible)) await actions.quickDiscard();
+      else if (get(selection)) selection.set(null);
+      else exitPromptVisible.set(true);
       break;
     case "a":
       // one button: analysis then stems, with the progress modal

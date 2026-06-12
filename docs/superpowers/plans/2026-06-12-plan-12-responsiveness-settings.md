@@ -27,9 +27,9 @@
 
 ### Task 2: Escape → exit confirmation
 
-- [ ] Escape cascade in `keys.ts` (in order): quick-prompt discard → clear selection → **open exit modal**. Exit modal (Modal primitive, `closable`): "exit earworm?" — Buttons `exit` (accent) / `stay`; Enter or `y` = exit, Escape/`n` = stay.
-- [ ] Host command `quit()` (`app_handle.exit(0)`) registered alongside `dispatch`; wire the exit Button to it.
-- [ ] Commit: `feat(desktop): escape exit confirmation`
+- [x] Escape cascade in `keys.ts` (in order): quick-prompt discard → clear selection → **open exit modal**. Exit modal (Modal primitive, `closable`): "exit earworm?" — Buttons `exit` (accent) / `stay`; Enter or `y` = exit, Escape/`n` = stay. *(Modal's Escape now `preventDefault`s so the global cascade can tell a consumed Escape apart.)*
+- [x] Host command `quit()` (`app_handle.exit(0)`) registered alongside `dispatch`; wire the exit Button to it.
+- [x] Commit: `feat(desktop): escape exit confirmation`
 
 ### Task 3: Durable settings + menu
 

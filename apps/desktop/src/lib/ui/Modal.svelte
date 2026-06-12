@@ -17,7 +17,11 @@
   let { open = false, title, closable = false, onclose, children }: Props = $props();
 
   function onkeydown(e: KeyboardEvent) {
-    if (open && closable && e.key === "Escape") onclose?.();
+    if (open && closable && e.key === "Escape") {
+      // mark it consumed so the global Escape cascade leaves it alone
+      e.preventDefault();
+      onclose?.();
+    }
   }
 
   function onOverlayClick(e: MouseEvent) {
