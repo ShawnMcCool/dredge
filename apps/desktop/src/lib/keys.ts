@@ -3,6 +3,7 @@
 import { get } from "svelte/store";
 import {
   actions,
+  BASS_STEM,
   bassFocusOn,
   currentLoop,
   openSong,
@@ -12,7 +13,7 @@ import {
 } from "./stores";
 
 export const KEY_HELP =
-  "space play/pause · r restart loop · [ ] rate ∓5% · l loop selection · b bass focus · esc clear · 1/2/3 rate miss/shaky/solid";
+  "space play/pause · r restart loop · [ ] rate ∓5% · l loop selection · b bass focus · m mute bass stem · esc clear · 1/2/3 rate miss/shaky/solid";
 
 function isTyping(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -71,6 +72,10 @@ async function handle(e: KeyboardEvent): Promise<void> {
       break;
     case "b":
       await actions.bassFocus(!get(bassFocusOn));
+      break;
+    case "m":
+      // THE one-key move: mute the recorded bass, I play it
+      if (get(openSong)?.stems) await actions.toggleStemMute(BASS_STEM);
       break;
     case "1":
     case "2":

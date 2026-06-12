@@ -84,6 +84,26 @@ export interface OpenSong {
   loops: LoopRegion[];
   plans: Plan[];
   peaks: Peaks;
+  /** True when the engine was loaded with the song's 4 cached stems. */
+  stems: boolean;
+}
+
+/** Fixed stem order contract: vocals/drums/bass/other. */
+export const STEM_LABELS = ["VOC", "DRM", "BASS", "OTH"] as const;
+export const BASS_STEM = 2;
+
+export interface StemMix {
+  levels: number[]; // 0..100 per stem
+  mutes: boolean[];
+  solos: boolean[];
+}
+
+function defaultStemMix(): StemMix {
+  return {
+    levels: [100, 100, 100, 100],
+    mutes: [false, false, false, false],
+    solos: [false, false, false, false],
+  };
 }
 
 export interface Position {
@@ -156,6 +176,11 @@ export const pendingRatings = writable<PendingRating[]>([]);
 export const sessionSummary = writable<SessionSummary | null>(null);
 export const captureNodes = writable<CaptureNode[]>([]);
 export const captureStatus = writable<CaptureStatus>({ running: false });
+/** Mixer state for the open song's stems (sliders × mute × solo). */
+export const stemMix = writable<StemMix>(defaultStemMix());
+/** A separation job is in flight (stems_progress clears it). */
+export const stemsRunning = writable(false);
+export const stemsError = writable<string | null>(null);
 
 /** Loops that due.list contained when the plan started: their first
  *  end-of-step rating is the retention probe (`is_retest: true`). */
@@ -188,6 +213,8 @@ export const actions = {
     openSong.set(data);
     selection.set(null);
     currentLoop.set(null);
+    stemMix.set(defaultStemMix());
+    stemsError.set(null);
     await this.refreshRetention();
   },
 
@@ -387,6 +414,51 @@ export const actions = {
     return song;
   },
 
+  // --- stems ---
+
+  /** The 4-vector sent to the engine: sliders × mute × solo. */
+  stemGainsVector(mix: StemMix): number[] {
+    const anySolo = mix.solos.some(Boolean);
+    return mix.levels.map((level, i) =>
+      mix.mutes[i] || (anySolo && !mix.solos[i]) ? 0 : level / 100,
+    );
+  },
+
+  async applyStemMix(): Promise<void> {
+    if (!get(openSong)?.stems) return;
+    await cmd("stems.gains", { gains: this.stemGainsVector(get(stemMix)) });
+  },
+
+  async setStemLevel(idx: number, level: number): Promise<void> {
+    stemMix.update((m) => ({ ...m, levels: m.levels.map((v, i) => (i === idx ? level : v)) }));
+    await this.applyStemMix();
+  },
+
+  async toggleStemMute(idx: number): Promise<void> {
+    stemMix.update((m) => ({ ...m, mutes: m.mutes.map((v, i) => (i === idx ? !v : v)) }));
+    await this.applyStemMix();
+  },
+
+  async toggleStemSolo(idx: number): Promise<void> {
+    stemMix.update((m) => ({ ...m, solos: m.solos.map((v, i) => (i === idx ? !v : v)) }));
+    await this.applyStemMix();
+  },
+
+  /** Kick off background separation; stems_progress reports the outcome. */
+  async separateStems(): Promise<void> {
+    const open = get(openSong);
+    if (!open) return;
+    stemsError.set(null);
+    try {
+      const out = await cmd<{ state: string }>("stems.separate", { song_id: open.song.id });
+      if (out.state === "running") stemsRunning.set(true);
+      else if (out.state === "cached") await this.openSong(open.song.id);
+    } catch (e) {
+      // shown verbatim: the "not installed" message carries the install hint
+      stemsError.set(e instanceof Error ? e.message : String(e));
+    }
+  },
+
   async refreshRetention(): Promise<void> {
     const open = get(openSong);
     if (!open) {
@@ -430,6 +502,17 @@ export async function initEvents(): Promise<() => void> {
         void actions.refreshDue();
         void actions.refreshRetention();
         break;
+      case "stems_progress": {
+        const data = ev.data as { song_id: number; state: string; error?: string };
+        stemsRunning.set(false);
+        if (data.state === "done") {
+          // re-opening the song auto-loads the freshly cached stems
+          if (get(openSong)?.song.id === data.song_id) void actions.openSong(data.song_id);
+        } else if (data.state === "failed") {
+          stemsError.set(data.error ?? "stem separation failed");
+        }
+        break;
+      }
     }
   });
 }

@@ -7,6 +7,7 @@
   import PlanBuilder from "./components/PlanBuilder.svelte";
   import PlanRunner from "./components/PlanRunner.svelte";
   import Sections from "./components/Sections.svelte";
+  import StemMixer from "./components/StemMixer.svelte";
   import Transport from "./components/Transport.svelte";
   import Waveform from "./components/Waveform.svelte";
   import { installKeys, KEY_HELP } from "./lib/keys";
@@ -36,6 +37,7 @@
   <main class="stage">
     <Waveform />
     <Transport />
+    <StemMixer />
     <footer class="help mono">{KEY_HELP}</footer>
   </main>
   <aside class="panels">
