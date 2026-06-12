@@ -20,7 +20,7 @@
 - Create: `crates/engine/Cargo.toml`, `crates/engine/src/lib.rs`
 - Create: `crates/server/Cargo.toml`, `crates/server/src/lib.rs`
 
-- [ ] **Step 1: Write workspace files**
+- [x] **Step 1: Write workspace files**
 
 `Cargo.toml`:
 ```toml
@@ -73,12 +73,12 @@ Each `src/lib.rs` starts as:
 //! (one-line crate description)
 ```
 
-- [ ] **Step 2: Verify build**
+- [x] **Step 2: Verify build**
 
 Run: `cargo build && cargo test`
 Expected: compiles, 0 tests pass.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add -A && git commit -m "feat: scaffold cargo workspace (practice/engine/server)"
