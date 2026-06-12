@@ -62,7 +62,7 @@ cd apps/desktop && pnpm install && pnpm tauri build   # UI binary -> target/rele
 cargo build -p server --release             # headless -> target/release/earwormd
 ```
 
-Optional, for stems: `uv tool install demucs` (PyTorch, ~2.5 GB).
+Optional, for stems: `uv tool install demucs --with torchcodec` (PyTorch, ~2.5 GB; torchcodec is required by torchaudio 2.9+ for saving stems).
 
 ## Socket quick taste
 

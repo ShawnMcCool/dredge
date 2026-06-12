@@ -663,8 +663,8 @@ impl App {
             }
             if !self.separator.is_available() {
                 return Err(
-                    "demucs not installed — install with: uv tool install demucs \
-                     (CUDA torch pulls ~2.5 GB)"
+                    "demucs not installed — install with: uv tool install demucs --with torchcodec \
+                     (CUDA torch pulls ~2.5 GB; torchcodec is required by torchaudio 2.9+)"
                         .into(),
                 );
             }
