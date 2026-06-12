@@ -51,8 +51,12 @@ Single Rust workspace, one process, Tauri v2 shell. Crates:
 Owns the audio thread.
 - Output: `pipewire-rs`.
 - Decode: `symphonia` (mp3/flac/ogg/wav/m4a) → 48 kHz f32 in memory.
-- Stretch/pitch: **Rubber Band** via FFI. Rate 0.25–2.0×, pitch ±12
-  semitones + cents, independent.
+- Stretch/pitch: **Rubber Band** via FFI, **R3 engine** (markedly better
+  low-frequency fidelity — the user's primary instrument is bass). Rate
+  0.25–2.0×, pitch ±12 semitones + cents, independent.
+- **Bass-focus toggle**: one-key listening aid for transcribing bass —
+  octave-up pitch shift (+12) and/or low-pass biquad preset (~400 Hz),
+  the classic trick for hearing buried bass lines.
 - Sample-accurate A-B loop points with a short equal-power crossfade at the
   seam (a click on every repeat is ear poison).
 - Lock-free SPSC rings between control thread and audio callback; the audio
@@ -104,7 +108,9 @@ The novel layer. Pure logic + persistence; no audio types.
 - **v2:** PipeWire capture-anything — tap a chosen app node into a ring
   buffer; "loop what just played"; promote a capture to a library song.
 - **v3:** local stems — Demucs as subprocess first, ONNX (`ort`) in-process
-  later; per-stem gain inside the loop player.
+  later; per-stem gain inside the loop player. Default to the 4-stem model
+  (vocals/drums/**bass**/other): bass is the cleanest-separating stem, which
+  suits the primary use case; 6-stem (guitar) optional.
 - **Out of scope (all versions):** instrument-input scoring, chord/key
   detection, notation rendering, cloud anything, mobile.
 
