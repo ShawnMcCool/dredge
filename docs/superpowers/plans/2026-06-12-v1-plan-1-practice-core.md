@@ -93,7 +93,7 @@ git add -A && git commit -m "feat: scaffold cargo workspace (practice/engine/ser
 - Modify: `crates/practice/src/lib.rs`
 - Test: inline `#[cfg(test)]` in `model.rs`
 
-- [ ] **Step 1: Write failing serde round-trip test**
+- [x] **Step 1: Write failing serde round-trip test**
 
 `crates/practice/src/model.rs` (types + test together; test first mentally, but Rust needs the types to compile — write both, verify the test exercises real behavior):
 
@@ -228,12 +228,12 @@ mod tests {
 pub mod model;
 ```
 
-- [ ] **Step 2: Run tests**
+- [x] **Step 2: Run tests**
 
 Run: `cargo test -p practice`
 Expected: `plan_steps_roundtrip_through_json` PASS.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add -A && git commit -m "feat(practice): domain model with serde contracts"
