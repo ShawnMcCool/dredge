@@ -21,20 +21,20 @@
 - Create: `apps/desktop/src-tauri/` — `Cargo.toml`, `tauri.conf.json`, `build.rs`, `src/main.rs`, `icons/` (generate via `pnpm tauri icon` from a plain 512×512 PNG; a solid-color placeholder generated with ImageMagick `magick -size 512x512 xc:'#e0a458' icon.png` is fine for v1)
 - Modify: root `Cargo.toml` (add `"apps/desktop/src-tauri"` to members)
 
-- [ ] **Step 1: Frontend scaffold**
+- [x] **Step 1: Frontend scaffold**
 
 `pnpm create vite apps/desktop --template svelte-ts` (pnpm 11 syntax may be `pnpm create vite@latest`), then `pnpm add -D @tauri-apps/cli vitest` and `pnpm add @tauri-apps/api @tauri-apps/plugin-dialog`. Strip demo content; `App.svelte` renders an empty three-column shell (`aside.library / main.stage / aside.panels`) with the design tokens in `app.css` as CSS custom properties.
 
-- [ ] **Step 2: Tauri scaffold**
+- [x] **Step 2: Tauri scaffold**
 
 `pnpm tauri init` (or hand-write) with: `productName: "earworm"`, identifier `dev.shawn.earworm`, `frontendDist: "../dist"`, `devUrl: "http://localhost:5173"`, window 1280×800, title "earworm". `src-tauri/Cargo.toml` joins the workspace (`edition.workspace = true`), deps: `tauri = { version = "2", features = [] }`, `tauri-plugin-dialog = "2"`, `server/practice/engine` path deps, serde/serde_json. Keep the generated `main.rs` minimal for now (default builder + dialog plugin) — state wiring is Task 2.
 
-- [ ] **Step 3: Verify both builds**
+- [x] **Step 3: Verify both builds**
 
 Run: `pnpm install && pnpm build` (in apps/desktop) — vite build succeeds.
 Run: `cargo check -p earworm-desktop` (name the crate that) — compiles.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A && git commit -m "feat(desktop): tauri 2 + svelte 5 scaffold with design tokens"

@@ -1,0 +1,121 @@
+/* earworm design tokens — spare, near-black, one amber accent. */
+:root {
+  --bg: #101014;
+  --bg-raised: #16161c;
+  --fg: #e8e6e3;
+  --accent: #e0a458;
+  --accent-dim: #8a6a3f;
+  --muted: #6b7280;
+  --wave: #3f4250;
+  --line: #26262e;
+  --miss: #c4564f;
+  --shaky: #e0a458;
+  --solid: #6fae6f;
+
+  --space: 8px;
+  --radius: 2px;
+  --mono: ui-monospace, "JetBrains Mono", "Fira Code", monospace;
+  --fade: 120ms;
+
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--fg);
+  background: var(--bg);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+}
+
+#app {
+  height: 100vh;
+}
+
+.mono {
+  font-family: var(--mono);
+}
+
+button {
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: calc(var(--space) / 2) var(--space);
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: var(--muted);
+}
+
+button.accent {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+button:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+input,
+select {
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: calc(var(--space) / 2);
+}
+
+input:focus,
+select:focus,
+button:focus-visible {
+  outline: 1px solid var(--accent-dim);
+  outline-offset: -1px;
+}
+
+input[type="number"] {
+  font-family: var(--mono);
+  width: 5.5em;
+}
+
+h2 {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 var(--space);
+}
+
+ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fade-in {
+  animation: fade var(--fade) ease-out;
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
