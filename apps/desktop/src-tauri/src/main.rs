@@ -14,6 +14,7 @@ fn db_path() -> std::path::PathBuf {
 }
 
 fn main() {
+    server::logging::redirect_if_headless("earworm-desktop");
     // webkit2gtk's DMA-BUF renderer crashes the Wayland connection on this
     // stack (Hyprland + NVIDIA): "Error 71 (Protocol error) dispatching to
     // Wayland display". Disable it before the webview initializes unless the

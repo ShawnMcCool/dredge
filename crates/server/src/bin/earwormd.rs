@@ -34,6 +34,7 @@ fn parse_args() -> Result<(PathBuf, PathBuf), String> {
 }
 
 fn main() {
+    server::logging::redirect_if_headless("earwormd");
     let (socket_path, db_path) = match parse_args() {
         Ok(paths) => paths,
         Err(e) => {

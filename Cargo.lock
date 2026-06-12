@@ -3193,6 +3193,7 @@ dependencies = [
  "dirs",
  "engine",
  "hound",
+ "libc",
  "practice",
  "rusqlite",
  "serde",
