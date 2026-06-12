@@ -269,7 +269,7 @@ git add -A && git commit -m "feat(server): app dispatcher with library commands,
 - Modify: `crates/server/src/app.rs`
 - Test: `crates/server/tests/app_plan_run.rs`
 
-- [ ] **Step 1: Add transport + plan arms and `tick`**
+- [x] **Step 1: Add transport + plan arms and `tick`**
 
 New dispatch arms:
 - `"play" | "pause"` → EngineCmd::Play / Pause
@@ -296,7 +296,7 @@ self.audio.send(EngineCmd::Play);
    - `Finished` → emit `song_finished`.
 2. Return collected events.
 
-- [ ] **Step 2: Write failing tests**
+- [x] **Step 2: Write failing tests**
 
 `crates/server/tests/app_plan_run.rs` — use the shared-mock wrapper:
 ```rust
@@ -320,11 +320,11 @@ Tests:
 3. `skip_step_jumps` — start plan, dispatch `plan.skip_step` → current becomes the play_reps step; mock got a new SetRate(0.8).
 4. `status_reports_plan_state` — after start, `status` shows step_idx 0, mode "listen".
 
-- [ ] **Step 3: Run (fail), implement, run (pass)**
+- [x] **Step 3: Run (fail), implement, run (pass)**
 
 Run: `cargo test -p server --test app_plan_run` — 4 PASS.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A && git commit -m "feat(server): transport commands and event-driven plan execution"

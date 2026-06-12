@@ -1,8 +1,9 @@
 use crate::control::AudioControl;
-use crate::protocol::{Request, Response};
-use practice::model::{LoopId, LoopKind, LoopRegion, PlanId, PlanStep, Song, SongId};
-use practice::runner::PlanRunner;
-use practice::store::{NewLoop, NewSection, NewSong, Store};
+use crate::protocol::{Event, Request, Response};
+use engine::pipeline::{EngineCmd, EngineEvent};
+use practice::model::{LoopId, LoopKind, LoopRegion, Plan, PlanId, PlanStep, Song, SongId};
+use practice::runner::{PlanRunner, RepMode, RepSpec};
+use practice::store::{NewLoop, NewRep, NewSection, NewSong, Store};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -71,7 +72,301 @@ impl App {
             "junctions.derive" => self.junctions_derive(p),
             "plan.save" => self.plan_save(p),
             "plan.list" => self.plan_list(p),
+            "play" => self.send_ok(EngineCmd::Play),
+            "pause" => self.send_ok(EngineCmd::Pause),
+            "seek" => self.seek(p),
+            "rate" => self.rate(p),
+            "loop.set" => self.loop_set(p),
+            "loop.clear" => self.send_ok(EngineCmd::ClearLoop),
+            "bass_focus" => self.bass_focus(p),
+            "mute" => self.mute(p),
+            "pitch" => self.pitch(p),
+            "status" => self.status(),
+            "plan.start" => self.plan_start(p),
+            "plan.stop" => self.plan_stop(),
+            "plan.skip_step" => self.plan_skip_step(),
             _ => Err(format!("unknown command: {cmd}")),
+        }
+    }
+
+    // --- transport ---------------------------------------------------------
+
+    fn send_ok(&mut self, cmd: EngineCmd) -> Result<Value, String> {
+        self.audio.send(cmd);
+        Ok(Value::Null)
+    }
+
+    fn seek(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            secs: f64,
+        }
+        let p: P = from_params(p)?;
+        self.send_ok(EngineCmd::SeekSecs(p.secs))
+    }
+
+    fn rate(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            value: f64,
+        }
+        let p: P = from_params(p)?;
+        self.send_ok(EngineCmd::SetRate(p.value))
+    }
+
+    fn loop_set(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            start: f64,
+            end: f64,
+        }
+        let p: P = from_params(p)?;
+        self.send_ok(EngineCmd::SetLoopSecs {
+            start: p.start,
+            end: p.end,
+        })
+    }
+
+    fn bass_focus(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            on: bool,
+        }
+        let p: P = from_params(p)?;
+        self.send_ok(EngineCmd::BassFocus(p.on))
+    }
+
+    fn mute(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            on: bool,
+        }
+        let p: P = from_params(p)?;
+        self.send_ok(EngineCmd::Mute(p.on))
+    }
+
+    fn pitch(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        #[serde(default)]
+        struct P {
+            semitones: f64,
+            cents: f64,
+            octave_up: bool,
+        }
+        impl Default for P {
+            fn default() -> Self {
+                Self {
+                    semitones: 0.0,
+                    cents: 0.0,
+                    octave_up: false,
+                }
+            }
+        }
+        let p: P = from_params(p)?;
+        let scale = 2f64.powf((p.semitones + p.cents / 100.0) / 12.0)
+            * if p.octave_up { 2.0 } else { 1.0 };
+        self.send_ok(EngineCmd::SetPitchScale(scale))
+    }
+
+    fn status(&self) -> Result<Value, String> {
+        let (secs, rate, playing) = self.last_position.unwrap_or((0.0, 1.0, false));
+        let plan = self.active_plan.as_ref().map(|ap| {
+            let cur = ap.runner.current();
+            json!({
+                "plan_id": ap.plan_id,
+                "step_idx": cur.map(|s| s.step_idx),
+                "rep_idx": cur.map(|s| s.rep_idx),
+                "mode": cur.map(|s| s.mode),
+                "loop_id": cur.map(|s| s.loop_id),
+            })
+        });
+        Ok(json!({
+            "position_secs": secs,
+            "rate": rate,
+            "playing": playing,
+            "song_id": self.open_song.as_ref().map(|o| o.song.id),
+            "plan": plan,
+        }))
+    }
+
+    // --- plan execution ----------------------------------------------------
+
+    fn plan_start(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            plan_id: PlanId,
+        }
+        let p: P = from_params(p)?;
+        let plan = self.plan_row(p.plan_id)?;
+        let open_id = self
+            .open_song
+            .as_ref()
+            .map(|o| o.song.id)
+            .ok_or("no song open")?;
+        if open_id != plan.song_id {
+            return Err("plan belongs to a different song than the open one".into());
+        }
+        let loops: HashMap<LoopId, LoopRegion> = self
+            .store
+            .list_loops(plan.song_id)
+            .err_str()?
+            .into_iter()
+            .map(|l| (l.id, l))
+            .collect();
+        let runner = PlanRunner::new(plan);
+        let spec = runner.current().ok_or("plan has no reps")?;
+        self.active_plan = Some(ActivePlan {
+            plan_id: p.plan_id,
+            runner,
+            loops,
+        });
+        self.apply_rep(spec)?;
+        serde_json::to_value(spec).err_str()
+    }
+
+    fn plan_row(&self, id: PlanId) -> Result<Plan, String> {
+        for song in self.store.list_songs().err_str()? {
+            if let Some(plan) = self
+                .store
+                .list_plans(song.id)
+                .err_str()?
+                .into_iter()
+                .find(|p| p.id == id)
+            {
+                return Ok(plan);
+            }
+        }
+        Err(format!("plan not found: {}", id.0))
+    }
+
+    fn plan_stop(&mut self) -> Result<Value, String> {
+        self.active_plan = None;
+        self.send_ok(EngineCmd::Pause)
+    }
+
+    fn plan_skip_step(&mut self) -> Result<Value, String> {
+        let next = {
+            let ap = self.active_plan.as_mut().ok_or("no active plan")?;
+            ap.runner.skip_step();
+            ap.runner.current()
+        };
+        match next {
+            Some(spec) => {
+                self.apply_rep(spec)?;
+                serde_json::to_value(spec).err_str()
+            }
+            None => {
+                self.active_plan = None;
+                self.send_ok(EngineCmd::Pause)
+            }
+        }
+    }
+
+    fn apply_rep(&mut self, spec: RepSpec) -> Result<(), String> {
+        let l = self
+            .active_plan
+            .as_ref()
+            .ok_or("no active plan")?
+            .loops
+            .get(&spec.loop_id)
+            .ok_or_else(|| format!("loop not found: {}", spec.loop_id.0))?;
+        let (start, end) = (l.start, l.end);
+        self.audio.send(EngineCmd::SetLoopSecs { start, end });
+        self.audio.send(EngineCmd::SetRate(spec.rate));
+        self.audio
+            .send(EngineCmd::Mute(spec.mode == RepMode::RecallSilent));
+        self.audio.send(EngineCmd::Play);
+        Ok(())
+    }
+
+    /// Drain engine events, drive the plan runner (loop-wrap = rep done) and
+    /// return events for broadcast. Call ~every 50 ms.
+    pub fn tick(&mut self) -> Vec<Event> {
+        let mut events = Vec::new();
+        let mut last_pos = None;
+        for ev in self.audio.poll_events() {
+            match ev {
+                EngineEvent::Position {
+                    secs,
+                    rate,
+                    playing,
+                } => last_pos = Some((secs, rate, playing)),
+                EngineEvent::LoopWrapped => {
+                    events.push(Event {
+                        event: "loop_wrapped".into(),
+                        data: Value::Null,
+                    });
+                    self.on_loop_wrapped(&mut events);
+                }
+                EngineEvent::Finished => events.push(Event {
+                    event: "song_finished".into(),
+                    data: Value::Null,
+                }),
+            }
+        }
+        // only the final Position per tick is broadcast (throttling)
+        if let Some((secs, rate, playing)) = last_pos {
+            self.last_position = Some((secs, rate, playing));
+            events.push(Event {
+                event: "position".into(),
+                data: json!({"secs": secs, "rate": rate, "playing": playing}),
+            });
+        }
+        events
+    }
+
+    fn on_loop_wrapped(&mut self, events: &mut Vec<Event>) {
+        let Some(ap) = self.active_plan.as_mut() else {
+            return;
+        };
+        let Some(done) = ap.runner.current() else {
+            return;
+        };
+        let plan_id = ap.plan_id;
+        ap.runner.advance();
+        let next = ap.runner.current();
+
+        // journal the rep that just completed (unrated)
+        if let Err(e) = self.store.record_rep(NewRep {
+            loop_id: done.loop_id,
+            plan_id: Some(plan_id),
+            mode: mode_str(done.mode).into(),
+            rate: done.rate,
+            rating: None,
+            is_retest: false,
+        }) {
+            eprintln!("earworm: rep journal write failed: {e}");
+        }
+
+        match next {
+            Some(spec) => {
+                if spec.step_idx != done.step_idx {
+                    events.push(Event {
+                        event: "step_finished".into(),
+                        data: json!({"step_idx": done.step_idx}),
+                    });
+                }
+                if let Err(e) = self.apply_rep(spec) {
+                    eprintln!("earworm: rep apply failed: {e}");
+                    return;
+                }
+                events.push(Event {
+                    event: "rep_changed".into(),
+                    data: serde_json::to_value(spec).unwrap_or(Value::Null),
+                });
+            }
+            None => {
+                events.push(Event {
+                    event: "step_finished".into(),
+                    data: json!({"step_idx": done.step_idx}),
+                });
+                self.audio.send(EngineCmd::Pause);
+                self.active_plan = None;
+                events.push(Event {
+                    event: "plan_finished".into(),
+                    data: Value::Null,
+                });
+            }
         }
     }
 
@@ -386,6 +681,14 @@ impl App {
         if let Err(e) = write() {
             eprintln!("earworm: sidecar write failed for song {}: {e}", song_id.0);
         }
+    }
+}
+
+fn mode_str(mode: RepMode) -> &'static str {
+    match mode {
+        RepMode::Listen => "listen",
+        RepMode::Play => "play",
+        RepMode::RecallSilent => "recall_silent",
     }
 }
 

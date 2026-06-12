@@ -854,6 +854,7 @@ dependencies = [
  "engine",
  "hound",
  "practice",
+ "rusqlite",
  "serde",
  "serde_json",
  "tempfile",
