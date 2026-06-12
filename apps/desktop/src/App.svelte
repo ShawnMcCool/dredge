@@ -11,6 +11,7 @@
   import Transport from "./components/Transport.svelte";
   import Waveform from "./components/Waveform.svelte";
   import { installKeys, KEY_HELP } from "./lib/keys";
+  import { initZoom } from "./lib/zoom";
   import {
     initEvents,
     pendingRatings,
@@ -32,6 +33,7 @@
   );
 
   onMount(() => {
+    void initZoom();
     const unlisten = initEvents();
     const uninstall = installKeys();
     return () => {

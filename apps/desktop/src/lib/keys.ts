@@ -1,6 +1,7 @@
 // Keyboard-first: global bindings, skipped while typing in a field.
 
 import { get } from "svelte/store";
+import { zoomIn, zoomOut, zoomReset } from "./zoom";
 import {
   actions,
   BASS_STEM,
@@ -14,7 +15,7 @@ import {
 } from "./stores";
 
 export const KEY_HELP =
-  "space play/pause · r restart loop · [ ] rate ∓5% · l loop selection · p quick practice · b bass focus · m mute bass stem · esc clear · 1/2/3 rate miss/shaky/solid";
+  "space play/pause · r restart loop · [ ] rate ∓5% · l loop selection · p quick practice · b bass focus · m mute bass stem · esc clear · 1/2/3 rate miss/shaky/solid · ctrl ± 0 zoom";
 
 function isTyping(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -33,6 +34,20 @@ function autoLoopName(): string {
 }
 
 async function handle(e: KeyboardEvent): Promise<void> {
+  // UI zoom works everywhere, even while typing
+  if (e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (e.key === "=" || e.key === "+") {
+      e.preventDefault();
+      await zoomIn();
+    } else if (e.key === "-") {
+      e.preventDefault();
+      await zoomOut();
+    } else if (e.key === "0") {
+      e.preventDefault();
+      await zoomReset();
+    }
+    return;
+  }
   if (isTyping(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
 
   switch (e.key) {
