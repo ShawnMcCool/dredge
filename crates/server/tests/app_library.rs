@@ -1,6 +1,7 @@
 use practice::store::Store;
 use serde_json::{json, Value};
 use server::app::App;
+use server::capture_control::MockCapture;
 use server::control::MockEngine;
 use server::protocol::Request;
 
@@ -28,6 +29,7 @@ fn test_app() -> (App, tempfile::TempDir, std::path::PathBuf) {
     let app = App::new(
         Store::open_in_memory().unwrap(),
         Box::new(MockEngine::default()),
+        Box::new(MockCapture::default()),
     );
     (app, dir, wav)
 }

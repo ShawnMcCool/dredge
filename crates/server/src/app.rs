@@ -1,3 +1,4 @@
+use crate::capture_control::CaptureControl;
 use crate::control::AudioControl;
 use crate::protocol::{Event, Request, Response};
 use engine::pipeline::{EngineCmd, EngineEvent};
@@ -7,7 +8,7 @@ use practice::store::{NewLoop, NewRep, NewSection, NewSong, Store};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Map any displayable error onto the protocol's String error channel.
 trait ErrStr<T> {
@@ -34,6 +35,8 @@ fn today_utc() -> time::Date {
 pub struct App {
     store: Store,
     audio: Box<dyn AudioControl>,
+    capture: Box<dyn CaptureControl>,
+    captures_dir: PathBuf,
     open_song: Option<OpenSong>,
     active_plan: Option<ActivePlan>,
     last_position: Option<(f64, f64, bool)>, // secs, rate, playing
@@ -50,14 +53,25 @@ struct ActivePlan {
 }
 
 impl App {
-    pub fn new(store: Store, audio: Box<dyn AudioControl>) -> Self {
+    pub fn new(
+        store: Store,
+        audio: Box<dyn AudioControl>,
+        capture: Box<dyn CaptureControl>,
+    ) -> Self {
         Self {
             store,
             audio,
+            capture,
+            captures_dir: default_captures_dir(),
             open_song: None,
             active_plan: None,
             last_position: None,
         }
+    }
+
+    /// Override where grabbed captures are written (tests use a tempdir).
+    pub fn set_captures_dir(&mut self, dir: PathBuf) {
+        self.captures_dir = dir;
     }
 
     pub fn dispatch(&mut self, req: Request) -> Response {
@@ -97,6 +111,14 @@ impl App {
             "rep.rate" => self.rep_rate(p),
             "due.list" => self.due_list(),
             "retention" => self.retention(p),
+            "capture.nodes" => serde_json::to_value(self.capture.list_nodes()?).err_str(),
+            "capture.start" => self.capture_start(p),
+            "capture.stop" => {
+                self.capture.stop();
+                Ok(Value::Null)
+            }
+            "capture.status" => self.capture_status(),
+            "capture.grab" => self.capture_grab(p),
             _ => Err(format!("unknown command: {cmd}")),
         }
     }
@@ -446,12 +468,79 @@ impl App {
         }
     }
 
+    // --- capture -----------------------------------------------------------
+
+    fn capture_start(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            node_id: u32,
+            buffer_secs: Option<f64>,
+        }
+        let p: P = from_params(p)?;
+        self.capture
+            .start(p.node_id, p.buffer_secs.unwrap_or(180.0))?;
+        Ok(Value::Null)
+    }
+
+    fn capture_status(&mut self) -> Result<Value, String> {
+        Ok(match self.capture.status() {
+            Some((filled, node)) => json!({
+                "running": true,
+                "filled_secs": filled,
+                "app": node.app,
+                "media": node.media,
+            }),
+            None => json!({ "running": false }),
+        })
+    }
+
+    /// Snapshot the last `last_secs` of the rolling capture to a WAV under
+    /// `captures_dir`, then funnel it through `song.import` (hash, sidecar,
+    /// peaks all reused).
+    fn capture_grab(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            last_secs: f64,
+        }
+        let p: P = from_params(p)?;
+        let (_, node) = self.capture.status().ok_or("no capture running")?;
+        let samples = self.capture.snapshot(p.last_secs)?;
+        if samples.is_empty() {
+            return Err("capture buffer is empty".into());
+        }
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let stem = if node.media.is_empty() {
+            format!("{}-{ts}", sanitize_filename(&node.app))
+        } else {
+            format!(
+                "{}-{}-{ts}",
+                sanitize_filename(&node.app),
+                sanitize_filename(&node.media)
+            )
+        };
+        let path = self.captures_dir.join(format!("{stem}.wav"));
+        engine::capture::write_wav(&path, &samples).err_str()?;
+        let title = if node.media.is_empty() {
+            node.app.clone()
+        } else {
+            format!("{} — {}", node.app, node.media)
+        };
+        self.song_import(json!({
+            "path": path.to_string_lossy(),
+            "title": title,
+        }))
+    }
+
     // --- library ---------------------------------------------------------
 
     fn song_import(&mut self, p: Value) -> Result<Value, String> {
         #[derive(Deserialize)]
         struct P {
             path: String,
+            title: Option<String>,
         }
         let p: P = from_params(p)?;
         let path = Path::new(&p.path);
@@ -460,11 +549,13 @@ impl App {
             return serde_json::to_value(existing).err_str();
         }
         let buf = engine::decode::decode_file(path).err_str()?;
-        let title = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("untitled")
-            .to_owned();
+        // explicit title wins over the file stem
+        let title = p.title.unwrap_or_else(|| {
+            path.file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("untitled")
+                .to_owned()
+        });
         let song = self
             .store
             .insert_song(NewSong {
@@ -784,6 +875,32 @@ impl App {
         if let Err(e) = write() {
             eprintln!("earworm: sidecar write failed for song {}: {e}", song_id.0);
         }
+    }
+}
+
+fn default_captures_dir() -> PathBuf {
+    // ~/music, matching this user's lowercase dirs (XDG parsing not worth it)
+    dirs::home_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("music/earworm-captures")
+}
+
+/// Keep filenames boring: alphanumerics, dash, underscore, dot survive;
+/// everything else becomes a dash (collapsed).
+fn sanitize_filename(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.') {
+            out.push(c);
+        } else if !out.ends_with('-') {
+            out.push('-');
+        }
+    }
+    let trimmed = out.trim_matches('-');
+    if trimmed.is_empty() {
+        "capture".into()
+    } else {
+        trimmed.into()
     }
 }
 

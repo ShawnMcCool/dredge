@@ -31,7 +31,11 @@ fn main() {
         .unwrap_or_else(|e| panic!("earworm: cannot open db {}: {e}", db.display()));
     let engine = engine::Engine::start()
         .unwrap_or_else(|e| panic!("earworm: cannot start audio engine (PipeWire running?): {e}"));
-    let app = Arc::new(Mutex::new(App::new(store, Box::new(engine))));
+    let app = Arc::new(Mutex::new(App::new(
+        store,
+        Box::new(engine),
+        Box::new(server::capture_control::RealCapture::default()),
+    )));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())

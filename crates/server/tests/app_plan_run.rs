@@ -2,6 +2,7 @@ use engine::pipeline::{EngineCmd, EngineEvent};
 use practice::store::Store;
 use serde_json::{json, Value};
 use server::app::App;
+use server::capture_control::MockCapture;
 use server::control::MockEngine;
 use server::protocol::{Event, Request};
 use std::sync::{Arc, Mutex};
@@ -42,7 +43,11 @@ fn plan_app() -> (App, SharedMock, tempfile::TempDir, i64) {
     write_test_wav(&wav);
     let db = dir.path().join("test.db");
     let mock: SharedMock = Arc::new(Mutex::new(MockEngine::default()));
-    let mut app = App::new(Store::open(&db).unwrap(), Box::new(mock.clone()));
+    let mut app = App::new(
+        Store::open(&db).unwrap(),
+        Box::new(mock.clone()),
+        Box::new(MockCapture::default()),
+    );
 
     let song = req(&mut app, "song.import", json!({"path": wav}));
     let id = song["id"].as_i64().unwrap();

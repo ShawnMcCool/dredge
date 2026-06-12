@@ -3,6 +3,7 @@ use practice::schedule::Resurfacing;
 use practice::store::{NewLoop, NewSong, Store};
 use serde_json::{json, Value};
 use server::app::App;
+use server::capture_control::MockCapture;
 use server::control::MockEngine;
 use server::protocol::Request;
 use time::macros::format_description;
@@ -51,7 +52,11 @@ fn fmt(d: time::Date) -> String {
 #[test]
 fn rating_solid_schedules_resurfacing() {
     let (store, _song_id, loop_id) = seeded_store();
-    let mut app = App::new(store, Box::new(MockEngine::default()));
+    let mut app = App::new(
+        store,
+        Box::new(MockEngine::default()),
+        Box::new(MockCapture::default()),
+    );
     let today = time::OffsetDateTime::now_utc().date();
 
     let first = req(
@@ -82,7 +87,11 @@ fn due_list_surfaces_overdue() {
             due_on: yesterday,
         })
         .unwrap();
-    let mut app = App::new(store, Box::new(MockEngine::default()));
+    let mut app = App::new(
+        store,
+        Box::new(MockEngine::default()),
+        Box::new(MockCapture::default()),
+    );
 
     let due = req(&mut app, "due.list", Value::Null);
     let due = due.as_array().unwrap();
@@ -94,7 +103,11 @@ fn due_list_surfaces_overdue() {
 #[test]
 fn retention_via_dispatch() {
     let (store, song_id, loop_id) = seeded_store();
-    let mut app = App::new(store, Box::new(MockEngine::default()));
+    let mut app = App::new(
+        store,
+        Box::new(MockEngine::default()),
+        Box::new(MockCapture::default()),
+    );
 
     req(
         &mut app,

@@ -197,7 +197,7 @@ git add -A && git commit -m "feat(engine): pipewire app-node discovery and rolli
 - Modify: `crates/server/src/app.rs`, `crates/server/src/lib.rs`
 - Test: `crates/server/tests/app_capture.rs`
 
-- [ ] **Step 1: Trait (mirrors AudioControl pattern)**
+- [x] **Step 1: Trait (mirrors AudioControl pattern)**
 
 ```rust
 pub trait CaptureControl: Send {
@@ -214,7 +214,7 @@ pub trait CaptureControl: Send {
 
 `App::new` gains a `Box<dyn CaptureControl>` parameter — update earwormd + desktop `main.rs` construction (`RealCapture::default()`), and all existing server tests (`MockCapture::default()`); keep the change mechanical.
 
-- [ ] **Step 2: Dispatch arms + tests**
+- [x] **Step 2: Dispatch arms + tests**
 
 Commands:
 - `"capture.nodes"` → list
@@ -228,7 +228,7 @@ Commands:
 2. `grab_writes_wav_and_imports` — scripted snapshot = 1 s 440 Hz sine; `capture.grab {last_secs: 1}` → response is a Song with title `"Spotify — Some Song"`; the WAV exists at the returned song's path (point the captures dir at a tempdir via an `App` config field `captures_dir: PathBuf`, default `~/music/earworm-captures`, overridden in tests); `song.open` on it succeeds (decodes).
 3. `grab_with_no_capture_errors` — ok:false.
 
-- [ ] **Step 3: Run (fail→pass), full server suite, commit**
+- [x] **Step 3: Run (fail→pass), full server suite, commit**
 
 Run: `cargo test -p server` — all green including the 3 new.
 

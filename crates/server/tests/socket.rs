@@ -2,6 +2,7 @@ use engine::pipeline::EngineEvent;
 use practice::store::Store;
 use serde_json::Value;
 use server::app::App;
+use server::capture_control::MockCapture;
 use server::control::MockEngine;
 use server::socket::serve;
 use std::io::{BufRead, BufReader, Write};
@@ -19,7 +20,11 @@ fn start_server(
     let path =
         std::env::temp_dir().join(format!("earworm-test-{}-{name}.sock", std::process::id()));
     let mock = Arc::new(Mutex::new(MockEngine::default()));
-    let app = App::new(Store::open_in_memory().unwrap(), Box::new(mock.clone()));
+    let app = App::new(
+        Store::open_in_memory().unwrap(),
+        Box::new(mock.clone()),
+        Box::new(MockCapture::default()),
+    );
     let handle = serve(Arc::new(Mutex::new(app)), &path, |_| {}).unwrap();
     (handle, mock, path)
 }
@@ -77,7 +82,11 @@ fn subscribe_receives_events() {
 fn on_events_hook_receives_tick_events() {
     let path = std::env::temp_dir().join(format!("earworm-test-{}-hook.sock", std::process::id()));
     let mock = Arc::new(Mutex::new(MockEngine::default()));
-    let app = App::new(Store::open_in_memory().unwrap(), Box::new(mock.clone()));
+    let app = App::new(
+        Store::open_in_memory().unwrap(),
+        Box::new(mock.clone()),
+        Box::new(MockCapture::default()),
+    );
     let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let sink = seen.clone();
     let _handle = serve(Arc::new(Mutex::new(app)), &path, move |events| {
