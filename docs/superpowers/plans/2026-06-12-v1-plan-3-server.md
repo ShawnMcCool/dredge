@@ -102,7 +102,7 @@ git add -A && git commit -m "feat(server): json-lines protocol types"
 - Create: `crates/server/src/control.rs`
 - Modify: `crates/server/src/lib.rs`
 
-- [ ] **Step 1: Write trait, real impl, mock**
+- [x] **Step 1: Write trait, real impl, mock**
 
 ```rust
 use engine::buffer::SongBuffer;
@@ -150,7 +150,7 @@ impl AudioControl for MockEngine {
 
 (Adjust the `engine::Engine` method receivers to match the as-built API — if `load` takes `&self`, the impl still works through `&mut`.)
 
-- [ ] **Step 2: Compile-check, commit**
+- [x] **Step 2: Compile-check, commit**
 
 Run: `cargo build -p server`
 
