@@ -151,7 +151,7 @@ git add -A && git commit -m "feat(engine): rubberband 4 FFI binding (R3 realtime
 - Modify: `crates/engine/src/lib.rs`
 - Test: `crates/engine/tests/decode.rs`
 
-- [ ] **Step 1: Types**
+- [x] **Step 1: Types**
 
 `crates/engine/src/buffer.rs`:
 ```rust
@@ -176,7 +176,7 @@ impl SongBuffer {
 
 `crates/engine/src/error.rs`: thiserror enum `Error { Decode(String), Io(#[from] std::io::Error), Unsupported(String) }`, `pub type Result<T>`.
 
-- [ ] **Step 2: Write failing integration test**
+- [x] **Step 2: Write failing integration test**
 
 `crates/engine/tests/decode.rs`:
 ```rust
@@ -228,7 +228,7 @@ fn missing_file_is_an_error() {
 }
 ```
 
-- [ ] **Step 3: Run, verify failure; implement `decode.rs`**
+- [x] **Step 3: Run, verify failure; implement `decode.rs`**
 
 `pub fn decode_file(path: &Path) -> Result<SongBuffer>`:
 1. symphonia: probe format from file extension hint, default decode loop collecting planar f32 (use `SampleBuffer<f32>` per packet, push interleaved).
@@ -238,12 +238,12 @@ fn missing_file_is_an_error() {
 
 Add `pub mod buffer; pub mod decode; pub mod error;` to lib.rs.
 
-- [ ] **Step 4: Run tests, verify pass**
+- [x] **Step 4: Run tests, verify pass**
 
 Run: `cargo test -p engine --test decode`
 Expected: 2 PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A && git commit -m "feat(engine): symphonia decode + rubato resample to canonical 48k stereo"
