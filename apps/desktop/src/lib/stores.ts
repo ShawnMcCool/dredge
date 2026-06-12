@@ -240,6 +240,7 @@ export const actions = {
 
   async openSong(id: number): Promise<void> {
     const data = await cmd<OpenSong>("song.open", { song_id: id });
+    localStorage.setItem(LAST_SONG_KEY, String(id));
     openSong.set(data);
     selection.set(null);
     currentLoop.set(null);
@@ -564,9 +565,26 @@ export const actions = {
   },
 };
 
+// --- launch restore ---------------------------------------------------------
+
+const LAST_SONG_KEY = "earworm-last-song";
+
+/** Pick up where the last session left off; the song may be gone — start
+ *  empty in that case rather than surfacing an error. */
+async function openLastSong(): Promise<void> {
+  const id = Number(localStorage.getItem(LAST_SONG_KEY));
+  if (!Number.isInteger(id) || id <= 0) return;
+  try {
+    await actions.openSong(id);
+  } catch {
+    localStorage.removeItem(LAST_SONG_KEY);
+  }
+}
+
 // --- events ----------------------------------------------------------------
 
 export async function initEvents(): Promise<() => void> {
+  void openLastSong();
   return onEvent((ev) => {
     switch (ev.event) {
       case "position":
