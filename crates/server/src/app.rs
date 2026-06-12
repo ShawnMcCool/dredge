@@ -651,7 +651,7 @@ impl App {
         let song = self.song_row(p.song_id)?;
         let buf = engine::decode::decode_file(Path::new(&song.path)).err_str()?;
         let peaks = engine::peaks::load_or_compute(&buf, &song.file_hash).err_str()?;
-        self.audio.load(buf);
+        self.audio.load(engine::buffer::StemSet::single(buf));
         let out = json!({
             "song": song,
             "sections": self.store.list_sections(p.song_id).err_str()?,

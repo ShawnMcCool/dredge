@@ -6,7 +6,7 @@ fn main() {
     let buf = engine::decode::decode_file(path).expect("decode");
     println!("decoded: {:.1}s", buf.duration_secs());
     let mut eng = engine::Engine::start().expect("engine");
-    eng.load(buf);
+    eng.load(engine::buffer::StemSet::single(buf));
     if let (Some(s), Some(e)) = (args.get(2), args.get(3)) {
         eng.send(engine::pipeline::EngineCmd::SetLoopSecs {
             start: s.parse().unwrap(),

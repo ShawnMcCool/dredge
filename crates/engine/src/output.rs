@@ -4,7 +4,7 @@
 //! out the event ring. It never allocates or locks, except constructing a
 //! fresh `Pipeline` at a song-swap boundary (acceptable: song loads only).
 
-use crate::buffer::{SongBuffer, CHANNELS, SAMPLE_RATE};
+use crate::buffer::{StemSet, CHANNELS, SAMPLE_RATE};
 use crate::pipeline::{EngineCmd, EngineEvent, Pipeline};
 use arc_swap::ArcSwapOption;
 use pipewire as pw;
@@ -19,9 +19,9 @@ const MAX_QUANTUM_FRAMES: usize = 8192;
 struct State {
     cmd_rx: rtrb::Consumer<EngineCmd>,
     evt_tx: rtrb::Producer<EngineEvent>,
-    song_slot: Arc<ArcSwapOption<SongBuffer>>,
+    song_slot: Arc<ArcSwapOption<StemSet>>,
     pipeline: Option<Pipeline>,
-    current_song: Option<Arc<SongBuffer>>,
+    current_song: Option<Arc<StemSet>>,
     render_buf: Vec<f32>,
     events: Vec<EngineEvent>,
 }
@@ -29,7 +29,7 @@ struct State {
 pub fn spawn(
     cmd_rx: rtrb::Consumer<EngineCmd>,
     evt_tx: rtrb::Producer<EngineEvent>,
-    song_slot: Arc<ArcSwapOption<SongBuffer>>,
+    song_slot: Arc<ArcSwapOption<StemSet>>,
 ) -> crate::error::Result<JoinHandle<()>> {
     let handle = std::thread::Builder::new()
         .name("earworm-pw".into())
@@ -44,7 +44,7 @@ pub fn spawn(
 fn run(
     cmd_rx: rtrb::Consumer<EngineCmd>,
     evt_tx: rtrb::Producer<EngineEvent>,
-    song_slot: Arc<ArcSwapOption<SongBuffer>>,
+    song_slot: Arc<ArcSwapOption<StemSet>>,
 ) -> Result<(), pw::Error> {
     pw::init();
     let mainloop = pw::main_loop::MainLoopRc::new(None)?;
@@ -92,7 +92,8 @@ fn run(
                 (None, None) => false,
             };
             if swapped {
-                state.pipeline = song.clone().map(Pipeline::new);
+                // StemSet clone is cheap: a Vec of Arcs + gains.
+                state.pipeline = song.clone().map(|s| Pipeline::new((*s).clone()));
                 state.current_song = song;
             }
 

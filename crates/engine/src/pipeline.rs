@@ -1,8 +1,7 @@
-use crate::buffer::{SongBuffer, CHANNELS, SAMPLE_RATE};
+use crate::buffer::{StemSet, CHANNELS, SAMPLE_RATE};
 use crate::filter::BassFocus;
 use crate::looper::Looper;
 use crate::stretch::{Stretcher, BLOCK_FRAMES};
-use std::sync::Arc;
 
 pub const GAIN_RAMP_FRAMES: usize = 240; // 5 ms
 
@@ -23,6 +22,11 @@ pub enum EngineCmd {
     BassFocus(bool),
     /// RecallSilent: audio muted, position keeps advancing.
     Mute(bool),
+    /// Per-stem mix gain (0.0..=1.5); out-of-range stems ignored.
+    SetStemGain {
+        idx: usize,
+        gain: f32,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -46,9 +50,9 @@ pub struct Pipeline {
 }
 
 impl Pipeline {
-    pub fn new(buf: Arc<SongBuffer>) -> Self {
+    pub fn new(set: StemSet) -> Self {
         Self {
-            looper: Looper::new(buf),
+            looper: Looper::new(set),
             stretch: Stretcher::new(),
             bass_focus: None,
             rate: 1.0,
@@ -97,6 +101,7 @@ impl Pipeline {
                 self.muted = on;
                 self.target_gain = if on || !self.playing { 0.0 } else { 1.0 };
             }
+            EngineCmd::SetStemGain { idx, gain } => self.looper.set_gain(idx, gain),
         }
     }
 
@@ -182,15 +187,21 @@ fn secs_to_frames(secs: f64) -> usize {
 mod tests {
     use super::*;
 
-    fn sine_buf(secs: f64) -> Arc<SongBuffer> {
+    use crate::buffer::SongBuffer;
+
+    fn sine(secs: f64, hz: f32, amp: f32) -> SongBuffer {
         let frames = (secs * SAMPLE_RATE as f64) as usize;
         let mut data = Vec::with_capacity(frames * CHANNELS);
         for i in 0..frames {
-            let s = (i as f32 / SAMPLE_RATE as f32 * 220.0 * std::f32::consts::TAU).sin() * 0.5;
+            let s = (i as f32 / SAMPLE_RATE as f32 * hz * std::f32::consts::TAU).sin() * amp;
             data.push(s);
             data.push(s);
         }
-        Arc::new(SongBuffer { data })
+        SongBuffer { data }
+    }
+
+    fn sine_buf(secs: f64) -> StemSet {
+        StemSet::single(sine(secs, 220.0, 0.5))
     }
 
     fn render_secs(p: &mut Pipeline, secs: f64) -> (Vec<f32>, Vec<EngineEvent>) {
@@ -280,12 +291,32 @@ mod tests {
             data.push(s);
             data.push(s);
         }
-        let mut p = Pipeline::new(Arc::new(SongBuffer { data }));
+        let mut p = Pipeline::new(StemSet::single(SongBuffer { data }));
         p.apply(EngineCmd::Play);
         p.apply(EngineCmd::BassFocus(true));
         let (out, _) = render_secs(&mut p, 1.0);
         let tail = &out[out.len() / 2..];
         assert!(rms(tail) < 0.05, "rms = {}", rms(tail));
+    }
+
+    #[test]
+    fn stem_gain_zero_drops_that_stem_from_the_mix() {
+        // two equal-amplitude uncorrelated sines: muting one leaves the
+        // other's RMS (a/√2) in the output
+        let set = StemSet::new(vec![sine(4.0, 220.0, 0.4), sine(4.0, 333.0, 0.4)]);
+        let mut p = Pipeline::new(set);
+        p.apply(EngineCmd::Play);
+        let (out, _) = render_secs(&mut p, 1.0);
+        let before = rms(&out[out.len() / 2..]);
+        p.apply(EngineCmd::SetStemGain { idx: 0, gain: 0.0 });
+        let (out, _) = render_secs(&mut p, 1.0);
+        let after = rms(&out[out.len() / 2..]);
+        let one_stem = 0.4 / 2f64.sqrt();
+        assert!(
+            (after - one_stem).abs() / one_stem < 0.15,
+            "after = {after}, expected ≈ {one_stem}"
+        );
+        assert!(after < before * 0.85, "before = {before}, after = {after}");
     }
 
     #[test]

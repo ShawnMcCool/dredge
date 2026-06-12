@@ -1,5 +1,4 @@
-use crate::buffer::{SongBuffer, CHANNELS};
-use std::sync::Arc;
+use crate::buffer::{StemSet, CHANNELS};
 
 pub const XFADE_FRAMES: usize = 480; // 10 ms
 
@@ -17,15 +16,15 @@ pub struct ReadInfo {
 /// already heard inside the blend), so the first pass is exactly
 /// end-start frames and steady-state passes are end-start-x frames.
 pub struct Looper {
-    buf: Arc<SongBuffer>,
+    set: StemSet,
     pos: usize, // current source frame
     region: Option<(usize, usize)>,
 }
 
 impl Looper {
-    pub fn new(buf: Arc<SongBuffer>) -> Self {
+    pub fn new(set: StemSet) -> Self {
         Self {
-            buf,
+            set,
             pos: 0,
             region: None,
         }
@@ -36,12 +35,19 @@ impl Looper {
     }
 
     pub fn seek(&mut self, frame: usize) {
-        self.pos = frame.min(self.buf.frames());
+        self.pos = frame.min(self.set.frames());
+    }
+
+    /// Per-stem gain (clamped to 0.0..=1.5); out-of-range stems are ignored.
+    pub fn set_gain(&mut self, idx: usize, gain: f32) {
+        if let Some(g) = self.set.gains.get_mut(idx) {
+            *g = gain.clamp(0.0, 1.5);
+        }
     }
 
     /// Set loop [start, end) in frames; jumps into the region if outside.
     pub fn set_region(&mut self, start: usize, end: usize) {
-        let end = end.min(self.buf.frames());
+        let end = end.min(self.set.frames());
         let start = start.min(end);
         self.region = Some((start, end));
         if self.pos < start || self.pos >= end {
@@ -55,7 +61,7 @@ impl Looper {
 
     /// Fill `out` (len = frames*CHANNELS). Returns ReadInfo.
     pub fn read(&mut self, out: &mut [f32]) -> ReadInfo {
-        let total = self.buf.frames();
+        let total = self.set.frames();
         let frames_req = out.len() / CHANNELS;
         let mut info = ReadInfo::default();
         for f in 0..frames_req {
@@ -65,9 +71,9 @@ impl Looper {
                         info.finished = true;
                         break;
                     }
-                    let i = self.pos * CHANNELS;
-                    out[f * CHANNELS] = self.buf.data[i];
-                    out[f * CHANNELS + 1] = self.buf.data[i + 1];
+                    let (l, r) = self.set.frame(self.pos);
+                    out[f * CHANNELS] = l;
+                    out[f * CHANNELS + 1] = r;
                     self.pos += 1;
                 }
                 Some((start, end)) => {
@@ -78,7 +84,6 @@ impl Looper {
                     }
                     let xfade = XFADE_FRAMES.min(len / 4);
                     let fade_start = end - xfade;
-                    let i = self.pos * CHANNELS;
                     if self.pos >= fade_start {
                         // blend tail with head (linear / equal-gain: the two
                         // sides are correlated material from the same song,
@@ -87,10 +92,10 @@ impl Looper {
                         let k = self.pos - fade_start;
                         let t = (k as f32 + 0.5) / xfade.max(1) as f32;
                         let (g_out, g_in) = (1.0 - t, t);
-                        let j = (start + k) * CHANNELS;
-                        out[f * CHANNELS] = self.buf.data[i] * g_out + self.buf.data[j] * g_in;
-                        out[f * CHANNELS + 1] =
-                            self.buf.data[i + 1] * g_out + self.buf.data[j + 1] * g_in;
+                        let (tl, tr) = self.set.frame(self.pos);
+                        let (hl, hr) = self.set.frame(start + k);
+                        out[f * CHANNELS] = tl * g_out + hl * g_in;
+                        out[f * CHANNELS + 1] = tr * g_out + hr * g_in;
                         self.pos += 1;
                         info.frames += 1;
                         if self.pos >= end {
@@ -102,8 +107,9 @@ impl Looper {
                         }
                         continue;
                     } else {
-                        out[f * CHANNELS] = self.buf.data[i];
-                        out[f * CHANNELS + 1] = self.buf.data[i + 1];
+                        let (l, r) = self.set.frame(self.pos);
+                        out[f * CHANNELS] = l;
+                        out[f * CHANNELS + 1] = r;
                         self.pos += 1;
                     }
                 }
@@ -118,15 +124,17 @@ impl Looper {
 mod tests {
     use super::*;
 
+    use crate::buffer::SongBuffer;
+
     /// Buffer where frame i has value i (both channels) — positions are
     /// directly observable in the output.
-    fn ramp(frames: usize) -> Arc<SongBuffer> {
+    fn ramp(frames: usize) -> StemSet {
         let mut data = Vec::with_capacity(frames * CHANNELS);
         for i in 0..frames {
             data.push(i as f32);
             data.push(i as f32);
         }
-        Arc::new(SongBuffer { data })
+        StemSet::single(SongBuffer { data })
     }
 
     fn read_frames(l: &mut Looper, n: usize) -> (Vec<f32>, usize) {
@@ -209,6 +217,22 @@ mod tests {
         let mut out = vec![0.0f32; 2];
         l.read(&mut out);
         assert_eq!(out[0], 10_000.0);
+    }
+
+    #[test]
+    fn setting_stem_gain_zero_mid_read_silences_its_contribution() {
+        let constant = |v: f32| SongBuffer {
+            data: vec![v; 1000 * CHANNELS],
+        };
+        let mut l = Looper::new(StemSet::new(vec![constant(0.25), constant(0.5)]));
+        let mut out = vec![0.0f32; 10 * CHANNELS];
+        l.read(&mut out);
+        assert!((out[0] - 0.75).abs() < 1e-6, "mix = {}", out[0]);
+        l.set_gain(1, 0.0);
+        l.read(&mut out);
+        assert!((out[0] - 0.25).abs() < 1e-6, "mix = {}", out[0]);
+        // out-of-range index is ignored, not a panic
+        l.set_gain(7, 0.0);
     }
 
     #[test]
