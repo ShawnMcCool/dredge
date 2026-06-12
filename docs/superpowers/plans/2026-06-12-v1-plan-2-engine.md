@@ -257,7 +257,7 @@ git add -A && git commit -m "feat(engine): symphonia decode + rubato resample to
 - Create: `crates/engine/src/peaks.rs`
 - Modify: `crates/engine/src/lib.rs` (add `pub mod peaks;`)
 
-- [ ] **Step 1: Write failing tests (inline)**
+- [x] **Step 1: Write failing tests (inline)**
 
 `crates/engine/src/peaks.rs`:
 ```rust
@@ -320,11 +320,11 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run (fail), implement**
+- [x] **Step 2: Run (fail), implement**
 
 `compute_peaks`: chunk `buf.data` by `FRAMES_PER_BUCKET * CHANNELS`, fold min/max over all samples in the chunk. `load_or_compute`: path = `dirs::cache_dir().join("earworm/peaks/<hash>.json")`; read+parse if exists (parse failure → recompute), else compute, `create_dir_all`, write JSON.
 
-- [ ] **Step 3: Run tests, verify pass; commit**
+- [x] **Step 3: Run tests, verify pass; commit**
 
 Run: `cargo test -p engine peaks` — 3 PASS.
 

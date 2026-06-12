@@ -4,3 +4,4 @@ pub mod buffer;
 pub mod decode;
 pub mod error;
 pub mod ffi;
+pub mod peaks;
