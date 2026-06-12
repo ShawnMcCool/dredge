@@ -23,6 +23,9 @@ and a practice engine.
   - *Recall tests* — alternating audible / silent passes, play from memory
   - *Spaced resurfacing* of loops across days; progress is measured by
     **next-day retests**, not in-session smoothness
+- **Ephemeral practice** (`p`): select a span on the waveform, press `p` —
+  an instant micro-session runs on it (listen ×2 → oscillating play reps).
+  Rate it at the end to keep the auto-named loop; discard leaves no trace.
 - **Capture anything** (v2): tap any app's PipeWire node — Spotify, Firefox,
   whatever — into a rolling 3-minute buffer and *grab what just played* as a
   loopable song.
@@ -54,7 +57,7 @@ not locked in.
 Arch deps: `rubberband pipewire webkit2gtk-4.1 gtk3` (pkg-config used at build).
 
 ```bash
-cargo test                                  # 97 tests
+cargo test                                  # 102 tests
 cd apps/desktop && pnpm install && pnpm tauri build   # UI binary -> target/release/earworm
 cargo build -p server --release             # headless -> target/release/earwormd
 ```
@@ -69,7 +72,7 @@ printf '%s\n' '{"id":1,"cmd":"song.import","params":{"path":"/path/song.flac"}}'
 ```
 
 Commands: `song.*`, `section.replace`, `loop.*`, `junctions.derive`, `plan.*`,
-`rep.rate`, `due.list`, `retention`, `capture.*`, `stems.*`, transport
+`practice.quick*`, `rep.rate`, `due.list`, `retention`, `capture.*`, `stems.*`, transport
 (`play/pause/seek/rate/pitch/loop.set/bass_focus/mute`), `subscribe` for the
 event stream.
 

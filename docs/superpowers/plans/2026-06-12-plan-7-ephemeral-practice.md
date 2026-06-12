@@ -67,11 +67,11 @@ git add -A && git commit -m "feat(desktop): p-key ephemeral practice with keep/d
 
 ### Task 3: Docs + live smoke
 
-- [ ] **Step 1: README** — add `p` to the workflow blurb (one line under "What it does": select → `p` → instant session; rate to keep).
+- [x] **Step 1: README** — add `p` to the workflow blurb (one line under "What it does": select → `p` → instant session; rate to keep).
 
-- [ ] **Step 2: Socket smoke** — against a live `earwormd` (real engine): import the test sine, open, `practice.quick {start:1, end:3}` via `just cmd`, subscribe and observe `rep_changed` events progressing listen→play with the oscillate rates while audio plays; `practice.quick_rate {rating:"solid"}` → loop persisted (verify `loop.list`); cleanup temp db.
+- [x] **Step 2: Socket smoke** — against a live `earwormd` (real engine): import the test sine, open, `practice.quick {start:1, end:3}` via `just cmd`, subscribe and observe `rep_changed` events progressing listen→play with the oscillate rates while audio plays; `practice.quick_rate {rating:"solid"}` → loop persisted (verify `loop.list`); cleanup temp db.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add -A && git commit -m "docs+test: ephemeral practice smoke verified"
