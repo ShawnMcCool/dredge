@@ -34,6 +34,12 @@ and a practice engine.
   it yourself. No cloud, ever.
 - **Bass focus** (`b`): octave-up + low-pass — the transcriber's trick for
   hearing buried bass lines.
+- **Analyze** (v4): one click per song — beats/downbeats/BPM (beat_this) plus
+  suggested sections (SongFormer, novelty fallback). Beat ticks on the
+  waveform, loop edges snap to downbeats (`g` toggles), and saved sections
+  derive bar-aware junction loops. Runs through the repo-shipped
+  `scripts/analyze` wrapper, which bootstraps its own venv on first use —
+  swapping models never touches Rust.
 - **Scriptable**: a JSON-lines control socket at `$XDG_RUNTIME_DIR/earworm.sock`
   (mpv-style) drives everything the UI can do — foot pedals, shell scripts,
   whatever. The desktop UI and the socket share one session.
@@ -57,12 +63,21 @@ not locked in.
 Arch deps: `rubberband pipewire webkit2gtk-4.1 gtk3` (pkg-config used at build).
 
 ```bash
-cargo test                                  # 102 tests
+cargo test                                  # 120 tests
 cd apps/desktop && pnpm install && pnpm tauri build   # UI binary -> target/release/earworm
 cargo build -p server --release             # headless -> target/release/earwormd
 ```
 
 Optional, for stems: `uv tool install demucs --with torchcodec` (PyTorch, ~2.5 GB; torchcodec is required by torchaudio 2.9+ for saving stems).
+
+Optional, for Analyze: nothing — `scripts/analyze` bootstraps
+`~/.local/share/earworm/analyze-venv` (uv, python 3.12, beat_this + torch)
+on first run. For SongFormer section labels, additionally create
+`~/.local/share/earworm/songformer-venv` (python 3.11, `torch==2.4.0
+torchaudio==2.4.0 "numpy<2" transformers==4.51.1 librosa soundfile ema-pytorch
+loguru omegaconf tqdm safetensors muq x-transformers msaf einops
+huggingface_hub`); the wrapper prefers it when present and falls back to a
+novelty detector otherwise. SongFormer wants ~8 GB of free VRAM.
 
 ## Socket quick taste
 
@@ -72,7 +87,8 @@ printf '%s\n' '{"id":1,"cmd":"song.import","params":{"path":"/path/song.flac"}}'
 ```
 
 Commands: `song.*`, `section.replace`, `loop.*`, `junctions.derive`, `plan.*`,
-`practice.quick*`, `rep.rate`, `due.list`, `retention`, `capture.*`, `stems.*`, transport
+`practice.quick*`, `rep.rate`, `due.list`, `retention`, `capture.*`, `stems.*`,
+`analysis.*`, transport
 (`play/pause/seek/rate/pitch/loop.set/bass_focus/mute`), `subscribe` for the
 event stream.
 

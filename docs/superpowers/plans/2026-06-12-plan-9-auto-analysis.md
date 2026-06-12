@@ -60,9 +60,11 @@ Rust side mirrors the stems pattern exactly: `Analyzer` trait (Real = subprocess
 
 ### Task 5: Live verification + gate
 
-- [ ] Through a live earwormd (real engine + real Analyzer): import the Deftones mp3 (already in library on the real DB — use a temp DB and re-import), `analysis.run`, poll to cached, `song.open` shows analysis, `section.replace` with two suggested sections → junction loop bounds land exactly on downbeats from `analysis.get`. Report the actual numbers.
-- [ ] Full gate: `cargo test && cargo clippy --workspace -- -D warnings && cargo fmt && pnpm vitest run && pnpm build`. README: add Analyze to the feature list + `scripts/analyze` note.
-- [ ] Commit: `feat(analysis): live-verified beat-aware pipeline`
+- [x] Through a live earwormd (real engine + real Analyzer): import the Deftones mp3 (already in library on the real DB — use a temp DB and re-import), `analysis.run`, poll to cached, `song.open` shows analysis, `section.replace` with two suggested sections → junction loop bounds land exactly on downbeats from `analysis.get`. Report the actual numbers.
+  - Verified 2026-06-12 against `target/debug/earwormd --socket /tmp/earworm-live.sock --db /tmp/earworm-live.db`: engine `songformer`, bpm 157.89, 408 beats, 130 downbeats, 12 sections. Saved suggestions `inst` 15.8406–31.4413 + `inst` 31.4413–47.0419 → junction `inst→inst` **30.32 → 31.88**, exactly the downbeats flanking boundary 31.4413.
+- [x] Full gate: `cargo test && cargo clippy --workspace -- -D warnings && cargo fmt && pnpm vitest run && pnpm build`. README: add Analyze to the feature list + `scripts/analyze` note.
+  - 120 cargo tests passed, clippy clean, fmt clean, 19 vitest tests passed, build clean.
+- [x] Commit: `feat(analysis): live-verified beat-aware pipeline`
 
 ---
 
