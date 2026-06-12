@@ -477,7 +477,7 @@ The runner is pull-based: callers ask `current()` for the rep to perform
 (loop, rate, mode); when the engine reports a loop-wrap (or UI skips), call
 `advance()`. `current() == None` means the plan is finished.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `crates/practice/src/runner.rs`:
 ```rust
@@ -664,12 +664,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run tests, verify failure**
+- [x] **Step 2: Run tests, verify failure**
 
 Run: `cargo test -p practice runner`
 Expected: panics on `todo!()`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Key insight: a step has a deterministic total rep count; `rep_idx` is the
 flat index within the step. Everything derives from those two numbers.
@@ -756,12 +756,12 @@ impl PlanRunner {
 }
 ```
 
-- [ ] **Step 4: Run tests, verify pass**
+- [x] **Step 4: Run tests, verify pass**
 
 Run: `cargo test -p practice runner`
 Expected: 9 PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A && git commit -m "feat(practice): pull-based plan runner with rotation and recall modes"
