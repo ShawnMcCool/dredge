@@ -1,0 +1,204 @@
+//! Stem separation: trait, Demucs subprocess impl, and a hermetic fake.
+//!
+//! Stem order is a fixed contract everywhere (separator output, cache
+//! layout, auto-load, UI): `["vocals", "drums", "bass", "other"]`.
+
+use std::path::{Path, PathBuf};
+
+pub const STEM_NAMES: [&str; 4] = ["vocals", "drums", "bass", "other"];
+
+pub trait StemSeparator: Send + Sync {
+    /// Blocking; writes `<out_dir>/{vocals,drums,bass,other}.wav`, returns
+    /// their paths in STEM_NAMES order.
+    fn separate(&self, audio: &Path, out_dir: &Path) -> Result<Vec<PathBuf>, String>;
+    fn is_available(&self) -> bool;
+}
+
+/// Runs `demucs -n htdemucs -o <tmp> <audio>` and moves the stem WAVs demucs
+/// writes under `<tmp>/htdemucs/<track>/<stem>.wav` into place.
+pub struct DemucsSeparator {
+    pub binary: String, // default "demucs"
+}
+
+impl Default for DemucsSeparator {
+    fn default() -> Self {
+        Self {
+            binary: "demucs".into(),
+        }
+    }
+}
+
+impl DemucsSeparator {
+    /// Pure: the exact argv (after the binary) for one separation run.
+    fn command_args(audio: &Path, tmp: &Path) -> Vec<String> {
+        vec![
+            "-n".into(),
+            "htdemucs".into(),
+            "-o".into(),
+            tmp.to_string_lossy().into_owned(),
+            audio.to_string_lossy().into_owned(),
+        ]
+    }
+}
+
+impl StemSeparator for DemucsSeparator {
+    fn separate(&self, audio: &Path, out_dir: &Path) -> Result<Vec<PathBuf>, String> {
+        std::fs::create_dir_all(out_dir)
+            .map_err(|e| format!("cannot create {}: {e}", out_dir.display()))?;
+        let tmp = out_dir.join(".demucs-tmp");
+        std::fs::create_dir_all(&tmp).map_err(|e| format!("cannot create tmp dir: {e}"))?;
+
+        let output = std::process::Command::new(&self.binary)
+            .args(Self::command_args(audio, &tmp))
+            .output()
+            .map_err(|e| format!("failed to run {}: {e}", self.binary))?;
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        if !output.status.success() {
+            return Err(format!(
+                "demucs failed ({}): {}",
+                output.status,
+                stderr_tail(&stderr)
+            ));
+        }
+
+        let track = audio
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .ok_or("audio path has no file stem")?;
+        let src_dir = tmp.join("htdemucs").join(track);
+        let mut out = Vec::with_capacity(STEM_NAMES.len());
+        for name in STEM_NAMES {
+            let src = src_dir.join(format!("{name}.wav"));
+            let dst = out_dir.join(format!("{name}.wav"));
+            if !src.is_file() {
+                return Err(format!(
+                    "demucs did not produce {}: {}",
+                    src.display(),
+                    stderr_tail(&stderr)
+                ));
+            }
+            std::fs::rename(&src, &dst)
+                .map_err(|e| format!("cannot move {} into place: {e}", src.display()))?;
+            out.push(dst);
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+        Ok(out)
+    }
+
+    fn is_available(&self) -> bool {
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        find_in_path(&self.binary, &path).is_some()
+    }
+}
+
+/// `which`-style scan: first executable file named `binary` in `path_var`
+/// (a `PATH`-formatted OsStr). Pure in its inputs so tests don't have to
+/// mutate the process environment.
+fn find_in_path(binary: &str, path_var: &std::ffi::OsStr) -> Option<PathBuf> {
+    use std::os::unix::fs::PermissionsExt;
+    std::env::split_paths(path_var).find_map(|dir| {
+        let candidate = dir.join(binary);
+        let meta = std::fs::metadata(&candidate).ok()?;
+        (meta.is_file() && meta.permissions().mode() & 0o111 != 0).then_some(candidate)
+    })
+}
+
+fn stderr_tail(stderr: &str) -> String {
+    let tail: Vec<&str> = stderr.lines().rev().take(5).collect();
+    tail.into_iter().rev().collect::<Vec<_>>().join(" | ")
+}
+
+/// Test double: writes four copies of the input decoded to WAV, each scaled
+/// by a distinct factor so tests can tell stems apart (0.4/0.3/0.2/0.1).
+pub struct FakeSeparator;
+
+const FAKE_SCALES: [f32; 4] = [0.4, 0.3, 0.2, 0.1];
+
+impl StemSeparator for FakeSeparator {
+    fn separate(&self, audio: &Path, out_dir: &Path) -> Result<Vec<PathBuf>, String> {
+        let buf = engine::decode::decode_file(audio).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(out_dir).map_err(|e| e.to_string())?;
+        let mut out = Vec::with_capacity(STEM_NAMES.len());
+        for (name, scale) in STEM_NAMES.iter().zip(FAKE_SCALES) {
+            let scaled: Vec<f32> = buf.data.iter().map(|s| s * scale).collect();
+            let path = out_dir.join(format!("{name}.wav"));
+            engine::capture::write_wav(&path, &scaled).map_err(|e| e.to_string())?;
+            out.push(path);
+        }
+        Ok(out)
+    }
+
+    fn is_available(&self) -> bool {
+        true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn demucs_command_args_are_exact() {
+        let args = DemucsSeparator::command_args(Path::new("/songs/a.mp3"), Path::new("/tmp/out"));
+        assert_eq!(
+            args,
+            vec!["-n", "htdemucs", "-o", "/tmp/out", "/songs/a.mp3"]
+        );
+    }
+
+    #[test]
+    fn is_available_scans_path_for_executable() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("demucs");
+        std::fs::write(&bin, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let path_var = std::env::join_paths([dir.path()]).unwrap();
+        assert_eq!(find_in_path("demucs", &path_var), Some(bin));
+        assert_eq!(find_in_path("not-a-binary", &path_var), None);
+
+        // a non-executable file does not count
+        let plain = dir.path().join("plain");
+        std::fs::write(&plain, "data").unwrap();
+        std::fs::set_permissions(&plain, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(find_in_path("plain", &path_var), None);
+    }
+
+    #[test]
+    fn fake_separator_writes_four_decodable_stems_with_4321_rms() {
+        // 1 s of 440 Hz sine at 0.5 amplitude
+        let samples: Vec<f32> = (0..48_000)
+            .flat_map(|i| {
+                let v = (i as f32 / 48_000.0 * 440.0 * std::f32::consts::TAU).sin() * 0.5;
+                [v, v]
+            })
+            .collect();
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("song.wav");
+        engine::capture::write_wav(&src, &samples).unwrap();
+
+        let out_dir = dir.path().join("stems");
+        let paths = FakeSeparator.separate(&src, &out_dir).unwrap();
+        assert_eq!(paths.len(), 4);
+
+        let rms = |data: &[f32]| -> f64 {
+            (data.iter().map(|s| (*s as f64).powi(2)).sum::<f64>() / data.len() as f64).sqrt()
+        };
+        let mut stem_rms = Vec::new();
+        for (path, name) in paths.iter().zip(STEM_NAMES) {
+            assert_eq!(path, &out_dir.join(format!("{name}.wav")));
+            assert!(path.is_file(), "missing {}", path.display());
+            let buf = engine::decode::decode_file(path).unwrap();
+            stem_rms.push(rms(&buf.data));
+        }
+        // ratios ≈ 4:3:2:1 against the loudest stem
+        for (i, expect) in [1.0, 0.75, 0.5, 0.25].into_iter().enumerate() {
+            let ratio = stem_rms[i] / stem_rms[0];
+            assert!(
+                (ratio - expect).abs() < 0.02,
+                "stem {i} ratio = {ratio}, expected {expect}"
+            );
+        }
+    }
+}
