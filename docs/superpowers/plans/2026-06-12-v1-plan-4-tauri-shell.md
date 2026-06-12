@@ -280,20 +280,27 @@ git add -A && git commit -m "feat(desktop): plan runner with ratings, due panel,
 - Create: `apps/desktop/src-tauri/` release config as needed
 - Create: `~/.local/share/applications/earworm.desktop` (Exec=the built binary) — follow the user's conventions: extensionless scripts, XDG paths
 
-- [ ] **Step 1: Full build**
+- [x] **Step 1: Full build**
 
 Run: `pnpm tauri build --debug` (debug avoids long LTO; produces `src-tauri/target/.../earworm` — workspace target dir: `target/debug/earworm`).
 Expected: bundle builds. Then `cargo test && cargo clippy --workspace -- -D warnings && cargo fmt && pnpm vitest run`.
 
-- [ ] **Step 2: Smoke run**
+- [x] **Step 2: Smoke run**
+
+> As-run: first launch crashed the Wayland connection ("Error 71 (Protocol
+> error)") — webkit2gtk's DMA-BUF renderer vs Hyprland+NVIDIA. Fix baked into
+> `main.rs`: set `WEBKIT_DISABLE_DMABUF_RENDERER=1` before webview init
+> (respects a user-provided value). With that, the binary runs cleanly,
+> `$XDG_RUNTIME_DIR/earworm.sock` exists, and `song.list`/`status` answer
+> over the socket while the UI is up — UI and scripts share one App.
 
 Launch the binary with a 5 s timeout under the current session (`timeout 5 target/debug/earworm`; Wayland/Hyprland session is live). Verify: process starts, no panic on stderr, socket `$XDG_RUNTIME_DIR/earworm.sock` exists while running, and `song.list` over the socket answers while the UI is up (proves UI+socket share one App).
 
-- [ ] **Step 3: Desktop entry**
+- [x] **Step 3: Desktop entry**
 
 `earworm.desktop` with Exec pointing at the release binary path (build release: `pnpm tauri build`), icon from the generated icons dir, `Categories=AudioVideo;Audio;`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A && git commit -m "feat(desktop): build gate, smoke run, desktop entry"

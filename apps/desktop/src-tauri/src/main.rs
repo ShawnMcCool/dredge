@@ -14,6 +14,14 @@ fn db_path() -> std::path::PathBuf {
 }
 
 fn main() {
+    // webkit2gtk's DMA-BUF renderer crashes the Wayland connection on this
+    // stack (Hyprland + NVIDIA): "Error 71 (Protocol error) dispatching to
+    // Wayland display". Disable it before the webview initializes unless the
+    // user has set it themselves.
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+
     let db = db_path();
     if let Some(dir) = db.parent() {
         std::fs::create_dir_all(dir)
