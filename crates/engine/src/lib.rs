@@ -10,6 +10,7 @@ pub mod looper;
 pub mod output;
 pub mod peaks;
 pub mod pipeline;
+pub mod ring;
 pub mod stretch;
 
 pub use engine::Engine;

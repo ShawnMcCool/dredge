@@ -18,7 +18,7 @@
 - Create: `crates/engine/src/ring.rs`
 - Modify: `crates/engine/src/lib.rs` (add `pub mod ring;`)
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `crates/engine/src/ring.rs`:
 ```rust
@@ -111,7 +111,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run (fail), implement (straightforward modular arithmetic), run (pass), commit**
+- [x] **Step 2: Run (fail), implement (straightforward modular arithmetic), run (pass), commit**
 
 Run: `cargo test -p engine ring` — 5 PASS.
 
