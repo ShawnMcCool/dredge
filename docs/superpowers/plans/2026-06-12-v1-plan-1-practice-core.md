@@ -908,7 +908,7 @@ git add -A && git commit -m "feat(practice): spaced resurfacing ladder"
 - Modify: `crates/practice/src/lib.rs` (add `pub mod store; pub mod error;`)
 - Test: `crates/practice/tests/store.rs` (integration-style, in-memory DB)
 
-- [ ] **Step 1: Write error type and store skeleton**
+- [x] **Step 1: Write error type and store skeleton**
 
 `crates/practice/src/error.rs`:
 ```rust
@@ -1020,7 +1020,7 @@ impl Store {
 }
 ```
 
-- [ ] **Step 2: Write failing integration tests**
+- [x] **Step 2: Write failing integration tests**
 
 `crates/practice/tests/store.rs`:
 ```rust
@@ -1158,12 +1158,12 @@ fn deleting_song_cascades() {
 
 Note: the cascade test requires `pub fn delete_song(&self, id: SongId) -> Result<()>` — add it to the API.
 
-- [ ] **Step 3: Run tests, verify failure**
+- [x] **Step 3: Run tests, verify failure**
 
 Run: `cargo test -p practice --test store`
 Expected: compile errors (Store not implemented) — that's the failing state for scaffolding tasks.
 
-- [ ] **Step 4: Implement Store**
+- [x] **Step 4: Implement Store**
 
 Implementation notes (write the obvious rusqlite code):
 - `open()`: `Connection::open(path)`, then `PRAGMA foreign_keys = ON`, then `migrate()`.
@@ -1179,12 +1179,12 @@ WHERE l.song_id = ?1 AND r.is_retest = 1 AND r.rating IS NOT NULL
 ```
 - `due_on` stored as ISO `YYYY-MM-DD` text; parse with `time::Date::parse` and the `format_description!("[year]-[month]-[day]")` macro.
 
-- [ ] **Step 5: Run tests, verify pass**
+- [x] **Step 5: Run tests, verify pass**
 
 Run: `cargo test -p practice --test store`
 Expected: 7 PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A && git commit -m "feat(practice): sqlite store with migrations and retention query"
