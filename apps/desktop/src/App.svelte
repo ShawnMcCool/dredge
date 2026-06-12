@@ -84,13 +84,14 @@
 <style>
   .shell {
     display: grid;
-    grid-template-columns: 240px 1fr 320px;
+    grid-template-columns: minmax(170px, 240px) minmax(320px, 1fr) minmax(250px, 340px);
     height: 100vh;
   }
 
   .library {
     border-right: 1px solid var(--line);
     padding: var(--space);
+    min-width: 0;
     overflow-y: auto;
   }
 
@@ -98,12 +99,14 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
+    overflow: hidden;
     padding: var(--space);
   }
 
   .panels {
     border-left: 1px solid var(--line);
     padding: var(--space);
+    min-width: 0;
     overflow-y: auto;
   }
 
@@ -112,6 +115,7 @@
     padding-top: var(--space);
     font-size: 11px;
     color: var(--muted);
+    overflow-wrap: anywhere;
   }
 
   .tabs {

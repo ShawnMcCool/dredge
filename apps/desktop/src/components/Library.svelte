@@ -2,6 +2,7 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { onMount } from "svelte";
   import { actions, openSong, songs } from "../lib/stores";
+  import Button from "../lib/ui/Button.svelte";
 
   let error = $state("");
 
@@ -57,7 +58,7 @@
     </li>
   {/each}
 </ul>
-<button class="import" onclick={importSong}>+ import</button>
+<Button style="width: 100%; margin-top: var(--space)" onclick={importSong}>+ import</Button>
 {#if error}
   <p class="error">{error}</p>
 {/if}
@@ -68,6 +69,7 @@
     flex-direction: column;
     align-items: flex-start;
     width: 100%;
+    min-width: 0;
     text-align: left;
     background: none;
     border: none;
@@ -89,11 +91,6 @@
     width: 100%;
     font-size: 11px;
     color: var(--muted);
-  }
-
-  .import {
-    width: 100%;
-    margin-top: var(--space);
   }
 
   .error {

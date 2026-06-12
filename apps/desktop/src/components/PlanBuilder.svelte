@@ -6,6 +6,7 @@
     type PlanStep,
     type TempoCurve,
   } from "../lib/stores";
+  import Button from "../lib/ui/Button.svelte";
 
   type StepType = PlanStep["step"];
   type CurveType = TempoCurve["curve"];
@@ -168,7 +169,9 @@
       </label>
     {/each}
   </div>
-  <button class="suggest" onclick={suggested}>suggested plan</button>
+  <Button style="width: 100%; margin-bottom: var(--space)" onclick={suggested}>
+    suggested plan
+  </Button>
 
   <ul class="steps">
     {#each steps as step, i (i)}
@@ -176,9 +179,9 @@
         <div class="head">
           <span class="kind">{step.step.replace("_", " ")}</span>
           <span class="ops">
-            <button onclick={() => moveStep(i, -1)}>↑</button>
-            <button onclick={() => moveStep(i, 1)}>↓</button>
-            <button onclick={() => removeStep(i)}>×</button>
+            <Button variant="chip" onclick={() => moveStep(i, -1)}>↑</Button>
+            <Button variant="chip" onclick={() => moveStep(i, 1)}>↓</Button>
+            <Button variant="chip" onclick={() => removeStep(i)}>×</Button>
           </span>
         </div>
         <div class="fields">
@@ -215,12 +218,12 @@
       <option value="rotation">Rotation</option>
       <option value="recall_test">Recall test</option>
     </select>
-    <button onclick={addStep}>+ step</button>
+    <Button onclick={addStep}>+ step</Button>
   </div>
 
   <div class="bar">
     <input class="plan-name" bind:value={name} />
-    <button class="accent" disabled={steps.length === 0} onclick={save}>save</button>
+    <Button accent disabled={steps.length === 0} onclick={save}>save</Button>
   </div>
 
   {#if error}<p class="error">{error}</p>{/if}
@@ -231,7 +234,7 @@
       {#each $openSong.plans as plan (plan.id)}
         <li class="plan-row">
           <span>{plan.name} <span class="muted mono">{plan.steps.length} steps</span></span>
-          <button onclick={() => start(plan.id)}>▶ start</button>
+          <Button onclick={() => start(plan.id)}>▶ start</Button>
         </li>
       {/each}
     </ul>
@@ -259,11 +262,6 @@
     gap: 3px;
   }
 
-  .suggest {
-    width: 100%;
-    margin-bottom: var(--space);
-  }
-
   .steps {
     margin-bottom: var(--space);
   }
@@ -288,9 +286,9 @@
     color: var(--accent);
   }
 
-  .ops button {
-    padding: 0 4px;
-    font-size: 11px;
+  .ops {
+    display: inline-flex;
+    gap: 2px;
   }
 
   .fields {
@@ -317,12 +315,19 @@
     font-size: 11px;
     padding: 1px 3px;
     max-width: 110px;
+    min-width: 0;
   }
 
   .bar {
     display: flex;
+    flex-wrap: wrap;
     gap: calc(var(--space) / 2);
     margin-bottom: var(--space);
+    min-width: 0;
+  }
+
+  .bar select {
+    min-width: 0;
   }
 
   .plan-name {

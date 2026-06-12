@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { actions, captureNodes, captureStatus } from "../lib/stores";
+  import Button from "../lib/ui/Button.svelte";
 
   // "all" passes a huge window — the server clamps to what's buffered
   const GRABS = [
@@ -51,12 +52,16 @@
   {/if}
   <div class="grabs">
     {#each GRABS as g (g.label)}
-      <button disabled={busy} onclick={() => grab(g.secs)}>{g.label}</button>
+      <Button disabled={busy} onclick={() => grab(g.secs)}>{g.label}</Button>
     {/each}
   </div>
-  <button class="stop" disabled={busy} onclick={stop}>stop capture</button>
+  <div class="bar">
+    <Button disabled={busy} onclick={stop}>stop capture</Button>
+  </div>
 {:else}
-  <button class="refresh" disabled={busy} onclick={refresh}>refresh apps</button>
+  <div class="bar">
+    <Button disabled={busy} onclick={refresh}>refresh apps</Button>
+  </div>
   {#if $captureNodes.length === 0}
     <p class="empty">no apps playing audio</p>
   {:else}
@@ -80,9 +85,7 @@
 <p class="why">tap an app, let it roll, grab what just played.</p>
 
 <style>
-  .refresh,
-  .stop {
-    font-size: 11px;
+  .bar {
     margin-bottom: var(--space);
   }
 
@@ -109,6 +112,7 @@
   .node .muted {
     color: var(--muted);
     font-size: 11px;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -133,10 +137,7 @@
     gap: calc(var(--space) / 2);
     margin: var(--space) 0;
     flex-wrap: wrap;
-  }
-
-  .grabs button {
-    font-size: 11px;
+    min-width: 0;
   }
 
   .error {

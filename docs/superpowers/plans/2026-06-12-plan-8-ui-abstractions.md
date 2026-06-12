@@ -39,10 +39,10 @@
 
 ### Task 3: Shell + panels sweep
 
-- [ ] App.svelte grid → minmax columns with overflow containment as specified; help footer `overflow-wrap: anywhere`.
-- [ ] Sweep Sections/Loops/PlanBuilder/Capture/DuePanel/Library/PlanRunner: replace raw `<button>`s with `Button`, fixed widths with `minmax`/`min-width: 0`, ensure each panel scrolls (`overflow-y: auto`) instead of growing the rail; inputs get `width: 100%; min-width: 0` inside their rows.
-- [ ] Waveform: consume `canvasSize` action; everything else untouched.
-- [ ] `pnpm build && pnpm vitest run` clean. Commit: `refactor(desktop): shell grid + panels on shared primitives`
+- [x] App.svelte grid → minmax columns with overflow containment as specified; help footer `overflow-wrap: anywhere`.
+- [x] Sweep Sections/Loops/PlanBuilder/Capture/DuePanel/Library/PlanRunner: replace raw `<button>`s with `Button`, fixed widths with `minmax`/`min-width: 0`, ensure each panel scrolls (`overflow-y: auto`) instead of growing the rail; inputs get `width: 100%; min-width: 0` inside their rows.
+- [x] Waveform: consume `canvasSize` action; everything else untouched.
+- [x] `pnpm build && pnpm vitest run` clean. Commit: `refactor(desktop): shell grid + panels on shared primitives`
 
 ### Task 4: Visual verification at three widths (the actual gate)
 

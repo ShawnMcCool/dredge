@@ -1,5 +1,6 @@
 <script lang="ts">
   import { actions, currentLoop, openSong } from "../lib/stores";
+  import Button from "../lib/ui/Button.svelte";
 
   let tail = $state(2.0);
   let head = $state(2.0);
@@ -43,14 +44,14 @@
             {#if l.kind.kind === "junction"}<span class="badge">J</span>{/if}
           </button>
         {/if}
-        <span class="mono span">{fmt(l.start)}–{fmt(l.end)}</span>
-        <button onclick={() => startRename(l.id, l.name)} title="rename">✎</button>
-        <button onclick={() => actions.deleteLoop(l.id)} title="delete">×</button>
+        <span class="readout span">{fmt(l.start)}–{fmt(l.end)}</span>
+        <Button variant="chip" onclick={() => startRename(l.id, l.name)} title="rename">✎</Button>
+        <Button variant="chip" onclick={() => actions.deleteLoop(l.id)} title="delete">×</Button>
       </li>
     {/each}
   </ul>
   <div class="derive">
-    <button onclick={() => actions.deriveJunctions(tail, head)}>derive junctions</button>
+    <Button onclick={() => actions.deriveJunctions(tail, head)}>derive junctions</Button>
     <label>tail <input class="mono t" type="number" step="0.5" min="0.5" bind:value={tail} /></label>
     <label>head <input class="mono t" type="number" step="0.5" min="0.5" bind:value={head} /></label>
   </div>
@@ -67,6 +68,7 @@
     align-items: center;
     gap: calc(var(--space) / 2);
     margin-bottom: calc(var(--space) / 2);
+    min-width: 0;
   }
 
   .row.current .pick {
@@ -104,18 +106,22 @@
     color: var(--muted);
   }
 
-  .row button[title] {
-    padding: 1px 5px;
-    font-size: 11px;
-  }
-
   .derive {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: calc(var(--space) / 2);
     margin-top: var(--space);
     font-size: 11px;
     color: var(--muted);
+    min-width: 0;
+  }
+
+  .derive label {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    white-space: nowrap;
   }
 
   .t {

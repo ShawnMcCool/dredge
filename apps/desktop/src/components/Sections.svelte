@@ -1,5 +1,6 @@
 <script lang="ts">
   import { actions, openSong, selection } from "../lib/stores";
+  import Button from "../lib/ui/Button.svelte";
 
   interface Row {
     name: string;
@@ -84,15 +85,15 @@
           bind:value={row.end}
           oninput={touch}
         />
-        <button onclick={() => move(i, -1)} title="up">↑</button>
-        <button onclick={() => move(i, 1)} title="down">↓</button>
-        <button onclick={() => remove(i)} title="delete">×</button>
+        <Button variant="chip" onclick={() => move(i, -1)} title="up">↑</Button>
+        <Button variant="chip" onclick={() => move(i, 1)} title="down">↓</Button>
+        <Button variant="chip" onclick={() => remove(i)} title="delete">×</Button>
       </li>
     {/each}
   </ul>
   <div class="bar">
-    <button onclick={add}>+ add</button>
-    <button class="accent" disabled={!dirty} onclick={save}>save</button>
+    <Button onclick={add}>+ add</Button>
+    <Button accent disabled={!dirty} onclick={save}>save</Button>
   </div>
   <p class="note">saving re-derives junction loops</p>
 {/if}
@@ -106,13 +107,16 @@
 
   .row {
     display: flex;
+    align-items: center;
     gap: calc(var(--space) / 2);
     margin-bottom: calc(var(--space) / 2);
+    min-width: 0;
   }
 
   .row input {
     font-size: 12px;
     padding: 2px 4px;
+    min-width: 0;
   }
 
   .name {
@@ -124,13 +128,9 @@
     width: 4.5em;
   }
 
-  .row button {
-    padding: 1px 5px;
-    font-size: 11px;
-  }
-
   .bar {
     display: flex;
+    flex-wrap: wrap;
     gap: calc(var(--space) / 2);
     margin-top: var(--space);
   }

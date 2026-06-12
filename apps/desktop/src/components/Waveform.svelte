@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { get } from "svelte/store";
+  import { canvasSize } from "../lib/actions/canvasSize";
   import {
     actions,
     currentLoop,
@@ -25,7 +26,6 @@
   const CLICK_PX = 5; // below this a drag is a click → seek
 
   let canvas: HTMLCanvasElement;
-  let container: HTMLDivElement;
   let view: View = $state({ startSec: 0, endSec: 1, width: 1 });
   let lastSongId: number | null = null;
 
@@ -165,10 +165,8 @@
     }
   }
 
-  function resize() {
-    if (!canvas || !container) return;
-    const dpr = window.devicePixelRatio || 1;
-    const w = container.clientWidth;
+  function applySize(w: number, _h: number, dpr: number) {
+    if (!canvas) return;
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round((LANE_H + WAVE_H) * dpr);
     canvas.style.width = `${w}px`;
@@ -177,19 +175,13 @@
   }
 
   onMount(() => {
-    resize();
-    const ro = new ResizeObserver(resize);
-    ro.observe(container);
     let raf = 0;
     const frame = () => {
       draw();
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
-    return () => {
-      ro.disconnect();
-      cancelAnimationFrame(raf);
-    };
+    return () => cancelAnimationFrame(raf);
   });
 
   function hitLoopEdge(x: number): { loop: LoopRegion; edge: "start" | "end" } | null {
@@ -283,7 +275,7 @@
   let chipLeft = $derived($selection ? Math.min(secToX(view, $selection.end) + 8, view.width - 180) : 0);
 </script>
 
-<div class="waveform" bind:this={container}>
+<div class="waveform" use:canvasSize={applySize}>
   <canvas
     bind:this={canvas}
     onpointerdown={onPointerDown}

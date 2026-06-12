@@ -11,6 +11,7 @@
     sessionSummary,
     type PlanStep,
   } from "../lib/stores";
+  import Button from "../lib/ui/Button.svelte";
 
   const MODE_WORD = { listen: "LISTEN", play: "PLAY", recall_silent: "FROM MEMORY" } as const;
   /** The fixed quick-session shape: listen ×2 → 6 oscillating play reps. */
@@ -55,8 +56,8 @@
       {Math.round($planStatus.rate * 100)}% · rep {$planStatus.rep_idx + 1}/{repsInStep} · step {$planStatus.step_idx + 1}/{totalSteps}
     </div>
     <div class="controls">
-      <button onclick={() => actions.skipStep()}>skip step</button>
-      <button onclick={() => actions.stopPlan()}>stop</button>
+      <Button onclick={() => actions.skipStep()}>skip step</Button>
+      <Button onclick={() => actions.stopPlan()}>stop</Button>
     </div>
   {/if}
 
@@ -64,9 +65,9 @@
     <div class="rating fade-in">
       <p>How was {loopName(prompt.loop_id)}?{prompt.is_retest ? " (retest)" : ""}</p>
       <div class="choices">
-        <button onclick={() => actions.resolveRating("miss")}>1 Miss</button>
-        <button onclick={() => actions.resolveRating("shaky")}>2 Shaky</button>
-        <button onclick={() => actions.resolveRating("solid")}>3 Solid</button>
+        <Button onclick={() => actions.resolveRating("miss")}>1 Miss</Button>
+        <Button onclick={() => actions.resolveRating("shaky")}>2 Shaky</Button>
+        <Button onclick={() => actions.resolveRating("solid")}>3 Solid</Button>
       </div>
     </div>
   {/if}
@@ -75,10 +76,10 @@
     <div class="rating fade-in">
       <p>Keep this riff?</p>
       <div class="choices">
-        <button onclick={() => actions.quickRate("miss")}>1 Miss</button>
-        <button onclick={() => actions.quickRate("shaky")}>2 Shaky</button>
-        <button onclick={() => actions.quickRate("solid")}>3 Solid</button>
-        <button onclick={() => actions.quickDiscard()}>Esc discard</button>
+        <Button onclick={() => actions.quickRate("miss")}>1 Miss</Button>
+        <Button onclick={() => actions.quickRate("shaky")}>2 Shaky</Button>
+        <Button onclick={() => actions.quickRate("solid")}>3 Solid</Button>
+        <Button onclick={() => actions.quickDiscard()}>Esc discard</Button>
       </div>
     </div>
   {/if}
@@ -93,7 +94,7 @@
     <div class="summary fade-in">
       <h2>session</h2>
       <p class="mono">{$sessionSummary.reps} reps · {$sessionSummary.steps} steps</p>
-      <button onclick={() => sessionSummary.set(null)}>done</button>
+      <Button onclick={() => sessionSummary.set(null)}>done</Button>
     </div>
   {/if}
 </div>
@@ -132,8 +133,10 @@
 
   .controls {
     display: flex;
+    flex-wrap: wrap;
     gap: calc(var(--space) / 2);
     margin-top: var(--space);
+    min-width: 0;
   }
 
   .rating {
@@ -144,14 +147,12 @@
 
   .choices {
     display: flex;
+    flex-wrap: wrap;
     gap: calc(var(--space) / 2);
+    min-width: 0;
   }
 
   .summary p {
     color: var(--muted);
-  }
-
-  .summary button {
-    align-self: flex-start;
   }
 </style>
