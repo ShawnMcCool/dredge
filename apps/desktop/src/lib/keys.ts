@@ -9,11 +9,12 @@ import {
   openSong,
   pendingRatings,
   position,
+  quickPromptVisible,
   selection,
 } from "./stores";
 
 export const KEY_HELP =
-  "space play/pause · r restart loop · [ ] rate ∓5% · l loop selection · b bass focus · m mute bass stem · esc clear · 1/2/3 rate miss/shaky/solid";
+  "space play/pause · r restart loop · [ ] rate ∓5% · l loop selection · p quick practice · b bass focus · m mute bass stem · esc clear · 1/2/3 rate miss/shaky/solid";
 
 function isTyping(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -67,8 +68,15 @@ async function handle(e: KeyboardEvent): Promise<void> {
       }
       break;
     }
+    case "p": {
+      // zero-ceremony practice: selection → instant micro-session
+      const sel = get(selection);
+      if (sel && get(openSong)) await actions.quickPractice(sel.start, sel.end);
+      break;
+    }
     case "Escape":
-      selection.set(null);
+      if (get(quickPromptVisible)) await actions.quickDiscard();
+      else selection.set(null);
       break;
     case "b":
       await actions.bassFocus(!get(bassFocusOn));
@@ -80,10 +88,9 @@ async function handle(e: KeyboardEvent): Promise<void> {
     case "1":
     case "2":
     case "3": {
-      if (get(pendingRatings).length > 0) {
-        const rating = (["miss", "shaky", "solid"] as const)[Number(e.key) - 1];
-        await actions.resolveRating(rating);
-      }
+      const rating = (["miss", "shaky", "solid"] as const)[Number(e.key) - 1];
+      if (get(quickPromptVisible)) await actions.quickRate(rating);
+      else if (get(pendingRatings).length > 0) await actions.resolveRating(rating);
       break;
     }
   }

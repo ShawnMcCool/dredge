@@ -11,13 +11,24 @@
   import Transport from "./components/Transport.svelte";
   import Waveform from "./components/Waveform.svelte";
   import { installKeys, KEY_HELP } from "./lib/keys";
-  import { initEvents, pendingRatings, planStatus, sessionSummary } from "./lib/stores";
+  import {
+    initEvents,
+    pendingRatings,
+    planStatus,
+    quickPromptVisible,
+    quickSavedName,
+    sessionSummary,
+  } from "./lib/stores";
 
   const TABS = ["sections", "loops", "plan", "capture", "due"] as const;
   // due panel greets you on app start — the schedule is the product
   let tab = $state<(typeof TABS)[number]>("due");
   let running = $derived(
-    $planStatus !== null || $pendingRatings.length > 0 || $sessionSummary !== null,
+    $planStatus !== null ||
+      $pendingRatings.length > 0 ||
+      $sessionSummary !== null ||
+      $quickPromptVisible ||
+      $quickSavedName !== null,
   );
 
   onMount(() => {

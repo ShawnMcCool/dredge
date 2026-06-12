@@ -49,13 +49,13 @@ git add -A && git commit -m "feat(server): ephemeral practice — quick start, r
 **Files:**
 - Modify: `apps/desktop/src/lib/keys.ts`, `apps/desktop/src/lib/stores.ts`, `apps/desktop/src/components/PlanRunner.svelte`
 
-- [ ] **Step 1: Implement**
+- [x] **Step 1: Implement**
 
 - `stores.ts`: `quickActive` writable(false); actions `quickPractice(start, end)` (`practice.quick`, sets flag, clears selection), `quickRate(rating)` (`practice.quick_rate`, clears flag, refreshes loops — the new loop appears), `quickDiscard()`. `plan_finished` event while `quickActive` → set a `quickPromptVisible` flag instead of the normal summary.
 - `keys.ts`: `p` → if selection exists and song open → `quickPractice(sel.start, sel.end)`. While `quickPromptVisible`: `1/2/3` → `quickRate(miss|shaky|solid)`, `Escape` → `quickDiscard()`. Help footer gains `p quick practice`.
 - `PlanRunner.svelte`: when `quickActive`, header shows `QUICK` (muted) instead of the plan name; on `quickPromptVisible` show: "Keep this riff? 1 Miss · 2 Shaky · 3 Solid · Esc discard". Rating confirms with the saved loop name briefly; discard just closes.
 
-- [ ] **Step 2: Verify + commit**
+- [x] **Step 2: Verify + commit**
 
 Run: `pnpm build && pnpm vitest run` (in apps/desktop), then full gate `cargo test && cargo clippy --workspace -- -D warnings && cargo fmt`.
 

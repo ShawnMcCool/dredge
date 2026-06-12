@@ -5,11 +5,16 @@
     openSong,
     pendingRatings,
     planStatus,
+    quickActive,
+    quickPromptVisible,
+    quickSavedName,
     sessionSummary,
     type PlanStep,
   } from "../lib/stores";
 
   const MODE_WORD = { listen: "LISTEN", play: "PLAY", recall_silent: "FROM MEMORY" } as const;
+  /** The fixed quick-session shape: listen ×2 → 6 oscillating play reps. */
+  const QUICK_STEP_REPS = [2, 6];
 
   function stepReps(step: PlanStep): number {
     switch (step.step) {
@@ -25,9 +30,13 @@
   }
 
   let plan = $derived($openSong?.plans.find((p) => p.id === $planStatus?.plan_id) ?? null);
-  let totalSteps = $derived(plan?.steps.length ?? 0);
+  let totalSteps = $derived($quickActive ? QUICK_STEP_REPS.length : (plan?.steps.length ?? 0));
   let repsInStep = $derived(
-    plan && $planStatus ? stepReps(plan.steps[$planStatus.step_idx]) : 0,
+    $quickActive && $planStatus
+      ? (QUICK_STEP_REPS[$planStatus.step_idx] ?? 0)
+      : plan && $planStatus
+        ? stepReps(plan.steps[$planStatus.step_idx])
+        : 0,
   );
   let prompt = $derived($pendingRatings[0] ?? null);
 </script>
@@ -37,7 +46,11 @@
     <div class="mode" class:recall={$planStatus.mode === "recall_silent"}>
       {MODE_WORD[$planStatus.mode]}
     </div>
-    <div class="loop">{loopName($planStatus.loop_id)}</div>
+    {#if $quickActive}
+      <div class="loop quick">QUICK</div>
+    {:else}
+      <div class="loop">{loopName($planStatus.loop_id)}</div>
+    {/if}
     <div class="mono detail">
       {Math.round($planStatus.rate * 100)}% · rep {$planStatus.rep_idx + 1}/{repsInStep} · step {$planStatus.step_idx + 1}/{totalSteps}
     </div>
@@ -55,6 +68,24 @@
         <button onclick={() => actions.resolveRating("shaky")}>2 Shaky</button>
         <button onclick={() => actions.resolveRating("solid")}>3 Solid</button>
       </div>
+    </div>
+  {/if}
+
+  {#if $quickPromptVisible}
+    <div class="rating fade-in">
+      <p>Keep this riff?</p>
+      <div class="choices">
+        <button onclick={() => actions.quickRate("miss")}>1 Miss</button>
+        <button onclick={() => actions.quickRate("shaky")}>2 Shaky</button>
+        <button onclick={() => actions.quickRate("solid")}>3 Solid</button>
+        <button onclick={() => actions.quickDiscard()}>Esc discard</button>
+      </div>
+    </div>
+  {/if}
+
+  {#if $quickSavedName}
+    <div class="summary fade-in">
+      <p class="mono">saved {$quickSavedName}</p>
     </div>
   {/if}
 
@@ -87,6 +118,11 @@
 
   .loop {
     font-size: 16px;
+  }
+
+  .loop.quick {
+    color: var(--muted);
+    letter-spacing: 0.06em;
   }
 
   .detail {

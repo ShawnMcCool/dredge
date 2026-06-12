@@ -174,6 +174,12 @@ export const retention = writable<RetentionRow[]>([]);
 export const pendingRatings = writable<PendingRating[]>([]);
 /** Set when plan_finished fires; cleared when the summary is dismissed. */
 export const sessionSummary = writable<SessionSummary | null>(null);
+/** An ephemeral quick session is running (select → p). */
+export const quickActive = writable(false);
+/** plan_finished fired during a quick session — show the keep/discard prompt. */
+export const quickPromptVisible = writable(false);
+/** Name of the loop a quick rating just saved — brief confirmation. */
+export const quickSavedName = writable<string | null>(null);
 export const captureNodes = writable<CaptureNode[]>([]);
 export const captureStatus = writable<CaptureStatus>({ running: false });
 /** Mixer state for the open song's stems (sliders × mute × solo). */
@@ -356,6 +362,8 @@ export const actions = {
     await cmd("plan.stop");
     planStatus.set(null);
     pendingRatings.set([]);
+    quickActive.set(false);
+    quickPromptVisible.set(false);
   },
 
   async skipStep(): Promise<void> {
@@ -363,6 +371,41 @@ export const actions = {
     const prev = get(planStatus);
     if (spec && prev) planStatus.set({ ...spec, plan_id: prev.plan_id });
     else planStatus.set(null);
+  },
+
+  // --- ephemeral practice (select → p) ---
+
+  /** Instant micro-session on a raw span: listen ×2 → 6 oscillating reps.
+   *  Nothing persists unless quickRate is called at the end. */
+  async quickPractice(start: number, end: number): Promise<void> {
+    const spec = await cmd<RepStatus>("practice.quick", { start, end });
+    quickActive.set(true);
+    quickPromptVisible.set(false);
+    pendingRatings.set([]);
+    sessionSummary.set(null);
+    selection.set(null);
+    planStatus.set({ ...spec, plan_id: 0 });
+  },
+
+  /** Keep: the loop is auto-named and saved, the rated rep recorded, and
+   *  the resurfacing scheduler picks it up. */
+  async quickRate(rating: Rating): Promise<void> {
+    const out = await cmd<{ loop: LoopRegion }>("practice.quick_rate", { rating });
+    quickActive.set(false);
+    quickPromptVisible.set(false);
+    planStatus.set(null);
+    quickSavedName.set(out.loop.name);
+    setTimeout(() => quickSavedName.set(null), 2500);
+    await this.refreshLoops();
+    await this.refreshDue();
+  },
+
+  /** Discard leaves no trace. */
+  async quickDiscard(): Promise<void> {
+    await cmd("practice.quick_discard");
+    quickActive.set(false);
+    quickPromptVisible.set(false);
+    planStatus.set(null);
   },
 
   /** Self-rating; consumes the retest flag for loops due at plan start. */
@@ -486,6 +529,8 @@ export async function initEvents(): Promise<() => void> {
         break;
       }
       case "step_finished": {
+        // quick sessions rate once at the end, never per step
+        if (get(quickActive)) break;
         // Server reports step_idx only; the finished step's loop is the one
         // the runner was on before the following rep_changed lands.
         const prev = get(planStatus);
@@ -498,6 +543,11 @@ export async function initEvents(): Promise<() => void> {
       }
       case "plan_finished":
         planStatus.set(null);
+        if (get(quickActive)) {
+          // keep/discard is the whole prompt — no session summary
+          quickPromptVisible.set(true);
+          break;
+        }
         sessionSummary.set({ reps: repsThisPlan, steps: stepsThisPlan });
         void actions.refreshDue();
         void actions.refreshRetention();
