@@ -78,6 +78,22 @@ export interface RepStatus {
   rep_idx: number;
 }
 
+/** One suggested section from analysis — not user truth until saved. */
+export interface AnalysisSection {
+  label: string;
+  start: number;
+  end: number;
+}
+
+/** Cached `scripts/analyze` output for a song (times in seconds). */
+export interface Analysis {
+  bpm: number | null;
+  beats: number[];
+  downbeats: number[];
+  sections: AnalysisSection[];
+  engine: string;
+}
+
 export interface OpenSong {
   song: Song;
   sections: Section[];
@@ -86,6 +102,7 @@ export interface OpenSong {
   peaks: Peaks;
   /** True when the engine was loaded with the song's 4 cached stems. */
   stems: boolean;
+  analysis: Analysis | null;
 }
 
 /** Fixed stem order contract: vocals/drums/bass/other. */
@@ -187,6 +204,13 @@ export const stemMix = writable<StemMix>(defaultStemMix());
 /** A separation job is in flight (stems_progress clears it). */
 export const stemsRunning = writable(false);
 export const stemsError = writable<string | null>(null);
+/** An analysis job is in flight (analysis_progress clears it). */
+export const analysisRunning = writable(false);
+export const analysisError = writable<string | null>(null);
+/** Fresh suggestions for the Sections lane; consumed (set null) once shown. */
+export const suggestedSections = writable<AnalysisSection[] | null>(null);
+/** Loop edges snap to downbeats while on (only meaningful with analysis). */
+export const gridSnap = writable(true);
 
 /** Loops that due.list contained when the plan started: their first
  *  end-of-step rating is the retention probe (`is_retest: true`). */
@@ -221,6 +245,8 @@ export const actions = {
     currentLoop.set(null);
     stemMix.set(defaultStemMix());
     stemsError.set(null);
+    analysisError.set(null);
+    suggestedSections.set(null);
     await this.refreshRetention();
   },
 
@@ -502,6 +528,32 @@ export const actions = {
     }
   },
 
+  // --- analysis ---
+
+  /** Kick off background analysis; analysis_progress reports the outcome.
+   *  Cached results surface immediately as section suggestions. */
+  async runAnalysis(): Promise<void> {
+    const open = get(openSong);
+    if (!open) return;
+    analysisError.set(null);
+    try {
+      const out = await cmd<{ state: string }>("analysis.run", { song_id: open.song.id });
+      if (out.state === "running") analysisRunning.set(true);
+      else if (out.state === "cached") await this.loadAnalysis(open.song.id);
+    } catch (e) {
+      // shown verbatim: the "script not found" message carries the fix
+      analysisError.set(e instanceof Error ? e.message : String(e));
+    }
+  },
+
+  /** Pull the cached analysis into the open song and surface suggestions. */
+  async loadAnalysis(songId: number): Promise<void> {
+    const analysis = await cmd<Analysis | null>("analysis.get", { song_id: songId });
+    if (get(openSong)?.song.id !== songId) return;
+    openSong.update((o) => (o ? { ...o, analysis } : o));
+    if (analysis) suggestedSections.set(analysis.sections);
+  },
+
   async refreshRetention(): Promise<void> {
     const open = get(openSong);
     if (!open) {
@@ -560,6 +612,16 @@ export async function initEvents(): Promise<() => void> {
           if (get(openSong)?.song.id === data.song_id) void actions.openSong(data.song_id);
         } else if (data.state === "failed") {
           stemsError.set(data.error ?? "stem separation failed");
+        }
+        break;
+      }
+      case "analysis_progress": {
+        const data = ev.data as { song_id: number; state: string; error?: string };
+        analysisRunning.set(false);
+        if (data.state === "done") {
+          if (get(openSong)?.song.id === data.song_id) void actions.loadAnalysis(data.song_id);
+        } else if (data.state === "failed") {
+          analysisError.set(data.error ?? "analysis failed");
         }
         break;
       }

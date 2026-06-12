@@ -7,6 +7,7 @@ import {
   BASS_STEM,
   bassFocusOn,
   currentLoop,
+  gridSnap,
   openSong,
   pendingRatings,
   position,
@@ -15,7 +16,7 @@ import {
 } from "./stores";
 
 export const KEY_HELP =
-  "space play/pause · r restart loop · [ ] rate ∓5% · l loop selection · p quick practice · b bass focus · m mute bass stem · esc clear · 1/2/3 rate miss/shaky/solid · ctrl ± 0 zoom";
+  "space play/pause · r restart loop · [ ] rate ∓5% · l loop selection · p quick practice · b bass focus · m mute bass stem · g grid snap · esc clear · 1/2/3 rate miss/shaky/solid · ctrl ± 0 zoom";
 
 function isTyping(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -95,6 +96,10 @@ async function handle(e: KeyboardEvent): Promise<void> {
       break;
     case "b":
       await actions.bassFocus(!get(bassFocusOn));
+      break;
+    case "g":
+      // loop/selection edges snap to analyzed downbeats while on
+      gridSnap.update((on) => !on);
       break;
     case "m":
       // THE one-key move: mute the recorded bass, I play it

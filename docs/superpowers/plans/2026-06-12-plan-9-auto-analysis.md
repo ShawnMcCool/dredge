@@ -53,10 +53,10 @@ Rust side mirrors the stems pattern exactly: `Analyzer` trait (Real = subprocess
 
 **Files:** `Sections.svelte`, `Waveform.svelte`, `stores.ts`.
 
-- [ ] Sections tab: "Analyze" Button (shows running state from `analysis_progress`; same UX as Separate stems). On done: suggested sections appear as **prefilled unsaved rows** (visually marked `suggested`, muted accent) — user edits/renames/deletes, then the normal save persists them (and junctions re-derive bar-aware server-side). If sections already exist, suggestions append below with a "replace with suggestions" Button.
-- [ ] Waveform: when analysis exists, draw beat ticks (1 px, very muted) and downbeat ticks (slightly stronger) along the bottom edge — only at zoom levels where beat spacing ≥ 6 px (declutter). Loop create/drag/resize snaps to nearest downbeat when within 0.08 s × (1/rate)… keep simple: snap when within 10 px; `g` toggles grid-snap (default on when analysis exists), help footer updated.
-- [ ] `pnpm build && pnpm vitest run` clean. Add a vitest for the pure snap function (`snapToGrid(sec, downbeats, view, thresholdPx)`).
-- [ ] Commit: `feat(desktop): analyze action, suggested sections, beat grid + snap`
+- [x] Sections tab: "Analyze" Button (shows running state from `analysis_progress`; same UX as Separate stems). On done: suggested sections appear as **prefilled unsaved rows** (visually marked `suggested`, muted accent) — user edits/renames/deletes, then the normal save persists them (and junctions re-derive bar-aware server-side). If sections already exist, suggestions append below with a "replace with suggestions" Button.
+- [x] Waveform: when analysis exists, draw beat ticks (1 px, very muted) and downbeat ticks (slightly stronger) along the bottom edge — only at zoom levels where beat spacing ≥ 6 px (declutter). Loop create/drag/resize snaps to nearest downbeat when within 0.08 s × (1/rate)… keep simple: snap when within 10 px; `g` toggles grid-snap (default on when analysis exists), help footer updated.
+- [x] `pnpm build && pnpm vitest run` clean. Add a vitest for the pure snap function (`snapToGrid(sec, downbeats, view, thresholdPx)`).
+- [x] Commit: `feat(desktop): analyze action, suggested sections, beat grid + snap`
 
 ### Task 5: Live verification + gate
 

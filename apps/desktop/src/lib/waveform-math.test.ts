@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   playheadSecs,
   secToX,
+  snapToGrid,
   visibleBuckets,
   xToSec,
   zoom,
@@ -67,6 +68,35 @@ describe("zoom", () => {
   it("never moves the window start below zero", () => {
     const out = zoom({ startSec: 0, endSec: 20, width: 800 }, 1, 2, duration);
     expect(out.startSec).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("snapToGrid", () => {
+  // view: 20 s over 800 px → 40 px per second; threshold 10 px = 0.25 s
+  const downbeats = [12, 14, 16, 18];
+
+  it("snaps to the nearest downbeat within the pixel threshold", () => {
+    expect(snapToGrid(14.2, downbeats, view, 10)).toBe(14);
+    expect(snapToGrid(13.8, downbeats, view, 10)).toBe(14);
+  });
+
+  it("leaves values outside the threshold alone", () => {
+    expect(snapToGrid(13.0, downbeats, view, 10)).toBe(13.0);
+    expect(snapToGrid(14.6, downbeats, view, 10)).toBe(14.6);
+  });
+
+  it("threshold scales with zoom (px, not seconds)", () => {
+    // 4× wider view → 10 px is 1 s, so 14.6 now snaps
+    const wide: View = { startSec: 0, endSec: 80, width: 800 };
+    expect(snapToGrid(14.6, downbeats, wide, 10)).toBe(14);
+  });
+
+  it("exact downbeat stays put", () => {
+    expect(snapToGrid(16, downbeats, view, 10)).toBe(16);
+  });
+
+  it("no downbeats → identity", () => {
+    expect(snapToGrid(13.9, [], view, 10)).toBe(13.9);
   });
 });
 

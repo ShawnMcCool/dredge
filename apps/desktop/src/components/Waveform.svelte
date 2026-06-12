@@ -5,6 +5,7 @@
   import {
     actions,
     currentLoop,
+    gridSnap,
     openSong,
     position,
     selection,
@@ -13,6 +14,7 @@
   import {
     playheadSecs,
     secToX,
+    snapToGrid,
     visibleBuckets,
     xToSec,
     zoom,
@@ -24,6 +26,8 @@
   const WAVE_H = 200;
   const EDGE_PX = 4; // loop-edge hit zone
   const CLICK_PX = 5; // below this a drag is a click → seek
+  const SNAP_PX = 10; // grid-snap pull radius around a downbeat
+  const MIN_TICK_PX = 6; // hide beat ticks when they'd sit closer than this
 
   let canvas: HTMLCanvasElement;
   let view: View = $state({ startSec: 0, endSec: 1, width: 1 });
@@ -108,6 +112,31 @@
       const y0 = mid - hi * (WAVE_H / 2 - 2);
       const y1 = mid - lo * (WAVE_H / 2 - 2);
       ctx.fillRect(x, y0, 1, Math.max(y1 - y0, 1));
+    }
+
+    // beat grid — short ticks along the bottom edge, downbeats stronger;
+    // hidden when beats would crowd (< MIN_TICK_PX apart)
+    const analysis = open.analysis;
+    if (analysis && analysis.beats.length > 1) {
+      const pxPerSec = w / (view.endSec - view.startSec);
+      const beatSpan =
+        (analysis.beats[analysis.beats.length - 1] - analysis.beats[0]) /
+        (analysis.beats.length - 1);
+      if (beatSpan * pxPerSec >= MIN_TICK_PX) {
+        const bottom = LANE_H + WAVE_H;
+        const downs = new Set(analysis.downbeats);
+        ctx.fillStyle = css("--line");
+        for (const b of analysis.beats) {
+          if (downs.has(b)) continue;
+          const x = Math.round(secToX(view, b));
+          if (x >= 0 && x <= w) ctx.fillRect(x, bottom - 6, 1, 6);
+        }
+        ctx.fillStyle = css("--muted");
+        for (const d of analysis.downbeats) {
+          const x = Math.round(secToX(view, d));
+          if (x >= 0 && x <= w) ctx.fillRect(x, bottom - 11, 1, 11);
+        }
+      }
     }
 
     // loop regions — translucent accent, junction edges dashed
@@ -208,17 +237,24 @@
       : { mode: "select", anchorX: x, moved: false };
   }
 
+  /** Pull a time onto the nearest downbeat when grid snap applies. */
+  function maybeSnap(secs: number): number {
+    const downbeats = get(openSong)?.analysis?.downbeats;
+    if (!downbeats?.length || !get(gridSnap)) return secs;
+    return snapToGrid(secs, downbeats, view, SNAP_PX);
+  }
+
   function onPointerMove(e: PointerEvent) {
     if (!drag) return;
     const x = canvasX(e);
-    const secs = Math.min(Math.max(xToSec(view, x), 0), duration());
+    const secs = maybeSnap(Math.min(Math.max(xToSec(view, x), 0), duration()));
     if (drag.mode === "resize") {
       if (drag.edge === "start") drag.start = Math.min(secs, drag.end - 0.05);
       else drag.end = Math.max(secs, drag.start + 0.05);
     } else {
       if (Math.abs(x - drag.anchorX) >= CLICK_PX) drag.moved = true;
       if (drag.moved) {
-        const a = xToSec(view, drag.anchorX);
+        const a = maybeSnap(xToSec(view, drag.anchorX));
         selection.set({ start: Math.min(a, secs), end: Math.max(a, secs) });
       }
     }

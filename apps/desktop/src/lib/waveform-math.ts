@@ -34,6 +34,23 @@ export function zoom(v: View, anchorSec: number, factor: number, duration: numbe
   return { startSec, endSec: startSec + newSpan, width: v.width };
 }
 
+/** Snap a time to the nearest downbeat when it is within `thresholdPx` of it
+ *  on screen (px so the feel is zoom-independent). Identity otherwise. */
+export function snapToGrid(
+  sec: number,
+  downbeats: number[],
+  v: View,
+  thresholdPx: number,
+): number {
+  if (downbeats.length === 0) return sec;
+  let best = downbeats[0];
+  for (const d of downbeats) {
+    if (Math.abs(d - sec) < Math.abs(best - sec)) best = d;
+  }
+  const pxPerSec = v.width / (v.endSec - v.startSec);
+  return Math.abs(best - sec) * pxPerSec <= thresholdPx ? best : sec;
+}
+
 /** Bucket range of the peaks array visible in the view (for drawing). */
 export function visibleBuckets(
   v: View,
