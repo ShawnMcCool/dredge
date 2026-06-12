@@ -258,13 +258,13 @@ git add -A && git commit -m "feat(desktop): library, sections, loops and plan bu
 **Files:**
 - Create: `apps/desktop/src/components/PlanRunner.svelte`, `DuePanel.svelte`
 
-- [ ] **Step 1: Implement**
+- [x] **Step 1: Implement**
 
 - **PlanRunner** (replaces right rail while a plan is active): big current-mode word — `LISTEN` / `PLAY` / `FROM MEMORY` (accent color for recall) — loop name, rate %, `rep i/n · step j/k`; controls: skip step, stop. On `step_finished {loop_id}`: show an inline rating prompt "How was <loop>? 1 Miss · 2 Shaky · 3 Solid" → `rep.rate {loop_id, rating}` (not retest). On `plan_finished`: session summary — reps done, steps, then for each loop practiced a rating prompt flagged `is_retest: false`… **retest semantics:** the *first* rep of a loop that `due.list` contained today is the retention probe — when a plan starts, fetch `due.list`; loops in it get their end-of-step rating sent with `is_retest: true`. Keep that rule in `stores.ts`.
 - **DuePanel** (right rail, tab 4 + shown on app start): "Due today" list from `due.list` (loop name, song); click → opens song, sets loop; retention table from `retention {song_id}` for the open song (loop / last retest rating / when) — ratings colored Miss red, Shaky amber, Solid green. One quiet line under it: "rotating sections and next-day retests feel worse and work better."
 - No per-rep correctness meters anywhere — summary at step/plan end only (spec's faded-feedback principle).
 
-- [ ] **Step 2: Verify + commit**
+- [x] **Step 2: Verify + commit**
 
 Run: `pnpm vitest run && pnpm build` — green.
 

@@ -1,16 +1,22 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import DuePanel from "./components/DuePanel.svelte";
   import Library from "./components/Library.svelte";
   import Loops from "./components/Loops.svelte";
   import PlanBuilder from "./components/PlanBuilder.svelte";
+  import PlanRunner from "./components/PlanRunner.svelte";
   import Sections from "./components/Sections.svelte";
   import Transport from "./components/Transport.svelte";
   import Waveform from "./components/Waveform.svelte";
   import { installKeys, KEY_HELP } from "./lib/keys";
-  import { initEvents } from "./lib/stores";
+  import { initEvents, pendingRatings, planStatus, sessionSummary } from "./lib/stores";
 
-  const TABS = ["sections", "loops", "plan"] as const;
-  let tab = $state<(typeof TABS)[number]>("sections");
+  const TABS = ["sections", "loops", "plan", "due"] as const;
+  // due panel greets you on app start — the schedule is the product
+  let tab = $state<(typeof TABS)[number]>("due");
+  let running = $derived(
+    $planStatus !== null || $pendingRatings.length > 0 || $sessionSummary !== null,
+  );
 
   onMount(() => {
     const unlisten = initEvents();
@@ -32,22 +38,28 @@
     <footer class="help mono">{KEY_HELP}</footer>
   </main>
   <aside class="panels">
-    <nav class="tabs">
-      {#each TABS as t (t)}
-        <button class="tab" class:active={tab === t} onclick={() => (tab = t)}>{t}</button>
-      {/each}
-    </nav>
-    {#key tab}
-      <div class="fade-in">
-        {#if tab === "sections"}
-          <Sections />
-        {:else if tab === "loops"}
-          <Loops />
-        {:else}
-          <PlanBuilder />
-        {/if}
-      </div>
-    {/key}
+    {#if running}
+      <PlanRunner />
+    {:else}
+      <nav class="tabs">
+        {#each TABS as t (t)}
+          <button class="tab" class:active={tab === t} onclick={() => (tab = t)}>{t}</button>
+        {/each}
+      </nav>
+      {#key tab}
+        <div class="fade-in">
+          {#if tab === "sections"}
+            <Sections />
+          {:else if tab === "loops"}
+            <Loops />
+          {:else if tab === "plan"}
+            <PlanBuilder />
+          {:else}
+            <DuePanel />
+          {/if}
+        </div>
+      {/key}
+    {/if}
   </aside>
 </div>
 
