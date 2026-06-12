@@ -94,7 +94,7 @@ impl StemSeparator for DemucsSeparator {
 /// `which`-style scan: first executable file named `binary` in `path_var`
 /// (a `PATH`-formatted OsStr). Pure in its inputs so tests don't have to
 /// mutate the process environment.
-fn find_in_path(binary: &str, path_var: &std::ffi::OsStr) -> Option<PathBuf> {
+pub(crate) fn find_in_path(binary: &str, path_var: &std::ffi::OsStr) -> Option<PathBuf> {
     use std::os::unix::fs::PermissionsExt;
     std::env::split_paths(path_var).find_map(|dir| {
         let candidate = dir.join(binary);
@@ -103,7 +103,7 @@ fn find_in_path(binary: &str, path_var: &std::ffi::OsStr) -> Option<PathBuf> {
     })
 }
 
-fn stderr_tail(stderr: &str) -> String {
+pub(crate) fn stderr_tail(stderr: &str) -> String {
     let tail: Vec<&str> = stderr.lines().rev().take(5).collect();
     tail.into_iter().rev().collect::<Vec<_>>().join(" | ")
 }

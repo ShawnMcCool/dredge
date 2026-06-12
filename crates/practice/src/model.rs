@@ -103,6 +103,27 @@ pub enum Rating {
     Solid,
 }
 
+/// One suggested section from the analysis pipeline (not user truth — the
+/// user edits suggestions into real `Section`s).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AnalysisSection {
+    pub label: String,
+    pub start: f64,
+    pub end: f64,
+}
+
+/// Cached output of `scripts/analyze` for one song — mirrors the wrapper's
+/// JSON contract exactly (times in seconds).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Analysis {
+    pub bpm: Option<f64>,
+    pub beats: Vec<f64>,
+    pub downbeats: Vec<f64>,
+    pub sections: Vec<AnalysisSection>,
+    /// What produced the sections (`beat_this`, `beat_this+novelty`, `songformer`).
+    pub engine: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,6 +1,7 @@
 use crate::error::Result;
 use crate::model::{
-    LoopId, LoopKind, LoopRegion, Plan, PlanId, PlanStep, Rating, Section, SectionId, Song, SongId,
+    Analysis, LoopId, LoopKind, LoopRegion, Plan, PlanId, PlanStep, Rating, Section, SectionId,
+    Song, SongId,
 };
 use crate::schedule::Resurfacing;
 use rusqlite::params;
@@ -52,6 +53,18 @@ CREATE TABLE resurfacing (
     loop_id INTEGER PRIMARY KEY REFERENCES loops(id) ON DELETE CASCADE,
     interval_idx INTEGER NOT NULL,
     due_on TEXT NOT NULL
+);
+";
+
+/// v2: cached analysis results (one row per song, JSON columns).
+const SCHEMA_V2: &str = "
+CREATE TABLE analysis (
+    song_id INTEGER PRIMARY KEY REFERENCES songs(id) ON DELETE CASCADE,
+    bpm REAL,
+    beats_json TEXT NOT NULL,
+    downbeats_json TEXT NOT NULL,
+    sections_json TEXT NOT NULL,
+    engine TEXT NOT NULL
 );
 ";
 
@@ -142,9 +155,13 @@ impl Store {
         let version: i64 = self
             .conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))?;
-        if version == 0 {
+        if version < 1 {
             self.conn.execute_batch(SCHEMA_V1)?;
             self.conn.pragma_update(None, "user_version", 1)?;
+        }
+        if version < 2 {
+            self.conn.execute_batch(SCHEMA_V2)?;
+            self.conn.pragma_update(None, "user_version", 2)?;
         }
         Ok(())
     }
@@ -402,6 +419,45 @@ impl Store {
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(items)
+    }
+
+    /// Upsert the cached analysis for a song (re-analysis overwrites).
+    pub fn save_analysis(&self, song_id: SongId, a: &Analysis) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO analysis (song_id, bpm, beats_json, downbeats_json, sections_json, engine)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(song_id) DO UPDATE SET bpm = ?2, beats_json = ?3,
+                 downbeats_json = ?4, sections_json = ?5, engine = ?6",
+            params![
+                song_id.0,
+                a.bpm,
+                serde_json::to_string(&a.beats)?,
+                serde_json::to_string(&a.downbeats)?,
+                serde_json::to_string(&a.sections)?,
+                a.engine,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_analysis(&self, song_id: SongId) -> Result<Option<Analysis>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT bpm, beats_json, downbeats_json, sections_json, engine
+             FROM analysis WHERE song_id = ?1",
+        )?;
+        let mut rows = stmt.query_map(params![song_id.0], |row| {
+            let beats: String = row.get(1)?;
+            let downbeats: String = row.get(2)?;
+            let sections: String = row.get(3)?;
+            Ok(Analysis {
+                bpm: row.get(0)?,
+                beats: serde_json::from_str(&beats).map_err(json_err)?,
+                downbeats: serde_json::from_str(&downbeats).map_err(json_err)?,
+                sections: serde_json::from_str(&sections).map_err(json_err)?,
+                engine: row.get(4)?,
+            })
+        })?;
+        rows.next().transpose().map_err(Into::into)
     }
 
     /// Latest retest rating per loop — the retention metric.

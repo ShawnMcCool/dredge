@@ -42,12 +42,12 @@ Rust side mirrors the stems pattern exactly: `Analyzer` trait (Real = subprocess
 
 **Files:** `crates/server/src/analysis.rs` (new), `app.rs`, `practice` store migration, `tests/app_analysis.rs`.
 
-- [ ] `Analyzer` trait (mirror `StemSeparator`): `analyze(&self, audio: &Path) -> Result<AnalysisResult, String>`, `is_available()`. Real impl runs `scripts/analyze` (resolve relative to exe: `../../scripts/analyze` fallback to `$EARWORM_ANALYZE` env, then PATH). Fake returns a fixture.
-- [ ] Store migration v2: `analysis (song_id INTEGER PRIMARY KEY REFERENCES songs(id) ON DELETE CASCADE, bpm REAL, beats_json TEXT, downbeats_json TEXT, sections_json TEXT, engine TEXT)` + `Store::{save_analysis, get_analysis}` (+ store tests, existing style; migration must upgrade existing v1 DBs — guard on `user_version`).
-- [ ] Commands: `analysis.run {song_id}` (background, like stems.separate; cached → `{state:"cached"}`), `analysis.status {song_id}`, `analysis.get {song_id}`. `song.open` response gains `"analysis": {...}|null`.
-- [ ] Junction derivation upgrade: when the song has downbeats, `section.replace`/`junctions.derive` compute per-pair windows = from the **last downbeat strictly before** the boundary to the **first downbeat strictly after** (clamped inside the sections); else the existing tail/head seconds. Add a focused practice-crate function `junction_window(downbeats, boundary) -> (f64, f64)` with tests (boundary exactly on a downbeat, between, before first, after last).
-- [ ] Tests (`app_analysis.rs`, FakeAnalyzer): run→done event→cached; open returns analysis; junctions use downbeat windows when analysis present (assert exact bounds from fixture).
-- [ ] Commit: `feat(server): analysis pipeline — beat grid cached, downbeat-aware junctions`
+- [x] `Analyzer` trait (mirror `StemSeparator`): `analyze(&self, audio: &Path) -> Result<AnalysisResult, String>`, `is_available()`. Real impl runs `scripts/analyze` (resolve relative to exe: `../../scripts/analyze` fallback to `$EARWORM_ANALYZE` env, then PATH). Fake returns a fixture.
+- [x] Store migration v2: `analysis (song_id INTEGER PRIMARY KEY REFERENCES songs(id) ON DELETE CASCADE, bpm REAL, beats_json TEXT, downbeats_json TEXT, sections_json TEXT, engine TEXT)` + `Store::{save_analysis, get_analysis}` (+ store tests, existing style; migration must upgrade existing v1 DBs — guard on `user_version`).
+- [x] Commands: `analysis.run {song_id}` (background, like stems.separate; cached → `{state:"cached"}`), `analysis.status {song_id}`, `analysis.get {song_id}`. `song.open` response gains `"analysis": {...}|null`.
+- [x] Junction derivation upgrade: when the song has downbeats, `section.replace`/`junctions.derive` compute per-pair windows = from the **last downbeat strictly before** the boundary to the **first downbeat strictly after** (clamped inside the sections); else the existing tail/head seconds. Add a focused practice-crate function `junction_window(downbeats, boundary) -> (f64, f64)` with tests (boundary exactly on a downbeat, between, before first, after last).
+- [x] Tests (`app_analysis.rs`, FakeAnalyzer): run→done event→cached; open returns analysis; junctions use downbeat windows when analysis present (assert exact bounds from fixture).
+- [x] Commit: `feat(server): analysis pipeline — beat grid cached, downbeat-aware junctions`
 
 ### Task 4: UI
 

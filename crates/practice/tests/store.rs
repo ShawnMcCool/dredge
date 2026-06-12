@@ -210,6 +210,84 @@ fn resurfacing_upserts() {
     assert_eq!(store.all_resurfacing().unwrap(), vec![r2]);
 }
 
+fn sample_analysis() -> Analysis {
+    Analysis {
+        bpm: Some(157.89),
+        beats: vec![16.28, 17.06, 17.44],
+        downbeats: vec![16.28, 17.82],
+        sections: vec![AnalysisSection {
+            label: "A".into(),
+            start: 0.0,
+            end: 16.28,
+        }],
+        engine: "beat_this+novelty".into(),
+    }
+}
+
+#[test]
+fn analysis_roundtrips_and_upserts() {
+    let (store, song) = store_with_song();
+    assert!(store.get_analysis(song.id).unwrap().is_none());
+
+    let a = sample_analysis();
+    store.save_analysis(song.id, &a).unwrap();
+    assert_eq!(store.get_analysis(song.id).unwrap(), Some(a.clone()));
+
+    // re-analysis overwrites in place
+    let b = Analysis {
+        bpm: None,
+        engine: "songformer".into(),
+        ..a
+    };
+    store.save_analysis(song.id, &b).unwrap();
+    assert_eq!(store.get_analysis(song.id).unwrap(), Some(b));
+}
+
+#[test]
+fn deleting_song_cascades_analysis() {
+    let (store, song) = store_with_song();
+    store.save_analysis(song.id, &sample_analysis()).unwrap();
+    store.delete_song(song.id).unwrap();
+    assert!(store.get_analysis(song.id).unwrap().is_none());
+}
+
+#[test]
+fn open_migrates_v1_db_to_v2() {
+    // Build a pre-analysis (v1) database by hand, then open it through Store.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("v1.db");
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE songs (
+                id INTEGER PRIMARY KEY,
+                title TEXT NOT NULL,
+                artist TEXT,
+                path TEXT NOT NULL,
+                file_hash TEXT NOT NULL UNIQUE,
+                duration_secs REAL NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            INSERT INTO songs (title, path, file_hash, duration_secs)
+            VALUES ('Old', '/tmp/old.wav', 'hash-v1', 60.0);",
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+    }
+
+    let store = Store::open(&path).unwrap();
+    let song = store.song_by_hash("hash-v1").unwrap().unwrap();
+    // v1 data survives, and the new analysis table is usable immediately
+    let a = sample_analysis();
+    store.save_analysis(song.id, &a).unwrap();
+    assert_eq!(store.get_analysis(song.id).unwrap(), Some(a));
+
+    // reopening a v2 db is a no-op migration
+    drop(store);
+    let store = Store::open(&path).unwrap();
+    assert!(store.get_analysis(song.id).unwrap().is_some());
+}
+
 #[test]
 fn deleting_song_cascades() {
     let (store, song) = store_with_song();

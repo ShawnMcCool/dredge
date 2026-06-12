@@ -1,10 +1,12 @@
+use crate::analysis::Analyzer;
 use crate::capture_control::CaptureControl;
 use crate::control::AudioControl;
 use crate::protocol::{Event, Request, Response};
 use crate::stems::{StemSeparator, STEM_NAMES};
 use engine::pipeline::{EngineCmd, EngineEvent};
 use practice::model::{
-    LoopId, LoopKind, LoopRegion, Plan, PlanId, PlanStep, Rating, Song, SongId, TempoCurve,
+    Analysis, LoopId, LoopKind, LoopRegion, Plan, PlanId, PlanStep, Rating, Song, SongId,
+    TempoCurve,
 };
 use practice::runner::{PlanRunner, RepMode, RepSpec};
 use practice::schedule::Resurfacing;
@@ -56,6 +58,13 @@ pub struct App {
     job_rx: mpsc::Receiver<Event>,
     /// Song ids with a separation thread in flight.
     separating: Arc<Mutex<HashSet<i64>>>,
+    analyzer: Arc<dyn Analyzer>,
+    /// Finished analyses; drained by `tick()`, which persists them (the
+    /// store lives on this thread) and emits `analysis_progress`.
+    analysis_tx: mpsc::Sender<(SongId, Result<Analysis, String>)>,
+    analysis_rx: mpsc::Receiver<(SongId, Result<Analysis, String>)>,
+    /// Song ids with an analysis thread in flight (main thread only).
+    analyzing: HashSet<i64>,
 }
 
 struct OpenSong {
@@ -78,6 +87,7 @@ impl App {
         separator: Arc<dyn StemSeparator>,
     ) -> Self {
         let (job_tx, job_rx) = mpsc::channel();
+        let (analysis_tx, analysis_rx) = mpsc::channel();
         Self {
             store,
             audio,
@@ -92,12 +102,21 @@ impl App {
             job_tx,
             job_rx,
             separating: Arc::new(Mutex::new(HashSet::new())),
+            analyzer: Arc::new(crate::analysis::ScriptAnalyzer::default()),
+            analysis_tx,
+            analysis_rx,
+            analyzing: HashSet::new(),
         }
     }
 
     /// Override where grabbed captures are written (tests use a tempdir).
     pub fn set_captures_dir(&mut self, dir: PathBuf) {
         self.captures_dir = dir;
+    }
+
+    /// Swap the analyzer (tests use `FakeAnalyzer`).
+    pub fn set_analyzer(&mut self, analyzer: Arc<dyn Analyzer>) {
+        self.analyzer = analyzer;
     }
 
     /// Override the stems cache root (tests use a tempdir).
@@ -156,6 +175,9 @@ impl App {
             "stems.separate" => self.stems_separate(p),
             "stems.status" => self.stems_status(p),
             "stems.gains" => self.stems_gains(p),
+            "analysis.run" => self.analysis_run(p),
+            "analysis.status" => self.analysis_status(p),
+            "analysis.get" => self.analysis_get(p),
             _ => Err(format!("unknown command: {cmd}")),
         }
     }
@@ -540,6 +562,22 @@ impl App {
         while let Ok(ev) = self.job_rx.try_recv() {
             events.push(ev);
         }
+        // finished analyses: persist here (the store is not Sync) and report
+        while let Ok((song_id, result)) = self.analysis_rx.try_recv() {
+            self.analyzing.remove(&song_id.0);
+            let data = match result.and_then(|a| {
+                self.store
+                    .save_analysis(song_id, &a)
+                    .map_err(|e| e.to_string())
+            }) {
+                Ok(()) => json!({"song_id": song_id, "state": "done"}),
+                Err(e) => json!({"song_id": song_id, "state": "failed", "error": e}),
+            };
+            events.push(Event {
+                event: "analysis_progress".into(),
+                data,
+            });
+        }
         let mut last_pos = None;
         for ev in self.audio.poll_events() {
             match ev {
@@ -721,6 +759,66 @@ impl App {
             self.audio.send(EngineCmd::SetStemGain { idx, gain });
         }
         Ok(Value::Null)
+    }
+
+    // --- analysis ----------------------------------------------------------
+
+    /// Kick off background analysis (beat grid + suggested sections).
+    /// Results are cached per song; a second run reports `cached`.
+    fn analysis_run(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            song_id: SongId,
+        }
+        let p: P = from_params(p)?;
+        let song = self.song_row(p.song_id)?;
+        if self.store.get_analysis(p.song_id).err_str()?.is_some() {
+            return Ok(json!({"state": "cached"}));
+        }
+        if self.analyzing.contains(&p.song_id.0) {
+            // refuse double-start: the existing job keeps running
+            return Ok(json!({"state": "running"}));
+        }
+        if !self.analyzer.is_available() {
+            return Err(
+                "analysis script not found — expected <repo>/scripts/analyze (or set $EARWORM_ANALYZE)"
+                    .into(),
+            );
+        }
+        self.analyzing.insert(p.song_id.0);
+        let analyzer = self.analyzer.clone();
+        let tx = self.analysis_tx.clone();
+        let audio_path = PathBuf::from(&song.path);
+        let song_id = p.song_id;
+        std::thread::spawn(move || {
+            let _ = tx.send((song_id, analyzer.analyze(&audio_path)));
+        });
+        Ok(json!({"state": "running"}))
+    }
+
+    fn analysis_status(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            song_id: SongId,
+        }
+        let p: P = from_params(p)?;
+        let state = if self.analyzing.contains(&p.song_id.0) {
+            "running"
+        } else if self.store.get_analysis(p.song_id).err_str()?.is_some() {
+            "cached"
+        } else {
+            "none"
+        };
+        Ok(json!({"state": state}))
+    }
+
+    fn analysis_get(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            song_id: SongId,
+        }
+        let p: P = from_params(p)?;
+        serde_json::to_value(self.store.get_analysis(p.song_id).err_str()?).err_str()
     }
 
     // --- capture -----------------------------------------------------------
@@ -928,6 +1026,7 @@ impl App {
             "plans": self.store.list_plans(p.song_id).err_str()?,
             "peaks": peaks,
             "stems": stems,
+            "analysis": self.store.get_analysis(p.song_id).err_str()?,
         });
         self.open_song = Some(OpenSong { song, stems });
         Ok(out)
@@ -968,7 +1067,9 @@ impl App {
     }
 
     /// Delete existing junction loops for the song and re-derive them from
-    /// its current sections.
+    /// its current sections. When the song has an analyzed beat grid, loop
+    /// windows snap to the downbeats around each boundary; otherwise they
+    /// fall back to fixed `tail`/`head` seconds.
     fn refresh_junctions(
         &mut self,
         song_id: SongId,
@@ -981,8 +1082,18 @@ impl App {
             }
         }
         let sections = self.store.list_sections(song_id).err_str()?;
+        let downbeats = self
+            .store
+            .get_analysis(song_id)
+            .err_str()?
+            .map(|a| a.downbeats)
+            .filter(|d| !d.is_empty());
+        let derived = match downbeats {
+            Some(d) => practice::junction::derive_junctions_snapped(&sections, &d),
+            None => practice::junction::derive_junctions(&sections, tail, head),
+        };
         let mut saved = Vec::new();
-        for j in practice::junction::derive_junctions(&sections, tail, head) {
+        for j in derived {
             saved.push(
                 self.store
                     .insert_loop(
