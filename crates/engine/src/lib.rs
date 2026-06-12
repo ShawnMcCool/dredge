@@ -6,3 +6,4 @@ pub mod error;
 pub mod ffi;
 pub mod looper;
 pub mod peaks;
+pub mod stretch;

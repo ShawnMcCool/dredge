@@ -573,7 +573,7 @@ git add -A && git commit -m "feat(engine): sample-accurate looper with equal-pow
 - Create: `crates/engine/src/stretch.rs`
 - Modify: `crates/engine/src/lib.rs` (add `pub mod stretch;`)
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `crates/engine/src/stretch.rs`:
 ```rust
@@ -677,7 +677,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run (fail), implement**
+- [x] **Step 2: Run (fail), implement**
 
 - `new()`: `rubberband_new(48000, 2, REAL_TIME | ENGINE_FINER | PITCH_HIGH_CONSISTENCY, 1.0, 1.0)`; allocate the four scratch vecs at `BLOCK_FRAMES`.
 - `set_rate`: `rubberband_set_time_ratio(state, 1.0 / rate.clamp(0.25, 2.0))`.
@@ -685,7 +685,7 @@ mod tests {
 - `pull`: `rubberband_retrieve` into `out_l`/`out_r` (≤ BLOCK_FRAMES and ≤ requested), interleave into `out`.
 - `frames_wanted`: `rubberband_get_samples_required` capped at BLOCK_FRAMES.
 
-- [ ] **Step 3: Run tests, verify pass; commit**
+- [x] **Step 3: Run tests, verify pass; commit**
 
 Run: `cargo test -p engine stretch` — 3 PASS.
 
