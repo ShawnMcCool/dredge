@@ -177,6 +177,9 @@ export interface CaptureStatus {
 
 export const songs = writable<Song[]>([]);
 export const openSong = writable<OpenSong | null>(null);
+/** Song id with a `song.open` in flight — drives the library row spinner and
+ *  the stage loading state; null once the open settles (also on error). */
+export const openingSong = writable<number | null>(null);
 export const position = writable<Position>({ secs: 0, rate: 1, playing: false, at: 0 });
 export const planStatus = writable<PlanStatus | null>(null);
 export const selection = writable<{ start: number; end: number } | null>(null);
@@ -310,16 +313,21 @@ export const actions = {
   },
 
   async openSong(id: number): Promise<void> {
-    const data = await cmd<OpenSong>("song.open", { song_id: id });
-    localStorage.setItem(LAST_SONG_KEY, String(id));
-    openSong.set(data);
-    selection.set(null);
-    currentLoop.set(null);
-    stemMix.set(defaultStemMix());
-    stemsError.set(null);
-    analysisError.set(null);
-    suggestedSections.set(null);
-    await this.refreshRetention();
+    openingSong.set(id);
+    try {
+      const data = await cmd<OpenSong>("song.open", { song_id: id });
+      localStorage.setItem(LAST_SONG_KEY, String(id));
+      openSong.set(data);
+      selection.set(null);
+      currentLoop.set(null);
+      stemMix.set(defaultStemMix());
+      stemsError.set(null);
+      analysisError.set(null);
+      suggestedSections.set(null);
+      await this.refreshRetention();
+    } finally {
+      openingSong.set(null);
+    }
   },
 
   async refreshLoops(): Promise<void> {

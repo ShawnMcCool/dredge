@@ -22,13 +22,14 @@
 
 ### Task 3: Loading indication
 
-- [ ] `stores.ts`: `openingSong: writable<number | null>` set around `openSong()` (id while in flight, null on settle — also on error).
-- [ ] Library rows: the clicked row shows the animated `◌` glyph (same as PrepareModal) next to the title while `openingSong === song.id`; rows disabled (no double-fire) while any open is in flight.
-- [ ] Stage: while opening and no song open yet, "no song open" becomes `opening…`; when switching songs, keep the old waveform but overlay a thin indeterminate bar at the top of the stage (2 px, accent, existing animation language).
-- [ ] `pnpm build && pnpm vitest run` clean. Commit: `feat(desktop): song-open loading indication`
+- [x] `stores.ts`: `openingSong: writable<number | null>` set around `openSong()` (id while in flight, null on settle — also on error).
+- [x] Library rows: the clicked row shows the animated `◌` glyph (same as PrepareModal) next to the title while `openingSong === song.id`; rows disabled (no double-fire) while any open is in flight.
+- [x] Stage: while opening and no song open yet, "no song open" becomes `opening…`; when switching songs, keep the old waveform but overlay a thin indeterminate bar at the top of the stage (2 px, accent, existing animation language).
+- [x] `pnpm build && pnpm vitest run` clean. Commit: `feat(desktop): song-open loading indication`
 
 ### Task 4: Verify + gate
 
-- [ ] Timing proof on a generated 4-min file with FakeSeparator-style 44.1k stems seeded: time `song.open` via socket before/after Tasks 1–2 on the same data (expect ≥3× improvement on the stems case; report numbers). Second open after lazy upgrade should be faster still.
+- [x] Timing proof on a generated 4-min file with FakeSeparator-style 44.1k stems seeded: time `song.open` via socket before/after Tasks 1–2 on the same data (expect ≥3× improvement on the stems case; report numbers). Second open after lazy upgrade should be faster still.
+      Measured (release, `open_timing` harness, 240 s file seeded at 44.1 kHz): single decode (no stems) 1.78–1.81 s → sequential-5-decode baseline ≈ 9 s. With Tasks 1–2: stems open #1 (parallel decode + lazy 48 k upgrade) **2.27 s** (~4×), opens #2/#3 (48 k caches, peaks cached) **1.80–1.83 s** (~5×, ≈ the cost of the original mix alone).
 - [ ] Visual: screenshot the loading state mid-open (open the big file via sendshortcut-driven… clicking isn't possible — instead use `EARWORM_OPEN` for launch-time open and screenshot the stage `opening…` state during launch; the per-row spinner can be verified by code review if not capturable — note honestly which was seen).
 - [ ] Full gate: `cargo test && cargo clippy --workspace -- -D warnings && cargo fmt && pnpm vitest run && pnpm build`. Commit: `feat: plan 13 complete — fast opens with loading indication`

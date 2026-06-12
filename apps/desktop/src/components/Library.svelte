@@ -1,7 +1,7 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
   import { onMount } from "svelte";
-  import { actions, openSong, songs } from "../lib/stores";
+  import { actions, openingSong, openSong, songs } from "../lib/stores";
   import Button from "../lib/ui/Button.svelte";
 
   let error = $state("");
@@ -47,9 +47,13 @@
       <button
         class="song"
         class:open={$openSong?.song.id === song.id}
+        disabled={$openingSong !== null}
         onclick={() => openIt(song.id)}
       >
-        <span class="title">{song.title}</span>
+        <span class="title">
+          {song.title}
+          {#if $openingSong === song.id}<span class="opening mono">◌</span>{/if}
+        </span>
         <span class="meta">
           {song.artist ?? ""}
           <span class="mono">{fmtDur(song.duration_secs)}</span>
@@ -83,6 +87,20 @@
 
   .song.open .title {
     color: var(--accent);
+  }
+
+  /* in-flight open: the dotted circle reads as a spinner once it turns */
+  .opening {
+    display: inline-block;
+    margin-left: 4px;
+    color: var(--accent);
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .meta {

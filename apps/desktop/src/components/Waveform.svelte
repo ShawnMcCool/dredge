@@ -6,6 +6,7 @@
     actions,
     currentLoop,
     gridSnap,
+    openingSong,
     openSong,
     position,
     selection,
@@ -77,7 +78,11 @@
     if (!open) {
       ctx.fillStyle = css("--muted");
       ctx.font = "13px " + css("--mono");
-      ctx.fillText("no song open", 8, LANE_H + WAVE_H / 2);
+      ctx.fillText(
+        get(openingSong) !== null ? "opening…" : "no song open",
+        8,
+        LANE_H + WAVE_H / 2,
+      );
       return;
     }
 
@@ -319,6 +324,10 @@
     onpointerup={onPointerUp}
     onwheel={onWheel}
   ></canvas>
+  {#if $openingSong !== null && $openSong}
+    <!-- song switch in flight: keep the old waveform, show progress on top -->
+    <div class="loading-bar"></div>
+  {/if}
   {#if $selection}
     <div class="chip fade-in" style="left: {chipLeft}px">
       <button onclick={loopSelection}>Loop selection</button>
@@ -336,6 +345,35 @@
   canvas {
     display: block;
     cursor: crosshair;
+  }
+
+  /* thin indeterminate bar across the top of the stage while a new song
+     decodes — same accent + timing language as the prepare modal's bar */
+  .loading-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    overflow: hidden;
+  }
+
+  .loading-bar::after {
+    content: "";
+    position: absolute;
+    width: 30%;
+    height: 100%;
+    background: var(--accent);
+    animation: indeterminate 1s ease-in-out infinite;
+  }
+
+  @keyframes indeterminate {
+    from {
+      left: -30%;
+    }
+    to {
+      left: 100%;
+    }
   }
 
   .chip {
