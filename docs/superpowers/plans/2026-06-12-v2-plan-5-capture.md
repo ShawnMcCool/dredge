@@ -263,7 +263,7 @@ git add -A && git commit -m "feat(desktop): capture tab — pick app, roll, grab
 **Files:**
 - Modify: `crates/server/src/bin/earwormd.rs` (construct `RealCapture`)
 
-- [ ] **Step 1: Wire + gate**
+- [x] **Step 1: Wire + gate**
 
 Run: `cargo test && cargo clippy --workspace -- -D warnings && cargo fmt`
 
