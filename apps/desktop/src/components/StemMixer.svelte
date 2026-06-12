@@ -11,68 +11,71 @@
     stemsError,
     stemsRunning,
   } from "../lib/stores";
+  import Button from "../lib/ui/Button.svelte";
+  import Toolbar from "../lib/ui/Toolbar.svelte";
 </script>
 
 {#if $openSong}
   <div class="stems">
-    {#if $openSong.stems}
-      {#each STEM_LABELS as label, i (label)}
-        <div class="channel" class:bass={i === BASS_STEM}>
-          <input
-            class="fader"
-            type="range"
-            min="0"
-            max="100"
-            value={$stemMix.levels[i]}
-            oninput={(e) => actions.setStemLevel(i, Number(e.currentTarget.value))}
-            title="{label} level"
-          />
-          <span class="name mono">{label}</span>
-          <span class="toggles">
-            <button
-              class="chip"
-              class:on={$stemMix.mutes[i]}
-              onclick={() => actions.toggleStemMute(i)}
-              title="mute {label}"
-            >
-              M
-            </button>
-            <button
-              class="chip"
-              class:on={$stemMix.solos[i]}
-              onclick={() => actions.toggleStemSolo(i)}
-              title="solo {label}"
-            >
-              S
-            </button>
-          </span>
-        </div>
-      {/each}
-    {:else if $stemsRunning}
-      <span class="status mono">separating stems…</span>
-    {:else}
-      <button class="separate" onclick={() => actions.separateStems()}>Separate stems</button>
-    {/if}
-    {#if $stemsError}
-      <span class="error">{$stemsError}</span>
-    {/if}
+    <Toolbar>
+      {#if $openSong.stems}
+        {#each STEM_LABELS as label, i (label)}
+          <div class="channel" class:bass={i === BASS_STEM}>
+            <input
+              class="fader"
+              type="range"
+              min="0"
+              max="100"
+              value={$stemMix.levels[i]}
+              oninput={(e) => actions.setStemLevel(i, Number(e.currentTarget.value))}
+              title="{label} level"
+            />
+            <span class="name mono">{label}</span>
+            <span class="toggles">
+              <Button
+                variant="chip"
+                active={$stemMix.mutes[i]}
+                onclick={() => actions.toggleStemMute(i)}
+                title="mute {label}"
+              >
+                M
+              </Button>
+              <Button
+                variant="chip"
+                active={$stemMix.solos[i]}
+                onclick={() => actions.toggleStemSolo(i)}
+                title="solo {label}"
+              >
+                S
+              </Button>
+            </span>
+          </div>
+        {/each}
+      {:else if $stemsRunning}
+        <span class="status mono">separating stems…</span>
+      {:else}
+        <Button variant="chip" onclick={() => actions.separateStems()}>Separate stems</Button>
+      {/if}
+      {#if $stemsError}
+        <span class="error">{$stemsError}</span>
+      {/if}
+    </Toolbar>
   </div>
 {/if}
 
 <style>
   .stems {
-    display: flex;
-    align-items: center;
-    gap: calc(var(--space) * 2);
     padding: var(--space) 0;
     border-bottom: 1px solid var(--line);
     min-height: 32px;
+    min-width: 0;
   }
 
   .channel {
     display: flex;
     flex-direction: column;
     align-items: center;
+    flex: 0 0 auto;
     gap: 4px;
   }
 
@@ -101,24 +104,6 @@
   .toggles {
     display: flex;
     gap: 2px;
-  }
-
-  .chip {
-    font-family: var(--mono);
-    font-size: 10px;
-    padding: 0 4px;
-  }
-
-  .on {
-    color: var(--bg);
-    background: var(--accent);
-    border-color: var(--accent);
-  }
-
-  .separate {
-    font-size: 11px;
-    color: var(--muted);
-    background: none;
   }
 
   .status {

@@ -33,9 +33,9 @@
 
 ### Task 2: Transport on the primitives
 
-- [ ] Rebuild `Transport.svelte`: Toolbar with Groups — [play, time readout] · [rate readout, slider (grow), preset chips] · [pitch chips, cents] · [BASS FOCUS (toggle, label "BASS FOCUS" nowrap), MUTE]. Slider `min-width: 120px; max-width: 320px`. Time/rate/pitch values get `.readout`.
-- [ ] StemMixer's "Separate stems" row and the mixer strip adopt Button/Toolbar where applicable.
-- [ ] `pnpm build` clean. Commit: `refactor(desktop): transport + stem mixer on toolbar abstractions`
+- [x] Rebuild `Transport.svelte`: Toolbar with Groups — [play, time readout] · [rate readout, slider (grow), preset chips] · [pitch chips, cents] · [BASS FOCUS (toggle, label "BASS FOCUS" nowrap), MUTE]. Slider `min-width: 120px; max-width: 320px`. Time/rate/pitch values get `.readout`.
+- [x] StemMixer's "Separate stems" row and the mixer strip adopt Button/Toolbar where applicable.
+- [x] `pnpm build` clean. Commit: `refactor(desktop): transport + stem mixer on toolbar abstractions`
 
 ### Task 3: Shell + panels sweep
 

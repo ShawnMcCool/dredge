@@ -1,5 +1,8 @@
 <script lang="ts">
   import { actions, bassFocusOn, muted, openSong, pitch, position } from "../lib/stores";
+  import Button from "../lib/ui/Button.svelte";
+  import Group from "../lib/ui/Group.svelte";
+  import Toolbar from "../lib/ui/Toolbar.svelte";
 
   const RATE_PRESETS = [0.5, 0.7, 0.85, 1.0];
   const SEMITONE_CHIPS = [-2, -1, 0, 1, 2];
@@ -28,78 +31,77 @@
 </script>
 
 <div class="transport">
-  <button class="play" onclick={() => ($position.playing ? actions.pause() : actions.play())}>
-    {$position.playing ? "⏸" : "▶"}
-  </button>
-
-  <span class="mono time">
-    {fmt($position.secs)} / {fmtTotal($openSong?.song.duration_secs ?? 0)}
-  </span>
-
-  <span class="group">
-    <span class="mono readout">{Math.round($position.rate * 100)}%</span>
-    <input
-      type="range"
-      min="0.25"
-      max="2"
-      step="0.05"
-      value={$position.rate}
-      oninput={onRateInput}
-    />
-    {#each RATE_PRESETS as r (r)}
-      <button
-        class="chip"
-        class:on={Math.abs($position.rate - r) < 0.001}
-        onclick={() => actions.setRate(r)}
+  <Toolbar>
+    <Group>
+      <Button
+        variant="icon"
+        style="width: 40px"
+        onclick={() => ($position.playing ? actions.pause() : actions.play())}
       >
-        {Math.round(r * 100)}
-      </button>
-    {/each}
-  </span>
+        {$position.playing ? "⏸" : "▶"}
+      </Button>
+      <span class="readout time">
+        {fmt($position.secs)} / {fmtTotal($openSong?.song.duration_secs ?? 0)}
+      </span>
+    </Group>
 
-  <span class="group">
-    <span class="label">pitch</span>
-    {#each SEMITONE_CHIPS as st (st)}
-      <button
-        class="chip"
-        class:on={$pitch.semitones === st}
-        onclick={() => actions.setPitch(st, $pitch.cents)}
-      >
-        {st > 0 ? `+${st}` : st}
-      </button>
-    {/each}
-    <input
-      class="cents"
-      type="number"
-      min="-100"
-      max="100"
-      step="5"
-      value={$pitch.cents}
-      oninput={onCentsInput}
-      title="cents"
-    />
-  </span>
+    <Group grow>
+      <span class="readout rate">{Math.round($position.rate * 100)}%</span>
+      <input
+        type="range"
+        min="0.25"
+        max="2"
+        step="0.05"
+        value={$position.rate}
+        oninput={onRateInput}
+      />
+      {#each RATE_PRESETS as r (r)}
+        <Button
+          variant="chip"
+          active={Math.abs($position.rate - r) < 0.001}
+          onclick={() => actions.setRate(r)}
+        >
+          {Math.round(r * 100)}
+        </Button>
+      {/each}
+    </Group>
 
-  <span class="group">
-    <button class:on={$bassFocusOn} onclick={() => actions.bassFocus(!$bassFocusOn)}>
-      BASS FOCUS
-    </button>
-    <button class:on={$muted} onclick={() => actions.mute(!$muted)}>MUTE</button>
-  </span>
+    <Group label="pitch">
+      {#each SEMITONE_CHIPS as st (st)}
+        <Button
+          variant="chip"
+          active={$pitch.semitones === st}
+          onclick={() => actions.setPitch(st, $pitch.cents)}
+        >
+          {st > 0 ? `+${st}` : st}
+        </Button>
+      {/each}
+      <input
+        class="cents"
+        type="number"
+        min="-100"
+        max="100"
+        step="5"
+        value={$pitch.cents}
+        oninput={onCentsInput}
+        title="cents"
+      />
+    </Group>
+
+    <Group>
+      <Button variant="toggle" active={$bassFocusOn} onclick={() => actions.bassFocus(!$bassFocusOn)}>
+        BASS FOCUS
+      </Button>
+      <Button variant="toggle" active={$muted} onclick={() => actions.mute(!$muted)}>MUTE</Button>
+    </Group>
+  </Toolbar>
 </div>
 
 <style>
   .transport {
-    display: flex;
-    align-items: center;
-    gap: calc(var(--space) * 2);
     padding: var(--space) 0;
     border-bottom: 1px solid var(--line);
-  }
-
-  .play {
-    width: 40px;
-    font-size: 14px;
+    min-width: 0;
   }
 
   .time {
@@ -107,38 +109,17 @@
     min-width: 13ch;
   }
 
-  .group {
-    display: flex;
-    align-items: center;
-    gap: calc(var(--space) / 2);
-  }
-
-  .label {
-    color: var(--muted);
-    font-size: 12px;
-  }
-
-  .readout {
+  .rate {
     color: var(--accent);
     min-width: 4ch;
     text-align: right;
   }
 
   input[type="range"] {
-    width: 120px;
+    flex: 1 1 120px;
+    min-width: 120px;
+    max-width: 320px;
     accent-color: var(--accent);
-  }
-
-  .chip {
-    font-family: var(--mono);
-    font-size: 11px;
-    padding: 1px 5px;
-  }
-
-  .on {
-    color: var(--bg);
-    background: var(--accent);
-    border-color: var(--accent);
   }
 
   .cents {
