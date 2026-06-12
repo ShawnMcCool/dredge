@@ -114,6 +114,17 @@ The novel layer. Pure logic + persistence; no audio types.
 - **Out of scope (all versions):** instrument-input scoring, chord/key
   detection, notation rendering, cloud anything, mobile.
 
+## Ephemeral practice (post-v3 amendment, 2026-06-12)
+
+The entity chain (sections → loops → plans) must never be a *prerequisite*
+for practicing. **Select a span on the waveform, press `p`**: an ephemeral
+micro-session runs immediately on the selection (listen ×2 → play reps on the
+oscillate curve) with nothing persisted. At the end, one prompt: rate it
+(Miss/Shaky/Solid) → the loop is auto-named and persisted, the rep recorded,
+and the resurfacing scheduler picks it up; or discard → no trace. Structure
+accretes from practice instead of preceding it. The full builder remains for
+deliberate multi-loop sessions.
+
 ## Error handling
 
 - Audio-thread failure must never lose annotations: engine isolated behind
