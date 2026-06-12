@@ -1,9 +1,21 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+  import Waveform from "./components/Waveform.svelte";
+  import { initEvents } from "./lib/stores";
+
+  onMount(() => {
+    const unlisten = initEvents();
+    return () => {
+      void unlisten.then((f) => f());
+    };
+  });
 </script>
 
 <div class="shell">
   <aside class="library"></aside>
-  <main class="stage"></main>
+  <main class="stage">
+    <Waveform />
+  </main>
   <aside class="panels"></aside>
 </div>
 

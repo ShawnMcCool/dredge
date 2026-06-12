@@ -121,6 +121,54 @@ fn loops_and_plans_roundtrip() {
 }
 
 #[test]
+fn loop_update_moves_and_renames() {
+    let (mut app, _dir, wav) = test_app();
+    let song = req(&mut app, "song.import", json!({"path": wav}));
+    let id = song["id"].as_i64().unwrap();
+
+    let l = req(
+        &mut app,
+        "loop.create",
+        json!({"song_id": id, "name": "intro", "start": 0.0, "end": 1.0}),
+    );
+    let loop_id = l["id"].as_i64().unwrap();
+
+    // partial update: move the end only — name and start keep their values
+    let moved = req(
+        &mut app,
+        "loop.update",
+        json!({"loop_id": loop_id, "end": 1.5}),
+    );
+    assert_eq!(moved["name"], "intro");
+    assert_eq!(moved["start"], 0.0);
+    assert_eq!(moved["end"], 1.5);
+
+    // rename + move together
+    let renamed = req(
+        &mut app,
+        "loop.update",
+        json!({"loop_id": loop_id, "name": "verse", "start": 0.25}),
+    );
+    assert_eq!(renamed["name"], "verse");
+    assert_eq!(renamed["start"], 0.25);
+    assert_eq!(renamed["end"], 1.5);
+
+    // persisted + mirrored to the sidecar
+    let loops = req(&mut app, "loop.list", json!({"song_id": id}));
+    assert_eq!(loops[0]["name"], "verse");
+    let sc = practice::sidecar::read_sidecar(&wav).unwrap().unwrap();
+    assert_eq!(sc.loops[0].name, "verse");
+
+    // unknown loop errors cleanly
+    let resp = app.dispatch(Request {
+        id: 9,
+        cmd: "loop.update".into(),
+        params: json!({"loop_id": 999, "end": 2.0}),
+    });
+    assert!(!resp.ok);
+}
+
+#[test]
 fn unknown_command_errors() {
     let (mut app, _dir, _wav) = test_app();
     let resp = app.dispatch(Request {

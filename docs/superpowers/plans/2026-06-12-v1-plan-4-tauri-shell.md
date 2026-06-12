@@ -156,7 +156,7 @@ git add -A && git commit -m "feat(desktop): ipc layer and stores over single dis
 - Create: `apps/desktop/src/lib/waveform-math.ts`, `apps/desktop/src/lib/waveform-math.test.ts`
 - Create: `apps/desktop/src/components/Waveform.svelte`
 
-- [ ] **Step 1: Pure math first (TDD with vitest)**
+- [x] **Step 1: Pure math first (TDD with vitest)**
 
 `waveform-math.ts`:
 ```typescript
@@ -185,7 +185,7 @@ export function visibleBuckets(
 
 Tests: round-trip `secToX`/`xToSec`; playhead extrapolates at 0.75× (`pos.secs=10, at=t0, now=t0+2000` → 11.5) and freezes when paused; zoom keeps the anchor's px position stable and clamps at song bounds and min span; visibleBuckets clamps to `[0, totalBuckets-1]`.
 
-- [ ] **Step 2: Component**
+- [x] **Step 2: Component** (server gained `loop.update {loop_id, name?, start?, end?}` — partial update, sidecar mirrored, test added)
 
 `Waveform.svelte` contract:
 - Props: none (reads stores). Canvas fills `main.stage` width, ~200 px tall, plus a 24 px section lane above.
@@ -194,12 +194,12 @@ Tests: round-trip `secToX`/`xToSec`; playhead extrapolates at 0.75× (`pos.secs=
 - Buttons next to selection (small floating chip): "Loop selection" → `createLoop(auto-name, sel.start, sel.end)`, "Play selection" → `loop.set` transport command without persisting.
 - DPR-aware canvas sizing (`devicePixelRatio`), resize observer.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run: `pnpm vitest run && pnpm build && cargo test -p server` (server gained loop.update).
 Expected: green.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A && git commit -m "feat(desktop): waveform canvas with selection, zoom, loops, client-side playhead"

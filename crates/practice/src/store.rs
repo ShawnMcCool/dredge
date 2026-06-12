@@ -290,6 +290,15 @@ impl Store {
         rows.next().transpose().map_err(Into::into)
     }
 
+    /// Rename and/or move a loop in place; kind is untouched.
+    pub fn update_loop(&self, id: LoopId, name: &str, start: f64, end: f64) -> Result<LoopRegion> {
+        self.conn.execute(
+            "UPDATE loops SET name = ?2, start_secs = ?3, end_secs = ?4 WHERE id = ?1",
+            params![id.0, name, start, end],
+        )?;
+        self.loop_by_id(id)?.ok_or(crate::error::Error::NotFound)
+    }
+
     pub fn delete_loop(&self, id: LoopId) -> Result<()> {
         self.conn
             .execute("DELETE FROM loops WHERE id = ?1", params![id.0])?;

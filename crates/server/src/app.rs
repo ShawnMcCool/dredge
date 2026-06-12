@@ -75,6 +75,7 @@ impl App {
             "song.open" => self.song_open(p),
             "section.replace" => self.section_replace(p),
             "loop.create" => self.loop_create(p),
+            "loop.update" => self.loop_update(p),
             "loop.delete" => self.loop_delete(p),
             "loop.list" => self.loop_list(p),
             "junctions.derive" => self.junctions_derive(p),
@@ -675,6 +676,33 @@ impl App {
             .err_str()?;
         self.write_sidecar_for(p.song_id);
         serde_json::to_value(l).err_str()
+    }
+
+    fn loop_update(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            loop_id: LoopId,
+            name: Option<String>,
+            start: Option<f64>,
+            end: Option<f64>,
+        }
+        let p: P = from_params(p)?;
+        let old = self
+            .store
+            .loop_by_id(p.loop_id)
+            .err_str()?
+            .ok_or_else(|| format!("loop not found: {}", p.loop_id.0))?;
+        let updated = self
+            .store
+            .update_loop(
+                p.loop_id,
+                p.name.as_deref().unwrap_or(&old.name),
+                p.start.unwrap_or(old.start),
+                p.end.unwrap_or(old.end),
+            )
+            .err_str()?;
+        self.write_sidecar_for(old.song_id);
+        serde_json::to_value(updated).err_str()
     }
 
     fn loop_delete(&mut self, p: Value) -> Result<Value, String> {
