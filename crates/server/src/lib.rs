@@ -1,1 +1,3 @@
-//! JSON-lines control socket and shared command dispatcher (stub).
+//! JSON-lines control socket and shared command dispatcher.
+
+pub mod protocol;

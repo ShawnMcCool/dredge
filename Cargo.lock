@@ -850,6 +850,15 @@ dependencies = [
 [[package]]
 name = "server"
 version = "0.1.0"
+dependencies = [
+ "engine",
+ "hound",
+ "practice",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "time",
+]
 
 [[package]]
 name = "shlex"

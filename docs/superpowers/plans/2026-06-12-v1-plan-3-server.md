@@ -21,7 +21,7 @@
 - Create: `crates/server/src/protocol.rs`
 - Modify: `crates/server/src/lib.rs`
 
-- [ ] **Step 1: Write types + failing parse tests**
+- [x] **Step 1: Write types + failing parse tests**
 
 `crates/server/src/protocol.rs`:
 ```rust
@@ -86,7 +86,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run, pass, commit**
+- [x] **Step 2: Run, pass, commit**
 
 Run: `cargo test -p server` — 2 PASS.
 
