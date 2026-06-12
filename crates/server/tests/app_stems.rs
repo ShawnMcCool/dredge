@@ -182,7 +182,17 @@ fn open_lazy_upgrades_legacy_44k_cache_to_48k() {
     // one open: stems load fine AND every cache WAV is rewritten at 48 kHz
     let opened = req(&mut ctx.app, "song.open", json!({"song_id": ctx.song_id}));
     assert_eq!(opened["stems"], true);
-    assert_eq!(ctx.mock.lock().unwrap().loaded.as_ref().unwrap().stems.len(), 4);
+    assert_eq!(
+        ctx.mock
+            .lock()
+            .unwrap()
+            .loaded
+            .as_ref()
+            .unwrap()
+            .stems
+            .len(),
+        4
+    );
     for name in STEM_NAMES {
         let path = cache.join(format!("{name}.wav"));
         assert_eq!(

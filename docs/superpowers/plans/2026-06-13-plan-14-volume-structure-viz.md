@@ -8,9 +8,9 @@
 
 ### Task 1: Finish plan-13 loading indication
 
-- [ ] `git stash pop`; review the partial `Library.svelte`/`stores.ts` edits against plan 13 Task 3 spec (openingSong store, row spinner `◌`, disabled rows, stage `opening…` / 2 px indeterminate accent bar on song switch). Complete/correct, build, vitest.
-- [ ] Plan 13 Task 4 timing proof (temp DB, seeded 44.1k stems): report first-open vs post-upgrade-open numbers vs the ~5-sequential-decode baseline.
-- [ ] Check plan 13's boxes in its file. Commit: `feat(desktop): song-open loading indication` then `feat: plan 13 complete — fast opens with loading indication`
+- [x] `git stash pop`; review the partial `Library.svelte`/`stores.ts` edits against plan 13 Task 3 spec (openingSong store, row spinner `◌`, disabled rows, stage `opening…` / 2 px indeterminate accent bar on song switch). Complete/correct, build, vitest. (Stash was correct but incomplete: spinner had no CSS, stage states missing — added spin animation + `opening…` text + indeterminate bar.)
+- [x] Plan 13 Task 4 timing proof (temp DB, seeded 44.1k stems): report first-open vs post-upgrade-open numbers vs the ~5-sequential-decode baseline. (First stems open 2.27 s, post-upgrade 1.80–1.83 s, baseline ≈ 9 s — see plan 13.)
+- [x] Check plan 13's boxes in its file. Commit: `feat(desktop): song-open loading indication` then `feat: plan 13 complete — fast opens with loading indication`
 
 ### Task 2: Playback volume (engine → UI)
 

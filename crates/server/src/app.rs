@@ -152,7 +152,10 @@ fn open_stem(path: &Path) -> Result<engine::buffer::SongBuffer, String> {
     let buf = engine::decode::decode_file(path).err_str()?;
     if header_rate != engine::buffer::SAMPLE_RATE {
         if let Err(e) = crate::stems::rewrite_wav_48k(path, &buf.data) {
-            eprintln!("earworm: stem cache upgrade failed for {}: {e}", path.display());
+            eprintln!(
+                "earworm: stem cache upgrade failed for {}: {e}",
+                path.display()
+            );
         }
     }
     Ok(buf)
