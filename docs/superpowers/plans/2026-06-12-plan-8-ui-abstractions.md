@@ -28,8 +28,8 @@
 
 ### Task 1: Primitives
 
-- [ ] Create `lib/ui/{Button,Group,Toolbar}.svelte` + add `--control-h` and `.readout` to `app.css`. Tokens reuse the existing custom properties (`--line`, `--muted`, `--accent`, `--space`).
-- [ ] `pnpm build` clean. Commit: `feat(desktop): ui layout primitives (Button/Group/Toolbar)`
+- [x] Create `lib/ui/{Button,Group,Toolbar}.svelte` + add `--control-h` and `.readout` to `app.css`. Tokens reuse the existing custom properties (`--line`, `--muted`, `--accent`, `--space`).
+- [x] `pnpm build` clean. Commit: `feat(desktop): ui layout primitives (Button/Group/Toolbar)`
 
 ### Task 2: Transport on the primitives
 

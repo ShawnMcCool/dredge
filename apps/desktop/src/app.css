@@ -14,6 +14,7 @@
 
   --space: 8px;
   --radius: 2px;
+  --control-h: 28px;
   --mono: ui-monospace, "JetBrains Mono", "Fira Code", monospace;
   --fade: 120ms;
 
@@ -43,6 +44,13 @@ body {
 
 .mono {
   font-family: var(--mono);
+}
+
+/* time/rate/pitch values: never wrap mid-value, never jitter */
+.readout {
+  font-family: var(--mono);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 button {
