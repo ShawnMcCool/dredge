@@ -338,20 +338,20 @@ git add -A && git commit -m "feat(server): transport commands and event-driven p
 - Modify: `crates/server/src/app.rs`
 - Test: `crates/server/tests/app_rating.rs`
 
-- [ ] **Step 1: Add arms**
+- [x] **Step 1: Add arms**
 
 - `"rep.rate" {loop_id, rating: "miss"|"shaky"|"solid", is_retest?}` → `store.record_rep` (mode "rated", rate = last known rate or 1.0, given is_retest default false) + resurfacing: find previous state in `store.all_resurfacing()`, `practice::schedule::next_state(prev, loop_id, rating, today)`, `store.upsert_resurfacing`. Today = `time::OffsetDateTime::now_utc().date()` (UTC is fine for a practice ladder). Return new `{interval_idx, due_on}`.
 - `"due.list"` → `practice::schedule::due(&store.all_resurfacing()?, today)` → loop ids, hydrated to `[{loop_id, name, song_id}]` (join via a new `Store` query or per-id lookups — simplest: `store.all_resurfacing()` + `loop.list` per song the App has; add `Store::loop_by_id(&self, id: LoopId) -> Result<Option<(LoopRegion, SongId)>>` to practice if needed — if added, include a store test in practice's tests/store.rs and keep its style).
 - `"retention" {song_id}` → `store.retention(song_id)` as `[{loop_id, rating, at}]`.
 
-- [ ] **Step 2: Tests**
+- [x] **Step 2: Tests**
 
 `crates/server/tests/app_rating.rs`:
 1. `rating_solid_schedules_resurfacing` — rate loop solid → response `due_on` is tomorrow (interval_idx 0); rate solid again → interval_idx 1, due +2 days.
 2. `due_list_surfaces_overdue` — upsert (via two ratings then manual: just rate once, then assert `due.list` is empty today; can't time-travel — instead directly `store`-level: this test may construct App with a store pre-seeded with an overdue resurfacing row, then `due.list` returns it).
 3. `retention_via_dispatch` — record retest reps through `rep.rate {is_retest: true}` twice (shaky then solid), `retention` returns solid.
 
-- [ ] **Step 3: Run (fail), implement, run (pass); commit**
+- [x] **Step 3: Run (fail), implement, run (pass); commit**
 
 Run: `cargo test -p server --test app_rating` — 3 PASS.
 

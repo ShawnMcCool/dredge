@@ -1,7 +1,7 @@
 use crate::control::AudioControl;
 use crate::protocol::{Event, Request, Response};
 use engine::pipeline::{EngineCmd, EngineEvent};
-use practice::model::{LoopId, LoopKind, LoopRegion, Plan, PlanId, PlanStep, Song, SongId};
+use practice::model::{LoopId, LoopKind, LoopRegion, Plan, PlanId, PlanStep, Rating, Song, SongId};
 use practice::runner::{PlanRunner, RepMode, RepSpec};
 use practice::store::{NewLoop, NewRep, NewSection, NewSong, Store};
 use serde::Deserialize;
@@ -21,6 +21,14 @@ impl<T, E: std::fmt::Display> ErrStr<T> for Result<T, E> {
 
 fn from_params<T: serde::de::DeserializeOwned>(p: Value) -> Result<T, String> {
     serde_json::from_value(p).map_err(|e| format!("bad params: {e}"))
+}
+
+const DATE_FMT: &[time::format_description::FormatItem<'static>] =
+    time::macros::format_description!("[year]-[month]-[day]");
+
+/// UTC is fine for a practice ladder.
+fn today_utc() -> time::Date {
+    time::OffsetDateTime::now_utc().date()
 }
 
 pub struct App {
@@ -85,8 +93,75 @@ impl App {
             "plan.start" => self.plan_start(p),
             "plan.stop" => self.plan_stop(),
             "plan.skip_step" => self.plan_skip_step(),
+            "rep.rate" => self.rep_rate(p),
+            "due.list" => self.due_list(),
+            "retention" => self.retention(p),
             _ => Err(format!("unknown command: {cmd}")),
         }
+    }
+
+    // --- ratings / scheduling ---------------------------------------------
+
+    fn rep_rate(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            loop_id: LoopId,
+            rating: Rating,
+            #[serde(default)]
+            is_retest: bool,
+        }
+        let p: P = from_params(p)?;
+        let rate = self.last_position.map(|(_, r, _)| r).unwrap_or(1.0);
+        self.store
+            .record_rep(NewRep {
+                loop_id: p.loop_id,
+                plan_id: self.active_plan.as_ref().map(|a| a.plan_id),
+                mode: "rated".into(),
+                rate,
+                rating: Some(p.rating),
+                is_retest: p.is_retest,
+            })
+            .err_str()?;
+        let today = today_utc();
+        let prev = self
+            .store
+            .all_resurfacing()
+            .err_str()?
+            .into_iter()
+            .find(|r| r.loop_id == p.loop_id);
+        let next = practice::schedule::next_state(prev, p.loop_id, p.rating, today);
+        self.store.upsert_resurfacing(next).err_str()?;
+        Ok(json!({
+            "interval_idx": next.interval_idx,
+            "due_on": next.due_on.format(DATE_FMT).err_str()?,
+        }))
+    }
+
+    fn due_list(&mut self) -> Result<Value, String> {
+        let items = self.store.all_resurfacing().err_str()?;
+        let mut out = Vec::new();
+        for id in practice::schedule::due(&items, today_utc()) {
+            if let Some(l) = self.store.loop_by_id(id).err_str()? {
+                out.push(json!({"loop_id": l.id, "name": l.name, "song_id": l.song_id}));
+            }
+        }
+        Ok(Value::Array(out))
+    }
+
+    fn retention(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            song_id: SongId,
+        }
+        let p: P = from_params(p)?;
+        let rows: Vec<Value> = self
+            .store
+            .retention(p.song_id)
+            .err_str()?
+            .into_iter()
+            .map(|(loop_id, rating, at)| json!({"loop_id": loop_id, "rating": rating, "at": at}))
+            .collect();
+        Ok(Value::Array(rows))
     }
 
     // --- transport ---------------------------------------------------------
