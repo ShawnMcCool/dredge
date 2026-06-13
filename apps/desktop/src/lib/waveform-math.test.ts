@@ -4,11 +4,24 @@ import {
   playheadSecs,
   secToX,
   snapToGrid,
+  subdivisionTimes,
   visibleBuckets,
   xToSec,
   zoom,
   type View,
 } from "./waveform-math";
+
+describe("subdivisionTimes", () => {
+  const beats = [0, 1, 2, 3];
+  const downbeats = [0, 2];
+  it("bar → downbeats, beat → beats", () => {
+    expect(subdivisionTimes(beats, downbeats, "bar")).toEqual(downbeats);
+    expect(subdivisionTimes(beats, downbeats, "beat")).toEqual(beats);
+  });
+  it("eighth interleaves beat midpoints", () => {
+    expect(subdivisionTimes(beats, downbeats, "eighth")).toEqual([0, 0.5, 1, 1.5, 2, 2.5, 3]);
+  });
+});
 
 const view: View = { startSec: 10, endSec: 30, width: 800 };
 

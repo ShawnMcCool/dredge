@@ -3,6 +3,7 @@
 
 import { get, writable } from "svelte/store";
 import { cmd, initialSong, onEvent } from "./ipc";
+import type { GridSubdivision } from "./waveform-math";
 
 // --- wire types ----------------------------------------------------------
 
@@ -247,6 +248,11 @@ export const analysisError = writable<string | null>(null);
 export const suggestedSections = writable<AnalysisSection[] | null>(null);
 /** Loop edges snap to downbeats while on (only meaningful with analysis). */
 export const gridSnap = writable(true);
+/** Grid display (persisted): show/hide the drawn grid, full lines vs bottom
+ *  ticks, and the subdivision used for both the grid and snapping. */
+export const gridVisible = writable(true);
+export const gridLines = writable(false);
+export const gridSubdivision = writable<GridSubdivision>("bar");
 /** Recent profiling runs, most-recent-first. Mirrors `profile_run` events
  *  plus a `profiles.list` fetch at launch. */
 export const profiles = writable<ProfileRun[]>([]);
@@ -266,6 +272,9 @@ export const PLAYBACK_VOLUME = "playback_volume";
 export const ANALYSIS_DEVICE = "analysis_device";
 export const LIBRARY_COLLAPSED = "library_collapsed";
 export const PANELS_COLLAPSED = "panels_collapsed";
+export const GRID_VISIBLE = "grid_visible";
+export const GRID_LINES = "grid_lines";
+export const GRID_SUBDIV = "grid_subdivision";
 
 /** Side-column collapse state — persisted to settings, restored at launch. */
 export const libraryCollapsed = writable(false);
@@ -352,6 +361,10 @@ export const actions = {
     if (typeof all[GRID_SNAP_DEFAULT] === "boolean") gridSnap.set(all[GRID_SNAP_DEFAULT]);
     if (typeof all[LIBRARY_COLLAPSED] === "boolean") libraryCollapsed.set(all[LIBRARY_COLLAPSED]);
     if (typeof all[PANELS_COLLAPSED] === "boolean") panelsCollapsed.set(all[PANELS_COLLAPSED]);
+    if (typeof all[GRID_VISIBLE] === "boolean") gridVisible.set(all[GRID_VISIBLE]);
+    if (typeof all[GRID_LINES] === "boolean") gridLines.set(all[GRID_LINES]);
+    if (all[GRID_SUBDIV] === "bar" || all[GRID_SUBDIV] === "beat" || all[GRID_SUBDIV] === "eighth")
+      gridSubdivision.set(all[GRID_SUBDIV]);
     const vol = typeof all[PLAYBACK_VOLUME] === "number" ? all[PLAYBACK_VOLUME] : 1.0;
     playbackVolume.set(vol);
     await cmd("volume", { value: vol });
@@ -399,6 +412,23 @@ export const actions = {
     const v = !get(panelsCollapsed);
     panelsCollapsed.set(v);
     await this.setSetting(PANELS_COLLAPSED, v);
+  },
+
+  async setGridSnap(on: boolean): Promise<void> {
+    gridSnap.set(on);
+    await this.setSetting(GRID_SNAP_DEFAULT, on);
+  },
+  async setGridVisible(on: boolean): Promise<void> {
+    gridVisible.set(on);
+    await this.setSetting(GRID_VISIBLE, on);
+  },
+  async setGridLines(on: boolean): Promise<void> {
+    gridLines.set(on);
+    await this.setSetting(GRID_LINES, on);
+  },
+  async setGridSubdivision(sub: GridSubdivision): Promise<void> {
+    gridSubdivision.set(sub);
+    await this.setSetting(GRID_SUBDIV, sub);
   },
 
   async refreshSongs(): Promise<void> {

@@ -34,7 +34,26 @@ export function zoom(v: View, anchorSec: number, factor: number, duration: numbe
   return { startSec, endSec: startSec + newSpan, width: v.width };
 }
 
-/** Snap a time to the nearest downbeat when it is within `thresholdPx` of it
+export type GridSubdivision = "bar" | "beat" | "eighth";
+
+/** The grid times for a subdivision: bars = downbeats, beats = beats, eighths
+ *  = beats plus the midpoint to the next beat. Used for both drawing and snap. */
+export function subdivisionTimes(
+  beats: number[],
+  downbeats: number[],
+  sub: GridSubdivision,
+): number[] {
+  if (sub === "bar") return downbeats;
+  if (sub === "beat") return beats;
+  const out: number[] = [];
+  for (let i = 0; i < beats.length; i++) {
+    out.push(beats[i]);
+    if (i + 1 < beats.length) out.push((beats[i] + beats[i + 1]) / 2);
+  }
+  return out;
+}
+
+/** Snap a time to the nearest grid time when it is within `thresholdPx` of it
  *  on screen (px so the feel is zoom-independent). Identity otherwise. */
 export function snapToGrid(
   sec: number,

@@ -5,7 +5,10 @@
   import {
     actions,
     currentLoop,
+    gridLines,
     gridSnap,
+    gridSubdivision,
+    gridVisible,
     openingSong,
     openSong,
     position,
@@ -19,12 +22,14 @@
     playheadSecs,
     secToX,
     snapToGrid,
+    subdivisionTimes,
     visibleBuckets,
     xToSec,
     zoom,
     type View,
   } from "../lib/waveform-math";
 
+  const GRID_SUBDIVS = ["bar", "beat", "eighth"] as const;
   const SAMPLE_RATE = 48000;
   const LANE_H = 24; // section lane above the waveform
   const WAVE_H = 200;
@@ -148,27 +153,33 @@
       ctx.fillRect(x, y0, 1, Math.max(y1 - y0, 1));
     }
 
-    // beat grid — short ticks along the bottom edge, downbeats stronger;
-    // hidden when beats would crowd (< MIN_TICK_PX apart)
+    // beat grid — subdivision-aware; bottom ticks, or full vertical lines.
+    // downbeats render stronger. Hidden when ticks would crowd (< MIN_TICK_PX).
     const analysis = open.analysis;
-    if (analysis && analysis.beats.length > 1) {
+    if (get(gridVisible) && analysis && analysis.beats.length > 1) {
       const pxPerSec = w / (view.endSec - view.startSec);
-      const beatSpan =
-        (analysis.beats[analysis.beats.length - 1] - analysis.beats[0]) /
-        (analysis.beats.length - 1);
-      if (beatSpan * pxPerSec >= MIN_TICK_PX) {
+      const sub = get(gridSubdivision);
+      const times = subdivisionTimes(analysis.beats, analysis.downbeats, sub);
+      const span =
+        times.length > 1 ? (times[times.length - 1] - times[0]) / (times.length - 1) : Infinity;
+      if (span * pxPerSec >= MIN_TICK_PX) {
+        const lines = get(gridLines);
+        const top = LANE_H;
         const bottom = LANE_H + WAVE_H;
         const downs = new Set(analysis.downbeats);
-        ctx.fillStyle = css("--line");
-        for (const b of analysis.beats) {
-          if (downs.has(b)) continue;
-          const x = Math.round(secToX(view, b));
-          if (x >= 0 && x <= w) ctx.fillRect(x, bottom - 6, 1, 6);
-        }
-        ctx.fillStyle = css("--muted");
-        for (const d of analysis.downbeats) {
-          const x = Math.round(secToX(view, d));
-          if (x >= 0 && x <= w) ctx.fillRect(x, bottom - 11, 1, 11);
+        for (const t of times) {
+          const x = Math.round(secToX(view, t));
+          if (x < 0 || x > w) continue;
+          const strong = downs.has(t);
+          ctx.fillStyle = strong ? css("--muted") : css("--line");
+          if (lines) {
+            ctx.globalAlpha = strong ? 0.5 : 0.28;
+            ctx.fillRect(x, top, 1, WAVE_H);
+            ctx.globalAlpha = 1;
+          } else {
+            const h = strong ? 11 : 6;
+            ctx.fillRect(x, bottom - h, 1, h);
+          }
         }
       }
     }
@@ -359,11 +370,14 @@
     if (span?.suggested) selection.set({ start: span.start, end: span.end });
   }
 
-  /** Pull a time onto the nearest downbeat when grid snap applies. */
+  /** Pull a time onto the nearest grid line (at the chosen subdivision) when
+   *  grid snap applies. */
   function maybeSnap(secs: number): number {
-    const downbeats = get(openSong)?.analysis?.downbeats;
-    if (!downbeats?.length || !get(gridSnap)) return secs;
-    return snapToGrid(secs, downbeats, view, SNAP_PX);
+    const a = get(openSong)?.analysis;
+    if (!a || !get(gridSnap)) return secs;
+    const times = subdivisionTimes(a.beats, a.downbeats, get(gridSubdivision));
+    if (!times.length) return secs;
+    return snapToGrid(secs, times, view, SNAP_PX);
   }
 
   function onPointerMove(e: PointerEvent) {
@@ -559,6 +573,18 @@
     ondblclick={onDblClick}
     onwheel={onWheel}
   ></canvas>
+  {#if $openSong?.analysis}
+    <div class="grid-ctl">
+      <button class:on={$gridSnap} onclick={() => void actions.setGridSnap(!$gridSnap)} title="snap to grid (g)">snap</button>
+      <button class:on={$gridVisible} onclick={() => void actions.setGridVisible(!$gridVisible)} title="show grid">grid</button>
+      <button class:on={$gridLines} onclick={() => void actions.setGridLines(!$gridLines)} title="full gridlines vs bottom ticks">lines</button>
+      <span class="seg">
+        {#each GRID_SUBDIVS as s (s)}
+          <button class:on={$gridSubdivision === s} onclick={() => void actions.setGridSubdivision(s)}>{s}</button>
+        {/each}
+      </span>
+    </div>
+  {/if}
   <div
     class="scrollbar"
     role="scrollbar"
@@ -604,6 +630,46 @@
   canvas {
     display: block;
     cursor: crosshair;
+  }
+
+  /* grid control overlay — top-right corner of the waveform */
+  .grid-ctl {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px;
+    background: color-mix(in srgb, var(--bg) 80%, transparent);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+  }
+
+  .grid-ctl button {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    color: var(--muted);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 1px 5px;
+    cursor: pointer;
+  }
+  .grid-ctl button:hover {
+    color: var(--fg);
+  }
+  .grid-ctl button.on {
+    color: var(--accent);
+    border-color: var(--accent-dim);
+  }
+  .grid-ctl .seg {
+    display: inline-flex;
+    gap: 2px;
+    border-left: 1px solid var(--line);
+    padding-left: 4px;
+    margin-left: 1px;
   }
 
   /* thin indeterminate bar across the top of the stage while a new song

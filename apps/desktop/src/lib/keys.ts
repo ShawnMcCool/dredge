@@ -116,8 +116,8 @@ async function handle(e: KeyboardEvent): Promise<void> {
       await actions.bassFocus(!get(bassFocus));
       break;
     case "g":
-      // loop/selection edges snap to analyzed downbeats while on
-      gridSnap.update((on) => !on);
+      // loop/selection edges snap to the analyzed grid while on (persisted)
+      await actions.setGridSnap(!get(gridSnap));
       break;
     case "m":
       // THE one-key move: mute the recorded bass, I play it
