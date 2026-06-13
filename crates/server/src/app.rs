@@ -5,8 +5,8 @@ use crate::protocol::{Event, Request, Response};
 use crate::stems::{StemSeparator, STEM_NAMES};
 use engine::pipeline::{EngineCmd, EngineEvent};
 use practice::model::{
-    Analysis, LoopId, LoopKind, LoopRegion, Plan, PlanId, PlanStep, Rating, Song, SongId,
-    TempoCurve,
+    Analysis, LoopId, LoopKind, LoopRegion, Plan, PlanId, PlanStep, ProfileRun, Rating, Song,
+    SongId, TempoCurve,
 };
 use practice::runner::{PlanRunner, RepMode, RepSpec};
 use practice::schedule::Resurfacing;
@@ -265,6 +265,10 @@ pub struct App {
     analysis_rx: mpsc::Receiver<(SongId, Result<Analysis, String>)>,
     /// Song ids with an analysis thread in flight (main thread only).
     analyzing: HashSet<i64>,
+    /// Finished profiling runs; drained by `tick()`, persisted, emitted as
+    /// `profile_run`.
+    profile_tx: mpsc::Sender<ProfileRun>,
+    profile_rx: mpsc::Receiver<ProfileRun>,
 }
 
 struct OpenSong {
@@ -288,6 +292,7 @@ impl App {
     ) -> Self {
         let (job_tx, job_rx) = mpsc::channel();
         let (analysis_tx, analysis_rx) = mpsc::channel();
+        let (profile_tx, profile_rx) = mpsc::channel();
         Self {
             store,
             audio,
@@ -306,6 +311,8 @@ impl App {
             analysis_tx,
             analysis_rx,
             analyzing: HashSet::new(),
+            profile_tx,
+            profile_rx,
         }
     }
 
@@ -814,6 +821,16 @@ impl App {
                 event: "analysis_progress".into(),
                 data,
             });
+        }
+        // finished profiling runs: persist (store on this thread) then emit
+        while let Ok(mut run) = self.profile_rx.try_recv() {
+            match self.store.save_profile(&run) {
+                Ok(started) => run.started_at = started,
+                Err(e) => eprintln!("earworm: profile save failed: {e}"),
+            }
+            if let Ok(data) = serde_json::to_value(&run) {
+                events.push(Event { event: "profile_run".into(), data });
+            }
         }
         let mut last_pos = None;
         for ev in self.audio.poll_events() {
