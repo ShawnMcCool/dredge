@@ -47,6 +47,10 @@ pub struct WorkState {
     pub op: String,
     pub stage: String,
     pub started: Instant,
+    pub max_cpu: u32,
+    pub max_gpu_util: Option<u32>,
+    pub max_vram_used_mb: Option<u32>,
+    pub vram_total_mb: Option<u32>,
 }
 
 /// The shared slot the sampler reads and the workers write.
@@ -68,6 +72,10 @@ impl WorkReporter {
             op: op.into(),
             stage: stage.into(),
             started: Instant::now(),
+            max_cpu: 0,
+            max_gpu_util: None,
+            max_vram_used_mb: None,
+            vram_total_mb: None,
         });
     }
 
@@ -79,6 +87,27 @@ impl WorkReporter {
 
     pub fn end(&self) {
         *self.state.lock().unwrap() = None;
+    }
+
+    /// Fold one sample's metrics into the run's running maxima.
+    pub fn observe(&self, cpu: u32, gpu: Option<(u32, u32, u32)>) {
+        if let Some(ws) = self.state.lock().unwrap().as_mut() {
+            ws.max_cpu = ws.max_cpu.max(cpu);
+            if let Some((util, used, total)) = gpu {
+                ws.max_gpu_util = Some(ws.max_gpu_util.unwrap_or(0).max(util));
+                ws.max_vram_used_mb = Some(ws.max_vram_used_mb.unwrap_or(0).max(used));
+                ws.vram_total_mb = Some(total);
+            }
+        }
+    }
+
+    /// Read the run's maxima (cpu, gpu_util, vram_used, vram_total), or None if idle.
+    pub fn maxes(&self) -> Option<(u32, Option<u32>, Option<u32>, Option<u32>)> {
+        self.state
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|ws| (ws.max_cpu, ws.max_gpu_util, ws.max_vram_used_mb, ws.vram_total_mb))
     }
 }
 
@@ -151,6 +180,7 @@ pub fn run(state: SharedWork, tx: Sender<WorkSample>, shutdown: Arc<AtomicBool>)
     let mut prev_ticks = 0u64;
     let mut prev_at = Instant::now();
     let mut gpu_ok = true; // stop probing nvidia-smi after the first failure
+    let reporter = WorkReporter::new(state.clone());
     while !shutdown.load(Ordering::SeqCst) {
         std::thread::sleep(SAMPLE_INTERVAL);
         let (op, stage, elapsed_ms) = {
@@ -177,6 +207,7 @@ pub fn run(state: SharedWork, tx: Sender<WorkSample>, shutdown: Arc<AtomicBool>)
         } else {
             None
         };
+        reporter.observe(cpu, gpu);
         let _ = tx.send(WorkSample {
             op,
             stage,
@@ -220,6 +251,20 @@ mod tests {
         assert!(is_analysis_cmd("/home/u/.local/bin/demucs -n htdemucs -o /tmp a.mp3"));
         assert!(!is_analysis_cmd("/usr/bin/firefox"));
         assert!(!is_analysis_cmd(""));
+    }
+
+    #[test]
+    fn reporter_observe_tracks_maxima() {
+        let state = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let r = WorkReporter::new(state);
+        r.begin("analysis", "x");
+        assert_eq!(r.maxes(), Some((0, None, None, None)));
+        r.observe(100, Some((40, 5000, 16000)));
+        r.observe(80, Some((50, 6000, 16000)));
+        r.observe(120, None);
+        assert_eq!(r.maxes(), Some((120, Some(50), Some(6000), Some(16000))));
+        r.end();
+        assert_eq!(r.maxes(), None);
     }
 
     #[test]
