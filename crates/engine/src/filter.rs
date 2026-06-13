@@ -144,5 +144,4 @@ mod tests {
         assert!(low < 0.15, "100 Hz should be cut: {low}");
         assert!(high > 0.5, "8000 Hz should pass: {high}");
     }
-
 }
