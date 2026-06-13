@@ -49,7 +49,7 @@
           </div>
         {/each}
       {:else}
-        <span class="status mono">no stems yet — PREPARE (a)</span>
+        <span class="status mono">no stems yet — ANALYZE TRACK (a)</span>
       {/if}
       {#if $stemsError}
         <span class="error">{$stemsError}</span>

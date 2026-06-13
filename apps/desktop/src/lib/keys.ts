@@ -18,7 +18,7 @@ import {
 } from "./stores";
 
 export const KEY_HELP =
-  "space play/pause · a prepare · r restart loop · [ ] rate ∓5% · l loop selection · p quick practice · b bass focus · m mute bass stem · g grid snap · esc clear · 1/2/3 rate miss/shaky/solid · ctrl ± 0 zoom · , settings";
+  "space play/pause · a analyze track · r restart loop · [ ] rate ∓5% · l loop selection · p quick practice · b bass focus · m mute bass stem · g grid snap · esc clear · 1/2/3 rate miss/shaky/solid · ctrl ± 0 zoom · , settings";
 
 function isTyping(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
