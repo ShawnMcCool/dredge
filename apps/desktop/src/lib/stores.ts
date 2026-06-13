@@ -110,6 +110,10 @@ export interface ProfileRun {
   device?: string;
   engine?: string;
   stages: ProfileStage[];
+  max_cpu_pct?: number;
+  max_gpu_util?: number;
+  max_vram_used_mb?: number;
+  vram_total_mb?: number;
 }
 
 export interface WorkSample {
