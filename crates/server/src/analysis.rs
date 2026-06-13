@@ -140,6 +140,7 @@ pub fn analyze_with_recovery(
     audio: &Path,
     device_setting: &str,
     timer: &mut crate::profile::Timer,
+    reporter: &crate::sampler::WorkReporter,
 ) -> (Result<Analysis, String>, Option<String>) {
     if device_setting == "cpu" {
         let r = timer.stage("analyze", || analyzer.analyze(audio, true));
@@ -151,6 +152,7 @@ pub fn analyze_with_recovery(
         Ok(a) if a.engine == "songformer" => (r, Some("gpu".into())),
         Ok(_) if songformer_venv_present() => {
             timer.note_last("songformer fell back; retrying on cpu");
+            reporter.stage("CPU recovery");
             let r2 = timer.stage("analyze (cpu)", || analyzer.analyze(audio, true));
             match &r2 {
                 Ok(a2) if a2.engine == "songformer" => (r2, Some("cpu".into())),

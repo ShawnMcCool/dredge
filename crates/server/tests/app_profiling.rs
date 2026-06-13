@@ -112,3 +112,13 @@ fn profiles_list_returns_recorded_runs() {
     let arr = v.as_array().unwrap();
     assert!(arr.iter().any(|r| r["op"] == "analysis"), "lists the analysis run");
 }
+
+#[test]
+fn analysis_with_reporter_still_completes_and_profiles() {
+    let mut ctx = setup(Arc::new(DeviceAwareAnalyzer));
+    req(&mut ctx.app, "settings.set", json!({"key":"analysis_device","value":"cpu"}));
+    req(&mut ctx.app, "analysis.run", json!({"song_id": ctx.song_id, "force": true}));
+    let data = wait_for_event(&mut ctx.app, "profile_run");
+    assert_eq!(data["op"], "analysis");
+    assert_eq!(data["engine"], "songformer");
+}

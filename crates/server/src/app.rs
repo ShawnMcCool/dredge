@@ -1016,9 +1016,12 @@ impl App {
             .map(|s| s == "cpu")
             .unwrap_or(false);
         let device = if force_cpu { "cpu" } else { "auto" }.to_string();
+        let reporter = self.work_reporter();
         std::thread::spawn(move || {
+            reporter.begin("stems", "separating stems");
             let mut timer = crate::profile::Timer::new("stems", Some(song_id));
             let result = timer.stage("demucs", || separator.separate(&audio_path, &cache, force_cpu));
+            reporter.end();
             separating.lock().unwrap().remove(&song_id.0);
             let err = result.as_ref().err().cloned();
             let run = timer.finish(result.is_ok(), err.clone(), Some(device), None);
@@ -1104,14 +1107,19 @@ impl App {
             .flatten()
             .and_then(|v| v.as_str().map(str::to_owned))
             .unwrap_or_else(|| "auto".into());
+        let reporter = self.work_reporter();
         std::thread::spawn(move || {
+            let first_stage = if device_setting == "cpu" { "analyzing structure" } else { "GPU attempt" };
+            reporter.begin("analysis", first_stage);
             let mut timer = crate::profile::Timer::new("analysis", Some(song_id));
             let (result, device) = crate::analysis::analyze_with_recovery(
                 analyzer.as_ref(),
                 &audio_path,
                 &device_setting,
                 &mut timer,
+                &reporter,
             );
+            reporter.end();
             let engine = result.as_ref().ok().map(|a| a.engine.clone());
             let err = result.as_ref().err().cloned();
             let run = timer.finish(result.is_ok(), err, device, engine);
