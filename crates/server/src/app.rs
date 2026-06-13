@@ -1164,6 +1164,8 @@ impl App {
         // stop playback and drop the handle if we're deleting the open song
         if self.open_song.as_ref().map(|o| o.song.id) == Some(p.song_id) {
             self.audio.send(EngineCmd::Pause);
+            self.active_plan = None;
+            self.ephemeral = None;
             self.open_song = None;
         }
 

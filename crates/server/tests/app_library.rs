@@ -255,6 +255,35 @@ fn delete_removes_song_clears_open_and_sweeps_sidecar() {
 }
 
 #[test]
+fn delete_while_quick_session_clears_active_plan() {
+    let (mut app, _dir, wav) = test_app();
+    let song = req(&mut app, "song.import", json!({"path": wav}));
+    let id = song["id"].as_i64().unwrap();
+    req(&mut app, "song.open", json!({"song_id": id}));
+
+    // start an ephemeral quick session — sets active_plan + ephemeral
+    req(
+        &mut app,
+        "practice.quick",
+        json!({"start": 0.0, "end": 1.0}),
+    );
+    // sanity: a plan is now active
+    let status = req(&mut app, "status", Value::Null);
+    assert!(!status["plan"].is_null());
+
+    req(&mut app, "song.delete", json!({"song_id": id}));
+
+    // deleting the open song mid-session tears down the active session so the
+    // tick pump can't drive engine commands against the now-unloaded engine
+    let status = req(&mut app, "status", Value::Null);
+    assert!(status["song_id"].is_null());
+    assert!(
+        status["plan"].is_null(),
+        "active plan should be torn down on delete"
+    );
+}
+
+#[test]
 fn unknown_command_errors() {
     let (mut app, _dir, _wav) = test_app();
     let resp = app.dispatch(Request {
