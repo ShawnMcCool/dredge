@@ -3,6 +3,7 @@
   // settings table immediately; the UI-scale fader live-applies on drag.
   import {
     actions,
+    ANALYSIS_DEVICE,
     CAPTURE_BUFFER_SECS,
     GRID_SNAP_DEFAULT,
     gridSnap,
@@ -20,6 +21,7 @@
   let scale = $derived(Number($settings[UI_SCALE] ?? getZoom()));
   let snapDefault = $derived($settings[GRID_SNAP_DEFAULT] !== false);
   let bufferSecs = $derived(Number($settings[CAPTURE_BUFFER_SECS] ?? 180));
+  let device = $derived(($settings[ANALYSIS_DEVICE] as string) ?? "auto");
 
   const close = () => settingsOpen.set(false);
 
@@ -64,6 +66,26 @@
       {/each}
     </div>
   </div>
+  <div class="row">
+    <span class="label">analysis device</span>
+    <div class="chips">
+      <Button
+        variant="chip"
+        active={device === "auto"}
+        onclick={() => void actions.setSetting(ANALYSIS_DEVICE, "auto")}
+      >
+        auto
+      </Button>
+      <Button
+        variant="chip"
+        active={device === "cpu"}
+        onclick={() => void actions.setSetting(ANALYSIS_DEVICE, "cpu")}
+      >
+        cpu
+      </Button>
+    </div>
+  </div>
+  <p class="hint mono">auto = GPU when it fits, else CPU · cpu = slower, never out of VRAM</p>
 </Modal>
 
 <style>
@@ -98,5 +120,11 @@
     gap: calc(var(--space) / 2);
     flex-wrap: wrap;
     min-width: 0;
+  }
+
+  .hint {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: calc(var(--space) * -0.5);
   }
 </style>
