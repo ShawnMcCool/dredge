@@ -247,6 +247,9 @@ export const gridSnap = writable(true);
 export const profiles = writable<ProfileRun[]>([]);
 /** Latest live work sample while a prepare run is active; null when idle. */
 export const workSample = writable<WorkSample | null>(null);
+/** VRAM series for the active run: used-MB samples (rolling last 60), the run's
+ *  peak used-MB (high-water mark), and total VRAM. Null when idle / no GPU. */
+export const vram = writable<{ used: number[]; peak: number; total: number } | null>(null);
 
 // --- durable settings -------------------------------------------------------
 
@@ -353,6 +356,15 @@ export const actions = {
   /** Store the latest live work sample (from a `work_sample` event). */
   recordWorkSample(sample: WorkSample): void {
     workSample.set(sample);
+    if (sample.gpu_mem_used_mb != null && sample.gpu_mem_total_mb != null) {
+      const used = sample.gpu_mem_used_mb;
+      const total = sample.gpu_mem_total_mb;
+      vram.update((v) => ({
+        used: [...(v?.used ?? []), used].slice(-60),
+        peak: Math.max(v?.peak ?? 0, used),
+        total,
+      }));
+    }
   },
 
   /** Write-through: update the local mirror, persist server-side. */
@@ -704,6 +716,7 @@ export const actions = {
       errors: {},
     });
     workSample.set(null);
+    vram.set(null);
 
     const run = async (
       step: "analysis" | "stems",
@@ -751,7 +764,7 @@ export const actions = {
     const ok = (st: PrepareStepState) => st === "done" || st === "cached";
     if (s && ok(s.steps.analysis) && ok(s.steps.stems)) {
       // all green: linger just long enough to read the two ✓s
-      setTimeout(() => { prepareState.set(null); workSample.set(null); }, 1500);
+      setTimeout(() => { prepareState.set(null); workSample.set(null); vram.set(null); }, 1500);
     }
     // failures leave the modal open with its close button
   },
@@ -759,6 +772,7 @@ export const actions = {
   closePrepare(): void {
     prepareState.set(null);
     workSample.set(null);
+    vram.set(null);
   },
 
   // --- analysis ---
