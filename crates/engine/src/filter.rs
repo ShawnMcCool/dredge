@@ -80,7 +80,9 @@ impl Focus {
             let q = std::f32::consts::FRAC_1_SQRT_2;
             vec![Biquad::lowpass(sr, 400.0, q)]
         };
-        Self { ch: [build(), build()] }
+        Self {
+            ch: [build(), build()],
+        }
     }
 
     pub fn process_interleaved(&mut self, buf: &mut [f32]) {

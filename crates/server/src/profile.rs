@@ -1,7 +1,7 @@
 //! Minimal stopwatch for heavy-op profiling. No framework — `Instant` + stages.
 
-use practice::model::{ProfileRun, ProfileStage};
 use practice::model::SongId;
+use practice::model::{ProfileRun, ProfileStage};
 use std::time::Instant;
 
 pub struct Timer {
@@ -13,7 +13,12 @@ pub struct Timer {
 
 impl Timer {
     pub fn new(op: &str, song_id: Option<SongId>) -> Self {
-        Self { op: op.into(), song_id, start: Instant::now(), stages: Vec::new() }
+        Self {
+            op: op.into(),
+            song_id,
+            start: Instant::now(),
+            stages: Vec::new(),
+        }
     }
 
     /// Time `f`, record a stage with `name`, return f's value.

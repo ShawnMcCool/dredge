@@ -108,11 +108,14 @@ impl WorkReporter {
     /// Read the run's maxima (cpu, gpu_util, vram_used, vram_total), or None if idle.
     #[allow(clippy::type_complexity)]
     pub fn maxes(&self) -> Option<(u32, Option<u32>, Option<u32>, Option<u32>)> {
-        self.state
-            .lock()
-            .unwrap()
-            .as_ref()
-            .map(|ws| (ws.max_cpu, ws.max_gpu_util, ws.max_vram_used_mb, ws.vram_total_mb))
+        self.state.lock().unwrap().as_ref().map(|ws| {
+            (
+                ws.max_cpu,
+                ws.max_gpu_util,
+                ws.max_vram_used_mb,
+                ws.vram_total_mb,
+            )
+        })
     }
 }
 
@@ -134,7 +137,10 @@ fn analysis_cpu_ticks() -> u64 {
     };
     for entry in dir.flatten() {
         let name = entry.file_name();
-        let Some(pid) = name.to_str().filter(|s| s.bytes().all(|b| b.is_ascii_digit())) else {
+        let Some(pid) = name
+            .to_str()
+            .filter(|s| s.bytes().all(|b| b.is_ascii_digit()))
+        else {
             continue;
         };
         let cmdline = std::fs::read(format!("/proc/{pid}/cmdline")).unwrap_or_default();
@@ -176,7 +182,10 @@ pub fn parse_meminfo(text: &str) -> Option<(u32, u32)> {
     }
     let total = total_kb?;
     let avail = avail_kb?;
-    Some(((total.saturating_sub(avail) / 1024) as u32, (total / 1024) as u32))
+    Some((
+        (total.saturating_sub(avail) / 1024) as u32,
+        (total / 1024) as u32,
+    ))
 }
 
 /// Best-effort system RAM snapshot (used_mb, total_mb). None on failure.
@@ -212,7 +221,11 @@ pub fn run(state: SharedWork, tx: Sender<WorkSample>, shutdown: Arc<AtomicBool>)
         let (op, stage, elapsed_ms) = {
             let guard = state.lock().unwrap();
             match guard.as_ref() {
-                Some(ws) => (ws.op.clone(), ws.stage.clone(), ws.started.elapsed().as_millis() as u64),
+                Some(ws) => (
+                    ws.op.clone(),
+                    ws.stage.clone(),
+                    ws.started.elapsed().as_millis() as u64,
+                ),
                 None => {
                     prev_ticks = 0; // reset between runs
                     continue;
@@ -222,13 +235,20 @@ pub fn run(state: SharedWork, tx: Sender<WorkSample>, shutdown: Arc<AtomicBool>)
         let now = Instant::now();
         let cur_ticks = analysis_cpu_ticks();
         let dt = now.duration_since(prev_at).as_secs_f64();
-        let cpu = if prev_ticks == 0 { 0 } else { cpu_pct(prev_ticks, cur_ticks, dt, CLK_TCK) };
+        let cpu = if prev_ticks == 0 {
+            0
+        } else {
+            cpu_pct(prev_ticks, cur_ticks, dt, CLK_TCK)
+        };
         prev_ticks = cur_ticks;
         prev_at = now;
         let gpu = if gpu_ok {
             match gpu_snapshot() {
                 Some(g) => Some(g),
-                None => { gpu_ok = false; None }
+                None => {
+                    gpu_ok = false;
+                    None
+                }
             }
         } else {
             None
@@ -275,9 +295,15 @@ mod tests {
 
     #[test]
     fn matches_analysis_process_cmdlines() {
-        assert!(is_analysis_cmd("/x/songformer-venv/bin/python /x/scripts/songformer_impl.py a.mp3"));
-        assert!(is_analysis_cmd("/x/analyze-venv/bin/python /x/scripts/analyze_impl.py a.mp3"));
-        assert!(is_analysis_cmd("/home/u/.local/bin/demucs -n htdemucs -o /tmp a.mp3"));
+        assert!(is_analysis_cmd(
+            "/x/songformer-venv/bin/python /x/scripts/songformer_impl.py a.mp3"
+        ));
+        assert!(is_analysis_cmd(
+            "/x/analyze-venv/bin/python /x/scripts/analyze_impl.py a.mp3"
+        ));
+        assert!(is_analysis_cmd(
+            "/home/u/.local/bin/demucs -n htdemucs -o /tmp a.mp3"
+        ));
         assert!(!is_analysis_cmd("/usr/bin/firefox"));
         assert!(!is_analysis_cmd(""));
     }
@@ -320,7 +346,10 @@ mod tests {
         }
 
         r.stage("CPU recovery");
-        assert_eq!(state.lock().unwrap().as_ref().unwrap().stage, "CPU recovery");
+        assert_eq!(
+            state.lock().unwrap().as_ref().unwrap().stage,
+            "CPU recovery"
+        );
 
         r.end();
         assert!(state.lock().unwrap().is_none());

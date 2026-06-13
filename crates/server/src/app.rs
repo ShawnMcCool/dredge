@@ -443,7 +443,9 @@ impl App {
             #[serde(default = "default_limit")]
             limit: i64,
         }
-        fn default_limit() -> i64 { 50 }
+        fn default_limit() -> i64 {
+            50
+        }
         let p: P = from_params(p).unwrap_or(P { limit: 50 });
         serde_json::to_value(self.store.list_profiles(p.limit).err_str()?).err_str()
     }
@@ -862,13 +864,19 @@ impl App {
                 Err(e) => eprintln!("earworm: profile save failed: {e}"),
             }
             if let Ok(data) = serde_json::to_value(&run) {
-                events.push(Event { event: "profile_run".into(), data });
+                events.push(Event {
+                    event: "profile_run".into(),
+                    data,
+                });
             }
         }
         // live work samples from the sampler thread
         while let Ok(sample) = self.work_sample_rx.try_recv() {
             if let Ok(data) = serde_json::to_value(&sample) {
-                events.push(Event { event: "work_sample".into(), data });
+                events.push(Event {
+                    event: "work_sample".into(),
+                    data,
+                });
             }
         }
         let mut last_pos = None;
@@ -1020,7 +1028,9 @@ impl App {
         std::thread::spawn(move || {
             reporter.begin("stems", "separating stems");
             let mut timer = crate::profile::Timer::new("stems", Some(song_id));
-            let result = timer.stage("demucs", || separator.separate(&audio_path, &cache, force_cpu));
+            let result = timer.stage("demucs", || {
+                separator.separate(&audio_path, &cache, force_cpu)
+            });
             let m = reporter.maxes();
             reporter.end();
             separating.lock().unwrap().remove(&song_id.0);
@@ -1036,7 +1046,10 @@ impl App {
                 Ok(_) => json!({"song_id": song_id, "state": "done"}),
                 Err(e) => json!({"song_id": song_id, "state": "failed", "error": e}),
             };
-            let _ = tx.send(Event { event: "stems_progress".into(), data });
+            let _ = tx.send(Event {
+                event: "stems_progress".into(),
+                data,
+            });
             let _ = profile_tx.send(run);
         });
         Ok(json!({"state": "running"}))
@@ -1116,7 +1129,11 @@ impl App {
             .unwrap_or_else(|| "auto".into());
         let reporter = self.work_reporter();
         std::thread::spawn(move || {
-            let first_stage = if device_setting == "cpu" { "analyzing structure" } else { "GPU attempt" };
+            let first_stage = if device_setting == "cpu" {
+                "analyzing structure"
+            } else {
+                "GPU attempt"
+            };
             reporter.begin("analysis", first_stage);
             let mut timer = crate::profile::Timer::new("analysis", Some(song_id));
             let (result, device) = crate::analysis::analyze_with_recovery(

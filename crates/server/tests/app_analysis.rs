@@ -156,7 +156,11 @@ fn force_reruns_past_the_cache() {
 fn failures_are_reported_not_cached() {
     struct FailingAnalyzer;
     impl Analyzer for FailingAnalyzer {
-        fn analyze(&self, _audio: &std::path::Path, _force_cpu: bool) -> Result<practice::model::Analysis, String> {
+        fn analyze(
+            &self,
+            _audio: &std::path::Path,
+            _force_cpu: bool,
+        ) -> Result<practice::model::Analysis, String> {
             Err("model exploded".into())
         }
         fn is_available(&self) -> bool {
@@ -185,7 +189,11 @@ fn failures_are_reported_not_cached() {
 fn run_unavailable_errors_helpfully() {
     struct NeverAvailable;
     impl Analyzer for NeverAvailable {
-        fn analyze(&self, _audio: &std::path::Path, _force_cpu: bool) -> Result<practice::model::Analysis, String> {
+        fn analyze(
+            &self,
+            _audio: &std::path::Path,
+            _force_cpu: bool,
+        ) -> Result<practice::model::Analysis, String> {
             Err("unreachable".into())
         }
         fn is_available(&self) -> bool {

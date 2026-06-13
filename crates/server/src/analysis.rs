@@ -232,8 +232,14 @@ elif [ -z "$CUDA_VISIBLE_DEVICES" ]; then ENG=cpu; else ENG=gpu; fi
 echo "{\"bpm\":1.0,\"beats\":[],\"downbeats\":[],\"sections\":[],\"engine\":\"$ENG\"}""#,
         );
         let a = ScriptAnalyzer::with_script(script);
-        assert_eq!(a.analyze(Path::new("/tmp/x.mp3"), true).unwrap().engine, "cpu");
-        assert_eq!(a.analyze(Path::new("/tmp/x.mp3"), false).unwrap().engine, "unset");
+        assert_eq!(
+            a.analyze(Path::new("/tmp/x.mp3"), true).unwrap().engine,
+            "cpu"
+        );
+        assert_eq!(
+            a.analyze(Path::new("/tmp/x.mp3"), false).unwrap().engine,
+            "unset"
+        );
     }
 
     #[test]

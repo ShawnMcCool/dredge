@@ -10,7 +10,12 @@ pub const STEM_NAMES: [&str; 4] = ["vocals", "drums", "bass", "other"];
 pub trait StemSeparator: Send + Sync {
     /// Blocking; writes `<out_dir>/{vocals,drums,bass,other}.wav`, returns
     /// their paths in STEM_NAMES order.
-    fn separate(&self, audio: &Path, out_dir: &Path, force_cpu: bool) -> Result<Vec<PathBuf>, String>;
+    fn separate(
+        &self,
+        audio: &Path,
+        out_dir: &Path,
+        force_cpu: bool,
+    ) -> Result<Vec<PathBuf>, String>;
     fn is_available(&self) -> bool;
 }
 
@@ -42,7 +47,12 @@ impl DemucsSeparator {
 }
 
 impl StemSeparator for DemucsSeparator {
-    fn separate(&self, audio: &Path, out_dir: &Path, force_cpu: bool) -> Result<Vec<PathBuf>, String> {
+    fn separate(
+        &self,
+        audio: &Path,
+        out_dir: &Path,
+        force_cpu: bool,
+    ) -> Result<Vec<PathBuf>, String> {
         std::fs::create_dir_all(out_dir)
             .map_err(|e| format!("cannot create {}: {e}", out_dir.display()))?;
         let tmp = out_dir.join(".demucs-tmp");
@@ -140,7 +150,12 @@ pub struct FakeSeparator;
 const FAKE_SCALES: [f32; 4] = [0.4, 0.3, 0.2, 0.1];
 
 impl StemSeparator for FakeSeparator {
-    fn separate(&self, audio: &Path, out_dir: &Path, _force_cpu: bool) -> Result<Vec<PathBuf>, String> {
+    fn separate(
+        &self,
+        audio: &Path,
+        out_dir: &Path,
+        _force_cpu: bool,
+    ) -> Result<Vec<PathBuf>, String> {
         let buf = engine::decode::decode_file(audio).map_err(|e| e.to_string())?;
         std::fs::create_dir_all(out_dir).map_err(|e| e.to_string())?;
         let mut out = Vec::with_capacity(STEM_NAMES.len());
@@ -240,11 +255,15 @@ mod tests {
         .unwrap();
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let sep = DemucsSeparator { binary: bin.to_string_lossy().into_owned() };
+        let sep = DemucsSeparator {
+            binary: bin.to_string_lossy().into_owned(),
+        };
         let out = dir.path().join("out");
         // force_cpu=true → env present → stub exits 9 (not 7); separate returns Err
         // whose message contains the exit code, proving the env was set.
-        let err = sep.separate(Path::new("/tmp/a.mp3"), &out, true).unwrap_err();
+        let err = sep
+            .separate(Path::new("/tmp/a.mp3"), &out, true)
+            .unwrap_err();
         assert!(err.contains("9"), "force_cpu must set the env: {err}");
     }
 

@@ -666,7 +666,11 @@ mod tests {
             max_gpu_util: Some(41),
             max_vram_used_mb: Some(6100),
             vram_total_mb: Some(16000),
-            stages: vec![crate::model::ProfileStage { name: "analyze".into(), ms: 1234, note: None }],
+            stages: vec![crate::model::ProfileStage {
+                name: "analyze".into(),
+                ms: 1234,
+                note: None,
+            }],
         };
         let started = store.save_profile(&run).unwrap();
         assert!(!started.is_empty(), "store assigns a timestamp");
@@ -748,6 +752,9 @@ mod tests {
             left.iter().any(|p| p.song_id.is_none()),
             "non-song-scoped profiles are kept"
         );
-        assert!(store.song_by_id(b.id).unwrap().is_some(), "other song untouched");
+        assert!(
+            store.song_by_id(b.id).unwrap().is_some(),
+            "other song untouched"
+        );
     }
 }
