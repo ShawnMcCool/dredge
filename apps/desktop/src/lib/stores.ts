@@ -255,7 +255,7 @@ export const profiles = writable<ProfileRun[]>([]);
 export const workSample = writable<WorkSample | null>(null);
 /** VRAM series for the active run: used-MB samples (rolling last 60), the run's
  *  peak used-MB (high-water mark), and total VRAM. Null when idle / no GPU. */
-export const vram = writable<{ used: number[]; peak: number; total: number } | null>(null);
+export const vram = writable<{ used: number[]; peak: number; min: number; total: number } | null>(null);
 
 // --- durable settings -------------------------------------------------------
 
@@ -368,6 +368,7 @@ export const actions = {
       vram.update((v) => ({
         used: [...(v?.used ?? []), used].slice(-60),
         peak: Math.max(v?.peak ?? 0, used),
+        min: v?.min != null ? Math.min(v.min, used) : used,
         total,
       }));
     }

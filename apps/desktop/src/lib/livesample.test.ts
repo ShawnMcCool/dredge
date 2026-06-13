@@ -49,6 +49,7 @@ describe("vram accumulation", () => {
     expect(v.used).toEqual([4000, 6000, 5000]);
     expect(v.total).toBe(16000);
     expect(v.peak).toBe(6000);
+    expect(v.min).toBe(4000);
   });
 
   it("keeps only the last 60 samples but peak persists after the window slides", () => {

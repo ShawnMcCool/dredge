@@ -56,17 +56,30 @@
               <span class="mval mono">{$workSample.gpu_util}%</span>
             </div>
           {/if}
+          {#if $workSample.ram_total_mb != null}
+            <div class="meter">
+              <span class="mlabel mono">ram</span>
+              <span class="bar"><span class="fill" style="width: {(($workSample.ram_used_mb ?? 0) / $workSample.ram_total_mb) * 100}%"></span></span>
+              <span class="mval mono">{(($workSample.ram_used_mb ?? 0) / 1024).toFixed(1)} / {Math.round($workSample.ram_total_mb / 1024)} GB</span>
+            </div>
+          {/if}
         </div>
         {#if $vram && $vram.used.length}
           <div class="vramcol">
-            <span class="hist">
-              <svg viewBox="0 0 60 100" preserveAspectRatio="none">
-                {#each $vram.used as u, i (i)}
-                  <rect x={i} y={100 - (u / $vram.total) * 100} width="1" height={(u / $vram.total) * 100} />
-                {/each}
-                <line x1="0" x2="60" y1={100 - ($vram.peak / $vram.total) * 100} y2={100 - ($vram.peak / $vram.total) * 100} class="peak" />
-              </svg>
-            </span>
+            <div class="vrow">
+              <div class="vminmax mono">
+                <span title="peak VRAM">{($vram.peak / 1024).toFixed(1)}</span>
+                <span class="vmin" title="min VRAM">{($vram.min / 1024).toFixed(1)}</span>
+              </div>
+              <span class="hist">
+                <svg viewBox="0 0 60 100" preserveAspectRatio="none">
+                  {#each $vram.used as u, i (i)}
+                    <rect x={i} y={100 - (u / $vram.total) * 100} width="1" height={(u / $vram.total) * 100} />
+                  {/each}
+                  <line x1="0" x2="60" y1={100 - ($vram.peak / $vram.total) * 100} y2={100 - ($vram.peak / $vram.total) * 100} class="peak" />
+                </svg>
+              </span>
+            </div>
             <span class="mval mono">{($vram.used[$vram.used.length - 1] / 1024).toFixed(1)} / {Math.round($vram.total / 1024)} GB</span>
           </div>
         {/if}
@@ -115,6 +128,9 @@
   .hist svg { width: 100%; height: 100%; display: block; }
   .hist rect { fill: var(--accent); }
   .hist line.peak { stroke: var(--shaky); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .vrow { display: flex; gap: 4px; align-items: stretch; }
+  .vminmax { display: flex; flex-direction: column; justify-content: space-between; font-size: 9px; color: var(--muted); text-align: right; min-width: 2.2em; }
+  .vmin { color: var(--muted); }
   .effort { margin-bottom: 6px; }
   .ehead { font-size: 11px; }
   .esub { font-size: 10px; color: var(--muted); margin-left: 1em; }
