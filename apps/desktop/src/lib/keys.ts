@@ -5,7 +5,7 @@ import { zoomIn, zoomOut, zoomReset } from "./zoom";
 import {
   actions,
   BASS_STEM,
-  bassFocusOn,
+  focusMode,
   currentLoop,
   exitPromptVisible,
   gridSnap,
@@ -18,7 +18,7 @@ import {
 } from "./stores";
 
 export const KEY_HELP =
-  "space play/pause · a analyze track · r restart loop · [ ] rate ∓5% · l loop selection · del delete loop · p quick practice · b bass focus · m mute bass stem · g grid snap · esc clear · 1/2/3 rate miss/shaky/solid · ctrl ± 0 zoom · , settings";
+  "space play/pause · a analyze track · r restart loop · [ ] rate ∓5% · l loop selection · del delete loop · p quick practice · b cycle focus · m mute bass stem · g grid snap · esc clear · 1/2/3 rate miss/shaky/solid · ctrl ± 0 zoom · , settings";
 
 function isTyping(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -107,9 +107,12 @@ async function handle(e: KeyboardEvent): Promise<void> {
     case ",":
       settingsOpen.set(true);
       break;
-    case "b":
-      await actions.bassFocus(!get(bassFocusOn));
+    case "b": {
+      const order = ["none", "bass", "vocal", "treble"] as const;
+      const cur = get(focusMode);
+      await actions.setFocus(order[(order.indexOf(cur) + 1) % order.length]);
       break;
+    }
     case "g":
       // loop/selection edges snap to analyzed downbeats while on
       gridSnap.update((on) => !on);

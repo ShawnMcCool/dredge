@@ -220,7 +220,8 @@ export const selection = writable<{ start: number; end: number } | null>(null);
 /** Loop currently driving the transport (clicked or plan-applied). */
 export const currentLoop = writable<LoopRegion | null>(null);
 export const pitch = writable({ semitones: 0, cents: 0, octaveUp: false });
-export const bassFocusOn = writable(false);
+export type FocusMode = "none" | "bass" | "vocal" | "treble";
+export const focusMode = writable<FocusMode>("none");
 export const muted = writable(false);
 /** User playback volume 0..1.5 — engine multiplier, persisted as a setting. */
 export const playbackVolume = writable(1.0);
@@ -460,13 +461,14 @@ export const actions = {
     await cmd("pitch", { semitones, cents, octave_up: octaveUp });
   },
 
-  /** One key: octave-up pitch + low-pass, the bass transcription trick. */
-  async bassFocus(on: boolean): Promise<void> {
-    bassFocusOn.set(on);
+  /** Select a focus filter (bass = low-pass + octave-up transcription trick;
+   *  vocal = mid band-pass; treble = high-pass). `none` clears it. */
+  async setFocus(kind: FocusMode): Promise<void> {
+    focusMode.set(kind);
     const p = get(pitch);
-    pitch.set({ ...p, octaveUp: on });
-    await cmd("bass_focus", { on });
-    await cmd("pitch", { semitones: p.semitones, cents: p.cents, octave_up: on });
+    pitch.set({ ...p, octaveUp: kind === "bass" });
+    await cmd("focus", { kind });
+    await cmd("pitch", { semitones: p.semitones, cents: p.cents, octave_up: kind === "bass" });
   },
 
   async mute(on: boolean): Promise<void> {
