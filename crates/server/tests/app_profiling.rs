@@ -102,3 +102,13 @@ fn stems_separate_records_a_profile() {
     assert_eq!(data["op"], "stems");
     assert!(data["total_ms"].as_u64().is_some());
 }
+
+#[test]
+fn profiles_list_returns_recorded_runs() {
+    let mut ctx = setup(Arc::new(FakeAnalyzer));
+    req(&mut ctx.app, "analysis.run", json!({"song_id": ctx.song_id, "force": true}));
+    wait_for_event(&mut ctx.app, "profile_run");
+    let v = req(&mut ctx.app, "profiles.list", json!({"limit": 10}));
+    let arr = v.as_array().unwrap();
+    assert!(arr.iter().any(|r| r["op"] == "analysis"), "lists the analysis run");
+}

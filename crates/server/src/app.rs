@@ -390,6 +390,7 @@ impl App {
             "analysis.get" => self.analysis_get(p),
             "settings.get_all" => self.settings_get_all(),
             "settings.set" => self.settings_set(p),
+            "profiles.list" => self.profiles_list(p),
             _ => Err(format!("unknown command: {cmd}")),
         }
     }
@@ -413,6 +414,17 @@ impl App {
         let p: P = from_params(p)?;
         self.store.set_setting(&p.key, &p.value).err_str()?;
         Ok(Value::Null)
+    }
+
+    fn profiles_list(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            #[serde(default = "default_limit")]
+            limit: i64,
+        }
+        fn default_limit() -> i64 { 50 }
+        let p: P = from_params(p).unwrap_or(P { limit: 50 });
+        serde_json::to_value(self.store.list_profiles(p.limit).err_str()?).err_str()
     }
 
     // --- ratings / scheduling ---------------------------------------------
