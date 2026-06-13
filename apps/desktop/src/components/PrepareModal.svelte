@@ -7,8 +7,8 @@
   import Modal from "../lib/ui/Modal.svelte";
 
   const STEPS = [
-    { key: "analysis", label: "analysis" },
-    { key: "stems", label: "stems" },
+    { key: "analysis", label: "analyzing structure" },
+    { key: "stems", label: "separating stems" },
   ] as const;
 
   const GLYPHS: Record<PrepareStepState, string> = {
