@@ -123,8 +123,8 @@
         variant="toggle"
         accent={!prepared}
         disabled={!$openSong}
-        title="analysis + stems (a)"
-        onclick={() => void actions.prepare()}
+        title={prepared ? "re-run analysis (a)" : "analysis + stems (a)"}
+        onclick={() => void actions.prepare(prepared)}
       >
         {prepared ? "RE-PREPARE" : "PREPARE"}
       </Button>

@@ -675,7 +675,7 @@ export const actions = {
    *  peaks ~8 GiB of VRAM). The modal mirrors prepareState; each step is
    *  resolved by its `*_progress` event or a `cached` short-circuit, and a
    *  failure never blocks the other step. */
-  async prepare(): Promise<void> {
+  async prepare(force = false): Promise<void> {
     const open = get(openSong);
     if (!open || get(prepareState)) return;
     const id = open.song.id;
@@ -687,14 +687,18 @@ export const actions = {
       errors: {},
     });
 
-    const run = async (step: "analysis" | "stems", command: string): Promise<void> => {
+    const run = async (
+      step: "analysis" | "stems",
+      command: string,
+      extra: Record<string, unknown> = {},
+    ): Promise<void> => {
       setPrepareStep(step, "running");
       try {
         // register before dispatch — the terminal event must not slip past
         const report = new Promise<{ state: string; error?: string }>((resolve) => {
           prepareWaiters[step] = resolve;
         });
-        const out = await cmd<{ state: string }>(command, { song_id: id });
+        const out = await cmd<{ state: string }>(command, { song_id: id, ...extra });
         if (out.state === "cached") {
           delete prepareWaiters[step];
           setPrepareStep(step, "cached");
@@ -710,7 +714,9 @@ export const actions = {
       }
     };
 
-    await run("analysis", "analysis.run");
+    // RE-PREPARE forces a fresh analysis (new SongFormer sections + a profile);
+    // stems are expensive, so they re-run only when not yet cached.
+    await run("analysis", "analysis.run", force ? { force: true } : {});
     await run("stems", "stems.separate");
     prepareSongId = null;
 
