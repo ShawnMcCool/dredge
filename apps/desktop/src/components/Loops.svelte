@@ -61,7 +61,7 @@
             title="click to load · double-click to rename"
           >
             {l.name}
-            {#if l.kind.kind === "junction"}<span class="badge">J</span>{/if}
+            {#if l.kind.kind === "junction"}<span class="badge">T</span>{/if}
           </button>
         {/if}
         <input
@@ -85,10 +85,16 @@
     {/each}
   </ul>
   <div class="derive">
-    <Button onclick={() => actions.deriveJunctions(tail, head)}>derive junctions</Button>
+    <Button onclick={() => actions.deriveJunctions(tail, head)}>derive transitions</Button>
     <label>tail <input class="mono t" type="number" step="0.5" min="0.5" bind:value={tail} /></label>
     <label>head <input class="mono t" type="number" step="0.5" min="0.5" bind:value={head} /></label>
   </div>
+  <p class="doc">
+    Transitions are loops straddling each section boundary — the last <em>tail</em> seconds
+    of one section into the first <em>head</em> seconds of the next, where the changes get
+    fumbled. One is created per adjacent pair and marked <span class="badge">T</span> in the
+    list.
+  </p>
 {/if}
 
 <style>
@@ -157,5 +163,21 @@
     width: 4em;
     font-size: 11px;
     padding: 1px 4px;
+  }
+
+  .doc {
+    margin-top: var(--space);
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--muted);
+  }
+
+  .doc em {
+    font-style: normal;
+    color: var(--fg);
+  }
+
+  .doc .badge {
+    margin-left: 0;
   }
 </style>

@@ -8,6 +8,7 @@
     CAPTURE_BUFFER_SECS,
     GRID_SNAP_DEFAULT,
     gridSnap,
+    PRACTICE_TOOLS,
     settings,
     UI_SCALE,
   } from "../lib/stores";
@@ -25,6 +26,7 @@
   let snapDefault = $derived($settings[GRID_SNAP_DEFAULT] !== false);
   let bufferSecs = $derived(Number($settings[CAPTURE_BUFFER_SECS] ?? 180));
   let device = $derived(($settings[ANALYSIS_DEVICE] as string) ?? "auto");
+  let practiceOn = $derived($settings[PRACTICE_TOOLS] === true);
 
   function toggleSnap() {
     const next = !snapDefault;
@@ -57,6 +59,17 @@
     {snapDefault ? "on" : "off"}
   </Button>
 </div>
+<div class="row">
+  <span class="label">practice tools</span>
+  <Button
+    variant="toggle"
+    active={practiceOn}
+    onclick={() => void actions.setSetting(PRACTICE_TOOLS, !practiceOn)}
+  >
+    {practiceOn ? "on" : "off"}
+  </Button>
+</div>
+<p class="hint mono">adds the plan + spaced-practice tabs · off keeps the panel to song-shaping</p>
 <div class="row">
   <span class="label">capture buffer</span>
   <div class="chips">

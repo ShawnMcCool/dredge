@@ -275,6 +275,9 @@ export const PANELS_COLLAPSED = "panels_collapsed";
 export const GRID_VISIBLE = "grid_visible";
 export const GRID_LINES = "grid_lines";
 export const GRID_SUBDIV = "grid_subdivision";
+/** When true, the practice-routine tabs (plan, due) are shown; hidden by
+ *  default to keep the UI to the song-shaping tools. */
+export const PRACTICE_TOOLS = "practice_tools_visible";
 
 /** Side-column collapse state — persisted to settings, restored at launch. */
 export const libraryCollapsed = writable(false);

@@ -23,27 +23,39 @@
     panelsCollapsed,
     pendingRatings,
     planStatus,
+    PRACTICE_TOOLS,
     quickPromptVisible,
     quickSavedName,
     sectionsOpen,
     sessionSummary,
+    settings,
     settingsOpen,
   } from "./lib/stores";
 
-  const TABS = ["sections", "loops", "plan", "capture", "due", "profile", "settings", "guide"] as const;
+  const ALL_TABS = ["sections", "loops", "plan", "capture", "due", "profile", "settings", "guide"] as const;
+  type Tab = (typeof ALL_TABS)[number];
+  // the practice-routine tabs — concealed unless "practice tools" is on in settings
+  const PRACTICE_TABS: Tab[] = ["plan", "due"];
   // one-line purpose blurb shown under each tab — answers "what is this for?"
-  const TAB_DESC: Record<(typeof TABS)[number], string> = {
-    sections: "The song's structural map (verse/chorus). Drives the junction loops you practice.",
-    loops: "Your saved practice loops, plus auto-derived junctions at section boundaries.",
+  const TAB_DESC: Record<Tab, string> = {
+    sections: "The song's structural map (verse/chorus). Drives the transition loops you practice.",
+    loops: "Your saved practice loops, plus auto-derived transitions at section boundaries.",
     plan: "Assemble an evidence-based practice plan from loops and steps.",
     capture: "Record audio from a system source straight into the library.",
-    due: "What's scheduled for practice right now — the spaced-repetition queue.",
+    due: "How recent retests of this song's loops landed — the spaced-practice log.",
     profile: "Timing breakdown of the last analysis & stem-separation runs.",
     settings: "App preferences — UI scale, grid snap, capture buffer, analysis device.",
     guide: "Keyboard shortcuts and what the concepts mean.",
   };
-  // due panel greets you on app start — the schedule is the product
-  let tab = $state<(typeof TABS)[number]>("due");
+  // practice tools are off by default; the routine tabs only appear once enabled
+  let practiceOn = $derived($settings[PRACTICE_TOOLS] === true);
+  let tabs = $derived(ALL_TABS.filter((t) => practiceOn || !PRACTICE_TABS.includes(t)));
+  let tab = $state<Tab>("sections");
+
+  // if practice tools get switched off while viewing one of their tabs, fall back
+  $effect(() => {
+    if (!practiceOn && PRACTICE_TABS.includes(tab)) tab = "sections";
+  });
   let running = $derived(
     $planStatus !== null ||
       $pendingRatings.length > 0 ||
@@ -104,7 +116,7 @@
         <PlanRunner />
     {:else}
       <nav class="tabs">
-        {#each TABS as t (t)}
+        {#each tabs as t (t)}
           <button class="tab" class:active={tab === t} onclick={() => (tab = t)}>{t}</button>
         {/each}
       </nav>

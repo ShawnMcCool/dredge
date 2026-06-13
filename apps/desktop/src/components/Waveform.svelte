@@ -184,31 +184,38 @@
       }
     }
 
-    // loop regions — translucent accent, junction edges dashed
+    // loop regions — the selected loop (the Delete target) reads boldly: bright
+    // 2px edges, a solid top cap, taller grab handles, denser fill. Unselected
+    // loops sit faint in the background. junction edges stay dashed.
     const accent = css("--accent");
+    const accentDim = css("--accent-dim");
     for (const l of open.loops) {
       const { start, end } = loopBounds(l);
       const x0 = secToX(view, start);
       const x1 = secToX(view, end);
       if (x1 < 0 || x0 > w) continue;
-      ctx.globalAlpha = get(currentLoop)?.id === l.id ? 0.16 : 0.08;
+      const isSel = get(currentLoop)?.id === l.id;
+      ctx.globalAlpha = isSel ? 0.2 : 0.07;
       ctx.fillStyle = accent;
       ctx.fillRect(x0, LANE_H, x1 - x0, WAVE_H);
       ctx.globalAlpha = 1;
-      ctx.strokeStyle = accent;
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = isSel ? accent : accentDim;
+      ctx.lineWidth = isSel ? 2 : 1;
+      const off = isSel ? 1 : 0.5;
       ctx.setLineDash(l.kind.kind === "junction" ? [3, 3] : []);
       ctx.beginPath();
-      ctx.moveTo(x0 + 0.5, LANE_H);
-      ctx.lineTo(x0 + 0.5, LANE_H + WAVE_H);
-      ctx.moveTo(x1 - 0.5, LANE_H);
-      ctx.lineTo(x1 - 0.5, LANE_H + WAVE_H);
+      ctx.moveTo(x0 + off, LANE_H);
+      ctx.lineTo(x0 + off, LANE_H + WAVE_H);
+      ctx.moveTo(x1 - off, LANE_H);
+      ctx.lineTo(x1 - off, LANE_H + WAVE_H);
       ctx.stroke();
       ctx.setLineDash([]);
-      if (get(currentLoop)?.id === l.id) {
+      ctx.lineWidth = 1;
+      if (isSel) {
         ctx.fillStyle = accent;
-        ctx.fillRect(x0 - 2, LANE_H, 4, 10);
-        ctx.fillRect(x1 - 2, LANE_H, 4, 10);
+        ctx.fillRect(x0, LANE_H, x1 - x0, 3); // solid cap across the top
+        ctx.fillRect(x0 - 1, LANE_H, 3, 14); // grab handles, taller than before
+        ctx.fillRect(x1 - 2, LANE_H, 3, 14);
       }
     }
 
@@ -449,10 +456,11 @@
       const cx = canvasX(e);
       // a plain click dismisses any drag-selection box + its Loop/Play chip
       selection.set(null);
-      // clicking inside a loop selects it (for handles / Delete) but still
-      // seeks to the click — don't engage the transport loop on a plain click
+      // clicking inside a loop selects it (for handles / Delete); clicking away
+      // deselects, so it's always clear which loop Delete would remove. either
+      // way the click still seeks — a plain click never engages the transport loop
       const loop = hitLoopBody(cx, canvasY(e));
-      if (loop) currentLoop.set(loop);
+      currentLoop.set(loop);
       void actions.seek(Math.min(Math.max(xToSec(view, cx), 0), duration()));
     }
   }
