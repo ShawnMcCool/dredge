@@ -1,5 +1,5 @@
 use crate::buffer::{StemSet, CHANNELS, SAMPLE_RATE};
-use crate::filter::BassFocus;
+use crate::filter::{Focus, FocusKind};
 use crate::looper::Looper;
 use crate::stretch::{Stretcher, BLOCK_FRAMES};
 
@@ -20,6 +20,7 @@ pub enum EngineCmd {
     /// semitones + cents, combined at the boundary into one scale factor
     SetPitchScale(f64),
     BassFocus(bool),
+    SetFocus(Option<FocusKind>),
     /// RecallSilent: audio muted, position keeps advancing.
     Mute(bool),
     /// Per-stem mix gain (0.0..=1.5); out-of-range stems ignored.
@@ -42,7 +43,7 @@ pub enum EngineEvent {
 pub struct Pipeline {
     looper: Looper,
     stretch: Stretcher,
-    bass_focus: Option<BassFocus>,
+    focus: Option<Focus>,
     rate: f64,
     pitch_scale: f64,
     playing: bool,
@@ -59,7 +60,7 @@ impl Pipeline {
         Self {
             looper: Looper::new(set),
             stretch: Stretcher::new(),
-            bass_focus: None,
+            focus: None,
             rate: 1.0,
             pitch_scale: 1.0,
             playing: false,
@@ -102,7 +103,10 @@ impl Pipeline {
                 self.stretch.set_pitch_scale(self.pitch_scale);
             }
             EngineCmd::BassFocus(on) => {
-                self.bass_focus = if on { Some(BassFocus::new()) } else { None };
+                self.focus = if on { Some(Focus::new(FocusKind::Bass)) } else { None };
+            }
+            EngineCmd::SetFocus(kind) => {
+                self.focus = kind.map(Focus::new);
             }
             EngineCmd::Mute(on) => {
                 self.muted = on;
@@ -153,8 +157,8 @@ impl Pipeline {
         }
         out[filled * CHANNELS..].fill(0.0);
 
-        if let Some(bf) = &mut self.bass_focus {
-            bf.process_interleaved(out);
+        if let Some(f) = &mut self.focus {
+            f.process_interleaved(out);
         }
 
         // Linear ramps toward targets, applied per frame: the play/pause/mute
