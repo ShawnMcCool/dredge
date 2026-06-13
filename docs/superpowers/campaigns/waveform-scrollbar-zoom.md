@@ -1,6 +1,6 @@
 # Campaign: waveform scrollbar / range selector (horizontal zoom + pan)
 
-Status: backlog
+Status: done (built 2026-06-13)
 Raised: 2026-06-13
 
 ## Idea

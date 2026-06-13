@@ -490,6 +490,7 @@
 
 <div class="waveform" use:canvasSize={applySize}>
   <canvas
+    id="waveform-canvas"
     bind:this={canvas}
     onpointerdown={onPointerDown}
     onpointermove={onPointerMove}
@@ -510,6 +511,7 @@
     onpointerdown={onScrollDown}
     onpointermove={onScrollMove}
     onpointerup={onScrollUp}
+    onpointercancel={onScrollUp}
     ondblclick={resetView}
     title="drag to scroll · drag edges to zoom · double-click to fit"
   >

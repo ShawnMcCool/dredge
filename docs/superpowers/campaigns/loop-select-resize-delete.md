@@ -1,6 +1,6 @@
 # Campaign: select a loop on the waveform, resize it with edge handles, delete with Delete
 
-Status: backlog
+Status: done (built 2026-06-13)
 Raised: 2026-06-13
 
 ## Idea

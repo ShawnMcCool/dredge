@@ -1,6 +1,6 @@
 # Campaign: settings as a right-column tab instead of a gear-icon modal
 
-Status: backlog
+Status: done (built 2026-06-13)
 Raised: 2026-06-13
 
 ## Idea
