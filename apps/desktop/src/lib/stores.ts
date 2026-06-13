@@ -94,6 +94,24 @@ export interface Analysis {
   engine: string;
 }
 
+export interface ProfileStage {
+  name: string;
+  ms: number;
+  note?: string;
+}
+
+export interface ProfileRun {
+  op: string;
+  song_id?: number;
+  started_at: string;
+  total_ms: number;
+  ok: boolean;
+  error?: string;
+  device?: string;
+  engine?: string;
+  stages: ProfileStage[];
+}
+
 export interface OpenSong {
   song: Song;
   sections: Section[];
@@ -214,6 +232,9 @@ export const analysisError = writable<string | null>(null);
 export const suggestedSections = writable<AnalysisSection[] | null>(null);
 /** Loop edges snap to downbeats while on (only meaningful with analysis). */
 export const gridSnap = writable(true);
+/** Recent profiling runs, most-recent-first. Mirrors `profile_run` events
+ *  plus a `profiles.list` fetch at launch. */
+export const profiles = writable<ProfileRun[]>([]);
 
 // --- durable settings -------------------------------------------------------
 
@@ -222,6 +243,7 @@ export const UI_SCALE = "ui_scale";
 export const GRID_SNAP_DEFAULT = "grid_snap_default";
 export const CAPTURE_BUFFER_SECS = "capture_buffer_secs";
 export const PLAYBACK_VOLUME = "playback_volume";
+export const ANALYSIS_DEVICE = "analysis_device";
 
 /** Local mirror of the settings table; `loadSettings` fills it at launch and
  *  `setSetting` writes through. */
@@ -302,6 +324,17 @@ export const actions = {
     const vol = typeof all[PLAYBACK_VOLUME] === "number" ? all[PLAYBACK_VOLUME] : 1.0;
     playbackVolume.set(vol);
     await cmd("volume", { value: vol });
+    void actions.loadProfiles();
+  },
+
+  /** Pull recent profiling runs (most-recent-first) at launch. */
+  async loadProfiles(): Promise<void> {
+    profiles.set(await cmd<ProfileRun[]>("profiles.list", { limit: 50 }));
+  },
+
+  /** Prepend a freshly finished run (from a `profile_run` event). */
+  recordProfile(run: ProfileRun): void {
+    profiles.update((list) => [run, ...list].slice(0, 100));
   },
 
   /** Write-through: update the local mirror, persist server-side. */
@@ -810,6 +843,9 @@ export async function initEvents(): Promise<() => void> {
         }
         break;
       }
+      case "profile_run":
+        actions.recordProfile(ev.data as ProfileRun);
+        break;
       case "library_changed":
         // socket-driven imports (incl. capture.grab) land in the sidebar
         void actions.refreshSongs();
