@@ -62,7 +62,8 @@
   // pointer interaction state
   type Drag =
     | { mode: "select"; anchorX: number; moved: boolean }
-    | { mode: "resize"; loop: LoopRegion; edge: "start" | "end"; start: number; end: number };
+    | { mode: "resize"; loop: LoopRegion; edge: "start" | "end"; start: number; end: number }
+    | { mode: "lane"; anchor: { start: number; end: number }; moved: boolean };
   let drag: Drag | null = null;
 
   // reset the view when a different song opens
@@ -273,6 +274,14 @@
     return e.clientY - canvas.getBoundingClientRect().top;
   }
 
+  /** Lane span containing a time (used while dragging across headers). */
+  function spanAtTime(sec: number): { start: number; end: number } | null {
+    const open = get(openSong);
+    if (!open) return null;
+    const s = laneSpans(open).find((sp) => sec >= sp.start && sec <= sp.end);
+    return s ? { start: s.start, end: s.end } : null;
+  }
+
   /** Structure-lane span under a canvas point (lane y-band only). */
   function hitLaneSpan(x: number, y: number): LaneSpan | null {
     if (y >= LANE_H) return null;
@@ -285,11 +294,11 @@
   function onPointerDown(e: PointerEvent) {
     if (!get(openSong)) return;
     const x = canvasX(e);
-    // lane click: point the transport loop at the span (saved or suggested)
+    // lane click/drag: start a lane drag; single click handled on pointer-up
     const span = hitLaneSpan(x, canvasY(e));
     if (span) {
-      activeSpan = { start: span.start, end: span.end };
-      void actions.setTransportLoop(span.start, span.end);
+      canvas.setPointerCapture(e.pointerId);
+      drag = { mode: "lane", anchor: { start: span.start, end: span.end }, moved: false };
       return;
     }
     canvas.setPointerCapture(e.pointerId);
@@ -315,6 +324,18 @@
   function onPointerMove(e: PointerEvent) {
     if (!drag) return;
     const x = canvasX(e);
+    if (drag.mode === "lane") {
+      const cur = spanAtTime(Math.min(Math.max(xToSec(view, x), 0), duration()));
+      if (cur && (cur.start !== drag.anchor.start || cur.end !== drag.anchor.end)) {
+        drag.moved = true;
+      }
+      if (drag.moved) {
+        const lo = cur ? Math.min(drag.anchor.start, cur.start) : drag.anchor.start;
+        const hi = cur ? Math.max(drag.anchor.end, cur.end) : drag.anchor.end;
+        selection.set({ start: lo, end: hi });
+      }
+      return;
+    }
     const secs = maybeSnap(Math.min(Math.max(xToSec(view, x), 0), duration()));
     if (drag.mode === "resize") {
       if (drag.edge === "start") drag.start = Math.min(secs, drag.end - 0.05);
@@ -332,6 +353,13 @@
     const d = drag;
     drag = null;
     if (!d) return;
+    if (d.mode === "lane") {
+      if (!d.moved) {
+        activeSpan = { start: d.anchor.start, end: d.anchor.end };
+        void actions.setTransportLoop(d.anchor.start, d.anchor.end);
+      }
+      return;
+    }
     if (d.mode === "resize") {
       void actions.updateLoop(d.loop.id, { start: d.start, end: d.end });
     } else if (!d.moved) {
