@@ -391,9 +391,11 @@
       void actions.updateLoop(d.loop.id, { start: d.start, end: d.end });
     } else if (!d.moved) {
       const cx = canvasX(e);
+      // clicking inside a loop selects it (for handles / Delete) but still
+      // seeks to the click — don't engage the transport loop on a plain click
       const loop = hitLoopBody(cx, canvasY(e));
-      if (loop) void actions.selectLoop(loop);
-      else void actions.seek(Math.min(Math.max(xToSec(view, cx), 0), duration()));
+      if (loop) currentLoop.set(loop);
+      void actions.seek(Math.min(Math.max(xToSec(view, cx), 0), duration()));
     }
   }
 
