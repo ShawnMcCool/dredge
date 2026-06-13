@@ -7,20 +7,30 @@
   let renamingId = $state<number | null>(null);
   let renameValue = $state("");
 
-  function fmt(secs: number): string {
-    return secs.toFixed(1);
-  }
+  // clearing a name reverts to the positional auto label
+  const autoName = (i: number) => `loop ${i + 1}`;
 
-  function startRename(id: number, name: string) {
+  function startRename(id: number) {
     renamingId = id;
-    renameValue = name;
+    renameValue = ""; // starts empty — type to set, leave blank for the auto label
   }
 
-  async function commitRename() {
+  async function commitRename(i: number) {
     if (renamingId === null) return;
     const id = renamingId;
     renamingId = null;
-    if (renameValue.trim()) await actions.updateLoop(id, { name: renameValue.trim() });
+    await actions.updateLoop(id, { name: renameValue.trim() || autoName(i) });
+  }
+
+  function focusNode(node: HTMLInputElement) {
+    node.focus();
+  }
+
+  async function setStart(id: number, v: number) {
+    if (Number.isFinite(v)) await actions.updateLoop(id, { start: v });
+  }
+  async function setEnd(id: number, v: number) {
+    if (Number.isFinite(v)) await actions.updateLoop(id, { end: v });
   }
 </script>
 
@@ -29,24 +39,48 @@
   <p class="empty">open a song first</p>
 {:else}
   <ul>
-    {#each $openSong.loops as l (l.id)}
+    {#each $openSong.loops as l, i (l.id)}
       <li class="row" class:current={$currentLoop?.id === l.id}>
         {#if renamingId === l.id}
           <input
             class="name"
+            use:focusNode
             bind:value={renameValue}
-            onblur={commitRename}
-            onkeydown={(e) => e.key === "Enter" && commitRename()}
+            placeholder={l.name}
+            onblur={() => commitRename(i)}
+            onkeydown={(e) => {
+              if (e.key === "Enter") commitRename(i);
+              else if (e.key === "Escape") renamingId = null;
+            }}
           />
         {:else}
-          <button class="name pick" onclick={() => actions.selectLoop(l)}>
+          <button
+            class="name pick"
+            onclick={() => actions.selectLoop(l)}
+            ondblclick={() => startRename(l.id)}
+            title="click to load · double-click to rename"
+          >
             {l.name}
             {#if l.kind.kind === "junction"}<span class="badge">J</span>{/if}
           </button>
         {/if}
-        <span class="readout span">{fmt(l.start)}–{fmt(l.end)}</span>
-        <Button variant="chip" onclick={() => startRename(l.id, l.name)} title="rename">✎</Button>
-        <Button variant="chip" onclick={() => actions.deleteLoop(l.id)} title="delete">×</Button>
+        <input
+          class="mono t"
+          type="number"
+          step="0.1"
+          min="0"
+          value={l.start}
+          onchange={(e) => setStart(l.id, Number(e.currentTarget.value))}
+        />
+        <input
+          class="mono t"
+          type="number"
+          step="0.1"
+          min="0"
+          value={l.end}
+          onchange={(e) => setEnd(l.id, Number(e.currentTarget.value))}
+        />
+        <Button variant="chip" onclick={() => actions.deleteLoop(l.id)} title="remove">×</Button>
       </li>
     {/each}
   </ul>
@@ -101,11 +135,6 @@
     margin-left: 4px;
   }
 
-  .span {
-    font-size: 11px;
-    color: var(--muted);
-  }
-
   .derive {
     display: flex;
     flex-wrap: wrap;
@@ -125,7 +154,7 @@
   }
 
   .t {
-    width: 3.5em;
+    width: 4em;
     font-size: 11px;
     padding: 1px 4px;
   }
