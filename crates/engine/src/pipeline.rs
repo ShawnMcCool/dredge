@@ -1,5 +1,6 @@
 use crate::buffer::{StemSet, CHANNELS, SAMPLE_RATE};
-use crate::filter::{Focus, FocusKind};
+use crate::filter::Focus;
+pub use crate::filter::FocusKind;
 use crate::looper::Looper;
 use crate::stretch::{Stretcher, BLOCK_FRAMES};
 

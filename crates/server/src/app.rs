@@ -383,6 +383,7 @@ impl App {
             "loop.set" => self.loop_set(p),
             "loop.clear" => self.send_ok(EngineCmd::ClearLoop),
             "bass_focus" => self.bass_focus(p),
+            "focus" => self.focus(p),
             "mute" => self.mute(p),
             "pitch" => self.pitch(p),
             "status" => self.status(),
@@ -574,6 +575,23 @@ impl App {
         }
         let p: P = from_params(p)?;
         self.send_ok(EngineCmd::BassFocus(p.on))
+    }
+
+    fn focus(&mut self, p: Value) -> Result<Value, String> {
+        use engine::pipeline::FocusKind;
+        #[derive(Deserialize)]
+        struct P {
+            #[serde(default)]
+            kind: Option<String>,
+        }
+        let p: P = from_params(p)?;
+        let kind = match p.kind.as_deref() {
+            Some("bass") => Some(FocusKind::Bass),
+            Some("vocal") => Some(FocusKind::Vocal),
+            Some("treble") => Some(FocusKind::Treble),
+            _ => None, // "none", null, or unknown → off
+        };
+        self.send_ok(EngineCmd::SetFocus(kind))
     }
 
     fn mute(&mut self, p: Value) -> Result<Value, String> {
