@@ -112,6 +112,16 @@ export interface ProfileRun {
   stages: ProfileStage[];
 }
 
+export interface WorkSample {
+  op: string;
+  stage: string;
+  elapsed_ms: number;
+  cpu_pct: number;
+  gpu_util?: number;
+  gpu_mem_used_mb?: number;
+  gpu_mem_total_mb?: number;
+}
+
 export interface OpenSong {
   song: Song;
   sections: Section[];
@@ -235,6 +245,8 @@ export const gridSnap = writable(true);
 /** Recent profiling runs, most-recent-first. Mirrors `profile_run` events
  *  plus a `profiles.list` fetch at launch. */
 export const profiles = writable<ProfileRun[]>([]);
+/** Latest live work sample while a prepare run is active; null when idle. */
+export const workSample = writable<WorkSample | null>(null);
 
 // --- durable settings -------------------------------------------------------
 
@@ -336,6 +348,11 @@ export const actions = {
   /** Prepend a freshly finished run (from a `profile_run` event). */
   recordProfile(run: ProfileRun): void {
     profiles.update((list) => [run, ...list].slice(0, 100));
+  },
+
+  /** Store the latest live work sample (from a `work_sample` event). */
+  recordWorkSample(sample: WorkSample): void {
+    workSample.set(sample);
   },
 
   /** Write-through: update the local mirror, persist server-side. */
@@ -686,6 +703,7 @@ export const actions = {
       steps: { analysis: "pending", stems: "pending" },
       errors: {},
     });
+    workSample.set(null);
 
     const run = async (
       step: "analysis" | "stems",
@@ -733,13 +751,14 @@ export const actions = {
     const ok = (st: PrepareStepState) => st === "done" || st === "cached";
     if (s && ok(s.steps.analysis) && ok(s.steps.stems)) {
       // all green: linger just long enough to read the two ✓s
-      setTimeout(() => prepareState.set(null), 1500);
+      setTimeout(() => { prepareState.set(null); workSample.set(null); }, 1500);
     }
     // failures leave the modal open with its close button
   },
 
   closePrepare(): void {
     prepareState.set(null);
+    workSample.set(null);
   },
 
   // --- analysis ---
@@ -851,6 +870,9 @@ export async function initEvents(): Promise<() => void> {
         }
         break;
       }
+      case "work_sample":
+        actions.recordWorkSample(ev.data as WorkSample);
+        break;
       case "profile_run":
         actions.recordProfile(ev.data as ProfileRun);
         break;
