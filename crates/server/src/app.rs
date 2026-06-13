@@ -964,20 +964,31 @@ impl App {
         }
         let separator = self.separator.clone();
         let tx = self.job_tx.clone();
+        let profile_tx = self.profile_tx.clone();
         let separating = self.separating.clone();
         let audio_path = PathBuf::from(&song.path);
         let song_id = p.song_id;
+        let force_cpu = self
+            .store
+            .get_setting("analysis_device")
+            .ok()
+            .flatten()
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .map(|s| s == "cpu")
+            .unwrap_or(false);
+        let device = if force_cpu { "cpu" } else { "auto" }.to_string();
         std::thread::spawn(move || {
-            let result = separator.separate(&audio_path, &cache, false);
+            let mut timer = crate::profile::Timer::new("stems", Some(song_id));
+            let result = timer.stage("demucs", || separator.separate(&audio_path, &cache, force_cpu));
             separating.lock().unwrap().remove(&song_id.0);
+            let err = result.as_ref().err().cloned();
+            let run = timer.finish(result.is_ok(), err.clone(), Some(device), None);
             let data = match result {
                 Ok(_) => json!({"song_id": song_id, "state": "done"}),
                 Err(e) => json!({"song_id": song_id, "state": "failed", "error": e}),
             };
-            let _ = tx.send(Event {
-                event: "stems_progress".into(),
-                data,
-            });
+            let _ = tx.send(Event { event: "stems_progress".into(), data });
+            let _ = profile_tx.send(run);
         });
         Ok(json!({"state": "running"}))
     }

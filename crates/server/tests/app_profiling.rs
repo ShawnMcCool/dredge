@@ -1,7 +1,7 @@
 //! Profiling + analysis device control through the dispatcher. Hermetic.
 use practice::store::Store;
 use serde_json::{json, Value};
-use server::analysis::{fake_analysis, songformer_venv_present, Analyzer};
+use server::analysis::{fake_analysis, songformer_venv_present, Analyzer, FakeAnalyzer};
 use server::app::App;
 use server::capture_control::MockCapture;
 use server::control::MockEngine;
@@ -91,4 +91,14 @@ fn analysis_auto_recovers_to_cpu_when_songformer_present() {
     assert_eq!(data["device"], "cpu");
     let stages = data["stages"].as_array().unwrap();
     assert!(stages.iter().any(|s| s["name"] == "analyze (cpu)"));
+}
+
+#[test]
+fn stems_separate_records_a_profile() {
+    let mut ctx = setup(Arc::new(FakeAnalyzer));
+    ctx.app.set_stems_dir(ctx._dir.path().join("stems"));
+    req(&mut ctx.app, "stems.separate", json!({"song_id": ctx.song_id}));
+    let data = wait_for_event(&mut ctx.app, "profile_run");
+    assert_eq!(data["op"], "stems");
+    assert!(data["total_ms"].as_u64().is_some());
 }
