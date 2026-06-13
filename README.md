@@ -41,8 +41,16 @@ and a practice engine.
   derive bar-aware junction loops. Runs through the repo-shipped
   `scripts/analyze` wrapper, which bootstraps its own venv on first use —
   swapping models never touches Rust.
+- **Structure on the waveform** (v5): the section lane is color-coded by
+  label (chorus rides the amber accent; novelty's A/B/C labels get stable
+  fallback hues). Fresh analysis suggestions appear right on the waveform —
+  dashed, italic — until you save real sections; clicking any span points the
+  transport loop at it, double-clicking a suggestion seeds the selection.
+- **Playback volume** (v5): a compact transport fader (0–150%, click-free
+  ramped in the engine, separate from mute/pause), persisted across sessions.
 - **Durable settings** (`,` or the gear button): UI scale, grid-snap default,
-  capture buffer length — stored server-side in the practice DB.
+  capture buffer length, playback volume — stored server-side in the
+  practice DB.
 - **Escape asks before quitting**: `esc` walks back quick-prompt → selection →
   an exit confirmation (`enter`/`y` exits, `esc`/`n` stays).
 - **Scriptable**: a JSON-lines control socket at `$XDG_RUNTIME_DIR/earworm.sock`
@@ -68,7 +76,7 @@ not locked in.
 Arch deps: `rubberband pipewire webkit2gtk-4.1 gtk3` (pkg-config used at build).
 
 ```bash
-cargo test                                  # 120 tests
+cargo test                                  # 131 tests
 cd apps/desktop && pnpm install && pnpm tauri build   # UI binary -> target/release/earworm
 cargo build -p server --release             # headless -> target/release/earwormd
 ```
@@ -94,8 +102,8 @@ printf '%s\n' '{"id":1,"cmd":"song.import","params":{"path":"/path/song.flac"}}'
 Commands: `song.*`, `section.replace`, `loop.*`, `junctions.derive`, `plan.*`,
 `practice.quick*`, `rep.rate`, `due.list`, `retention`, `capture.*`, `stems.*`,
 `analysis.*`, `settings.*`, transport
-(`play/pause/seek/rate/pitch/loop.set/bass_focus/mute`), `subscribe` for the
-event stream.
+(`play/pause/seek/rate/volume/pitch/loop.set/bass_focus/mute`), `subscribe`
+for the event stream.
 
 ## Why these mechanics (short version)
 
