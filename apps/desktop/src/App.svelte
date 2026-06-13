@@ -215,11 +215,12 @@
     color: var(--fg);
     border-color: var(--muted);
   }
+  /* handles live on each column's outer edge (far left / far right) */
   .edge.left {
-    right: 4px;
+    left: 4px;
   }
   .edge.right {
-    left: 4px;
+    right: 4px;
   }
 
   .stage {
