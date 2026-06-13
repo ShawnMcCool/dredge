@@ -51,6 +51,10 @@ impl Timer {
             error,
             device,
             engine,
+            max_cpu_pct: None,
+            max_gpu_util: None,
+            max_vram_used_mb: None,
+            vram_total_mb: None,
             stages: self.stages,
         }
     }

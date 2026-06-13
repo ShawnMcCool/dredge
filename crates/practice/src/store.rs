@@ -590,6 +590,10 @@ impl Store {
                     error: row.get(5)?,
                     device: row.get(6)?,
                     engine: row.get(7)?,
+                    max_cpu_pct: None,
+                    max_gpu_util: None,
+                    max_vram_used_mb: None,
+                    vram_total_mb: None,
                     stages: serde_json::from_str(&stages).map_err(json_err)?,
                 })
             })?
@@ -635,6 +639,10 @@ mod tests {
             error: None,
             device: Some("cpu".into()),
             engine: Some("songformer".into()),
+            max_cpu_pct: None,
+            max_gpu_util: None,
+            max_vram_used_mb: None,
+            vram_total_mb: None,
             stages: vec![crate::model::ProfileStage { name: "analyze".into(), ms: 1234, note: None }],
         };
         let started = store.save_profile(&run).unwrap();

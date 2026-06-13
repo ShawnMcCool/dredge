@@ -149,6 +149,14 @@ pub struct ProfileRun {
     pub device: Option<String>, // "gpu" | "cpu" | "auto" | null
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine: Option<String>, // analysis only
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_cpu_pct: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_gpu_util: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_vram_used_mb: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vram_total_mb: Option<u32>,
     pub stages: Vec<ProfileStage>,
 }
 
