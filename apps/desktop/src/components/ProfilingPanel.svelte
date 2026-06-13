@@ -1,0 +1,68 @@
+<script lang="ts">
+  import { profiles, songs, type ProfileRun } from "../lib/stores";
+
+  function songTitle(id?: number): string {
+    if (id == null) return "";
+    return $songs.find((s) => s.id === id)?.title ?? `song ${id}`;
+  }
+
+  function secs(ms: number): string {
+    return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
+  }
+
+  function maxStage(run: ProfileRun): number {
+    return Math.max(1, ...run.stages.map((s) => s.ms));
+  }
+</script>
+
+<h2>profiling</h2>
+{#if $profiles.length === 0}
+  <p class="empty">no runs yet</p>
+{:else}
+  <ul>
+    {#each $profiles as run, i (i)}
+      <li class="run" class:failed={!run.ok}>
+        <div class="head">
+          <span class="op">{run.op}</span>
+          <span class="title">{songTitle(run.song_id)}</span>
+          <span class="total mono">{secs(run.total_ms)}</span>
+        </div>
+        <div class="badges">
+          {#if run.device}<span class="badge dev">{run.device}</span>{/if}
+          {#if run.engine}<span class="badge eng">{run.engine}</span>{/if}
+          {#if !run.ok}<span class="badge err">failed</span>{/if}
+        </div>
+        {#if run.stages.length}
+          <div class="stages">
+            {#each run.stages as st (st.name)}
+              <div class="stage" title={`${st.name}: ${secs(st.ms)}${st.note ? ` — ${st.note}` : ""}`}>
+                <span class="sname mono">{st.name}</span>
+                <span class="bar"><span class="fill" style="width: {(st.ms / maxStage(run)) * 100}%"></span></span>
+                <span class="sms mono">{secs(st.ms)}</span>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </li>
+    {/each}
+  </ul>
+{/if}
+
+<style>
+  .empty { font-size: 11px; color: var(--muted); }
+  .run { padding: calc(var(--space) / 2) 0; border-bottom: 1px solid var(--bg-raised); }
+  .head { display: flex; align-items: baseline; gap: var(--space); }
+  .op { font-size: 12px; }
+  .title { flex: 1; min-width: 0; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .total { font-size: 11px; }
+  .badges { display: flex; gap: 4px; margin-top: 2px; }
+  .badge { font-size: 9px; padding: 1px 5px; border-radius: 8px; background: var(--bg-raised); color: var(--muted); }
+  .badge.eng { color: var(--accent); }
+  .badge.err { color: var(--miss); }
+  .stages { margin-top: 4px; display: flex; flex-direction: column; gap: 2px; }
+  .stage { display: flex; align-items: center; gap: 6px; }
+  .sname { font-size: 10px; color: var(--muted); width: 7em; flex: 0 0 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar { flex: 1; height: 4px; background: var(--bg-raised); border-radius: 2px; overflow: hidden; }
+  .fill { display: block; height: 100%; background: var(--accent); }
+  .sms { font-size: 10px; color: var(--muted); width: 4em; text-align: right; flex: 0 0 auto; }
+</style>

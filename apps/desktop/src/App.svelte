@@ -8,6 +8,7 @@
   import PlanBuilder from "./components/PlanBuilder.svelte";
   import PlanRunner from "./components/PlanRunner.svelte";
   import PrepareModal from "./components/PrepareModal.svelte";
+  import ProfilingPanel from "./components/ProfilingPanel.svelte";
   import Sections from "./components/Sections.svelte";
   import SettingsModal from "./components/SettingsModal.svelte";
   import StemMixer from "./components/StemMixer.svelte";
@@ -27,7 +28,7 @@
     settingsOpen,
   } from "./lib/stores";
 
-  const TABS = ["sections", "loops", "plan", "capture", "due"] as const;
+  const TABS = ["sections", "loops", "plan", "capture", "due", "profile"] as const;
   // due panel greets you on app start — the schedule is the product
   let tab = $state<(typeof TABS)[number]>("due");
   let running = $derived(
@@ -84,8 +85,10 @@
             <PlanBuilder />
           {:else if tab === "capture"}
             <Capture />
-          {:else}
+          {:else if tab === "due"}
             <DuePanel />
+          {:else}
+            <ProfilingPanel />
           {/if}
         </div>
       {/key}
