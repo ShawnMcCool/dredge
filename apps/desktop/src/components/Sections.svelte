@@ -60,6 +60,14 @@
   let hasSaved = $derived(rows.some((r) => !r.suggested));
   let hasSuggested = $derived(rows.some((r) => r.suggested));
 
+  let engineLabel = $derived.by(() => {
+    const e = $openSong?.analysis?.engine;
+    if (!e) return null;
+    if (e === "songformer") return "SongFormer";
+    if (e.includes("novelty")) return "novelty (SongFormer unavailable)";
+    return e;
+  });
+
   function replaceWithSuggestions() {
     rows = rows.filter((r) => r.suggested);
     touch();
@@ -111,6 +119,11 @@
 {#if !$openSong}
   <p class="empty">open a song first</p>
 {:else}
+  {#if engineLabel}
+    <p class="engine mono" class:fallback={engineLabel.startsWith("novelty")}>
+      sections: {engineLabel}
+    </p>
+  {/if}
   <ul>
     {#each rows as row, i (i)}
       <li class="row" class:suggested={row.suggested}>
@@ -164,6 +177,15 @@
   .note {
     font-size: 11px;
     color: var(--muted);
+  }
+
+  .engine {
+    font-size: 10px;
+    color: var(--muted);
+    margin-bottom: calc(var(--space) / 2);
+  }
+  .engine.fallback {
+    color: var(--shaky);
   }
 
   .row {
