@@ -192,6 +192,11 @@
       ctx.lineTo(x1 - 0.5, LANE_H + WAVE_H);
       ctx.stroke();
       ctx.setLineDash([]);
+      if (get(currentLoop)?.id === l.id) {
+        ctx.fillStyle = accent;
+        ctx.fillRect(x0 - 2, LANE_H, 4, 10);
+        ctx.fillRect(x1 - 2, LANE_H, 4, 10);
+      }
     }
 
     // selection — brighter
@@ -255,6 +260,19 @@
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
   });
+
+  /** Topmost loop whose body is under a canvas point (below the lane). */
+  function hitLoopBody(x: number, y: number): LoopRegion | null {
+    if (y < LANE_H) return null;
+    const open = get(openSong);
+    if (!open) return null;
+    const sec = xToSec(view, x);
+    for (let i = open.loops.length - 1; i >= 0; i--) {
+      const l = open.loops[i];
+      if (sec >= l.start && sec <= l.end) return l;
+    }
+    return null;
+  }
 
   function hitLoopEdge(x: number): { loop: LoopRegion; edge: "start" | "end" } | null {
     const open = get(openSong);
@@ -363,7 +381,10 @@
     if (d.mode === "resize") {
       void actions.updateLoop(d.loop.id, { start: d.start, end: d.end });
     } else if (!d.moved) {
-      void actions.seek(Math.min(Math.max(xToSec(view, canvasX(e)), 0), duration()));
+      const cx = canvasX(e);
+      const loop = hitLoopBody(cx, canvasY(e));
+      if (loop) void actions.selectLoop(loop);
+      else void actions.seek(Math.min(Math.max(xToSec(view, cx), 0), duration()));
     }
   }
 

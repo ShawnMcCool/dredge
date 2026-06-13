@@ -18,7 +18,7 @@ import {
 } from "./stores";
 
 export const KEY_HELP =
-  "space play/pause · a analyze track · r restart loop · [ ] rate ∓5% · l loop selection · p quick practice · b bass focus · m mute bass stem · g grid snap · esc clear · 1/2/3 rate miss/shaky/solid · ctrl ± 0 zoom · , settings";
+  "space play/pause · a analyze track · r restart loop · [ ] rate ∓5% · l loop selection · del delete loop · p quick practice · b bass focus · m mute bass stem · g grid snap · esc clear · 1/2/3 rate miss/shaky/solid · ctrl ± 0 zoom · , settings";
 
 function isTyping(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -118,6 +118,12 @@ async function handle(e: KeyboardEvent): Promise<void> {
       // THE one-key move: mute the recorded bass, I play it
       if (get(openSong)?.stems) await actions.toggleStemMute(BASS_STEM);
       break;
+    case "Delete":
+    case "Backspace": {
+      const l = get(currentLoop);
+      if (l) await actions.deleteLoop(l.id);
+      break;
+    }
     case "1":
     case "2":
     case "3": {
