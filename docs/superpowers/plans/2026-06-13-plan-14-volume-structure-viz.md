@@ -23,11 +23,11 @@
 
 Today the waveform's section lane shows saved sections only, monochrome; analysis suggestions live solely in the Sections tab. Make structure visible:
 
-- [ ] **Label palette** (`lib/waveform-colors.ts`): fixed muted-hue map for the SongFormer 8-class labels (`intro, verse, chorus, bridge, inst, outro, silence, solo` — verify exact label set from `scripts/` or a cached analysis JSON; chorus = the amber accent family, others desaturated distinct hues consistent with the dark palette) + deterministic fallback hue for unknown/novelty labels (A/B/C…). Export `labelColor(label): {fill, edge}`. Vitest: known labels stable, unknown deterministic, all fills within muted alpha bounds.
-- [ ] **Saved sections**: lane spans use `labelColor` fill (low alpha) + solid 1 px edge + label text (existing font rules).
-- [ ] **Suggestions** (analysis present, sections not yet saved — the existing `suggested` state in stores): drawn in the same lane with dashed edges + lower alpha + italic label; visible immediately after PREPARE completes. If saved sections exist, suggestions are NOT drawn on the waveform (avoid double-lane noise — tab still shows them).
-- [ ] **Click-to-loop**: clicking a span (saved or suggested) in the lane sets the transport loop to that span (existing `loop.set` transport path) and highlights it; double-click on a *suggested* span additionally seeds the selection (so `l`/`p` work on it). Hit-testing in the existing canvas pointer handlers (lane y-band).
-- [ ] Help footer unchanged (no new keys). `pnpm build && pnpm vitest run` clean. Commit: `feat(desktop): color-coded structure lane with suggestions and click-to-loop`
+- [x] **Label palette** (`lib/waveform-colors.ts`): fixed muted-hue map for the SongFormer 8-class labels (verified from the HF snapshot's `dataset/label2id.py` + `modeling_songformer.py` — inference uses `SongForm-HX-8Class`, i.e. `intro, verse, chorus, bridge, inst, outro, silence, pre-chorus`; the plan's guessed `solo` is NOT in the inference set; chorus = the amber accent family, others desaturated distinct hues consistent with the dark palette) + deterministic fallback hue for unknown/novelty labels (A/B/C…). Export `labelColor(label): {fill, edge}`. Vitest: known labels stable, unknown deterministic, all fills within muted alpha bounds.
+- [x] **Saved sections**: lane spans use `labelColor` fill (low alpha) + solid 1 px edge + label text (existing font rules).
+- [x] **Suggestions** (analysis present, sections not yet saved — the existing `suggested` state in stores): drawn in the same lane with dashed edges + lower alpha + italic label; visible immediately after PREPARE completes. If saved sections exist, suggestions are NOT drawn on the waveform (avoid double-lane noise — tab still shows them).
+- [x] **Click-to-loop**: clicking a span (saved or suggested) in the lane sets the transport loop to that span (existing `loop.set` transport path) and highlights it; double-click on a *suggested* span additionally seeds the selection (so `l`/`p` work on it). Hit-testing in the existing canvas pointer handlers (lane y-band).
+- [x] Help footer unchanged (no new keys). `pnpm build && pnpm vitest run` clean. Commit: `feat(desktop): color-coded structure lane with suggestions and click-to-loop`
 
 ### Task 4: Visual verification + gate
 

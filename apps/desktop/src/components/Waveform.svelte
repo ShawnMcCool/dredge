@@ -11,7 +11,9 @@
     position,
     selection,
     type LoopRegion,
+    type OpenSong,
   } from "../lib/stores";
+  import { labelColor } from "../lib/waveform-colors";
   import {
     playheadSecs,
     secToX,
@@ -33,6 +35,29 @@
   let canvas: HTMLCanvasElement;
   let view: View = $state({ startSec: 0, endSec: 1, width: 1 });
   let lastSongId: number | null = null;
+  /** Lane span whose bounds currently drive the transport loop (clicked). */
+  let activeSpan: { start: number; end: number } | null = $state(null);
+
+  /** One row in the structure lane: saved sections when any exist, analysis
+   *  suggestions otherwise (never both — the Sections tab shows the rest). */
+  interface LaneSpan {
+    name: string;
+    start: number;
+    end: number;
+    suggested: boolean;
+  }
+
+  function laneSpans(open: OpenSong): LaneSpan[] {
+    if (open.sections.length > 0) {
+      return open.sections.map((s) => ({ ...s, suggested: false }));
+    }
+    return (open.analysis?.sections ?? []).map((s) => ({
+      name: s.label,
+      start: s.start,
+      end: s.end,
+      suggested: true,
+    }));
+  }
 
   // pointer interaction state
   type Drag =
@@ -45,6 +70,7 @@
     const open = $openSong;
     if (open && open.song.id !== lastSongId) {
       lastSongId = open.song.id;
+      activeSpan = null;
       view = { startSec: 0, endSec: Math.max(open.song.duration_secs, 2), width: view.width };
     }
   });
@@ -180,15 +206,26 @@
       ctx.strokeRect(x0 + 0.5, LANE_H + 0.5, x1 - x0 - 1, WAVE_H - 1);
     }
 
-    // section lane
-    ctx.font = "11px " + css("--mono");
-    for (const s of open.sections) {
+    // structure lane — label-colored spans: saved sections solid, analysis
+    // suggestions dashed/dimmer/italic; clicked span gets a second fill pass
+    for (const s of laneSpans(open)) {
       const x0 = secToX(view, s.start);
       const x1 = secToX(view, s.end);
       if (x1 < 0 || x0 > w) continue;
-      ctx.fillStyle = css("--line");
+      const { fill, edge } = labelColor(s.name);
+      const active = activeSpan?.start === s.start && activeSpan?.end === s.end;
+      ctx.globalAlpha = s.suggested && !active ? 0.6 : 1;
+      ctx.fillStyle = fill;
       ctx.fillRect(x0, 2, x1 - x0 - 1, LANE_H - 4);
+      if (active) ctx.fillRect(x0, 2, x1 - x0 - 1, LANE_H - 4);
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = 1;
+      ctx.setLineDash(s.suggested ? [3, 3] : []);
+      ctx.strokeRect(x0 + 0.5, 2.5, x1 - x0 - 2, LANE_H - 5);
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
       ctx.fillStyle = css("--fg");
+      ctx.font = (s.suggested ? "italic " : "") + "11px " + css("--mono");
       ctx.fillText(s.name, x0 + 4, LANE_H - 8, Math.max(x1 - x0 - 8, 0));
     }
 
@@ -228,18 +265,44 @@
     return null;
   }
 
-  function canvasX(e: PointerEvent | WheelEvent): number {
+  function canvasX(e: MouseEvent): number {
     return e.clientX - canvas.getBoundingClientRect().left;
+  }
+
+  function canvasY(e: MouseEvent): number {
+    return e.clientY - canvas.getBoundingClientRect().top;
+  }
+
+  /** Structure-lane span under a canvas point (lane y-band only). */
+  function hitLaneSpan(x: number, y: number): LaneSpan | null {
+    if (y >= LANE_H) return null;
+    const open = get(openSong);
+    if (!open) return null;
+    const sec = xToSec(view, x);
+    return laneSpans(open).find((s) => sec >= s.start && sec <= s.end) ?? null;
   }
 
   function onPointerDown(e: PointerEvent) {
     if (!get(openSong)) return;
-    canvas.setPointerCapture(e.pointerId);
     const x = canvasX(e);
+    // lane click: point the transport loop at the span (saved or suggested)
+    const span = hitLaneSpan(x, canvasY(e));
+    if (span) {
+      activeSpan = { start: span.start, end: span.end };
+      void actions.setTransportLoop(span.start, span.end);
+      return;
+    }
+    canvas.setPointerCapture(e.pointerId);
     const edge = hitLoopEdge(x);
     drag = edge
       ? { mode: "resize", loop: edge.loop, edge: edge.edge, start: edge.loop.start, end: edge.loop.end }
       : { mode: "select", anchorX: x, moved: false };
+  }
+
+  /** Double-click on a *suggested* span seeds the selection (l/p work on it). */
+  function onDblClick(e: MouseEvent) {
+    const span = hitLaneSpan(canvasX(e), canvasY(e));
+    if (span?.suggested) selection.set({ start: span.start, end: span.end });
   }
 
   /** Pull a time onto the nearest downbeat when grid snap applies. */
@@ -322,6 +385,7 @@
     onpointerdown={onPointerDown}
     onpointermove={onPointerMove}
     onpointerup={onPointerUp}
+    ondblclick={onDblClick}
     onwheel={onWheel}
   ></canvas>
   {#if $openingSong !== null && $openSong}
