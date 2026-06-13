@@ -8,6 +8,7 @@
     type AnalysisSection,
   } from "../lib/stores";
   import Button from "../lib/ui/Button.svelte";
+  import Modal from "../lib/ui/Modal.svelte";
 
   interface Row {
     name: string;
@@ -97,6 +98,13 @@
     );
     dirty = false;
   }
+
+  let confirmReanalyze = $state(false);
+
+  async function reanalyze() {
+    confirmReanalyze = false;
+    await actions.reanalyze();
+  }
 </script>
 
 <h2>sections</h2>
@@ -134,11 +142,20 @@
     {#if hasSaved && hasSuggested}
       <Button onclick={replaceWithSuggestions}>replace with suggestions</Button>
     {/if}
+    <Button onclick={() => (confirmReanalyze = true)}>re-analyze</Button>
     <Button accent disabled={!dirty} onclick={save}>save</Button>
   </div>
   {#if $analysisError}
     <p class="error">{$analysisError}</p>
   {/if}
+
+  <Modal open={confirmReanalyze} title="re-analyze" closable onclose={() => (confirmReanalyze = false)}>
+    <p>Discard the cached beat grid and section suggestions and run analysis again?</p>
+    <div class="modal-actions">
+      <Button onclick={() => (confirmReanalyze = false)}>cancel</Button>
+      <Button accent onclick={reanalyze}>re-analyze</Button>
+    </div>
+  </Modal>
   <p class="note">saving re-derives junction loops (bar-aware once analyzed)</p>
 {/if}
 
@@ -188,6 +205,13 @@
     display: flex;
     flex-wrap: wrap;
     gap: calc(var(--space) / 2);
+    margin-top: var(--space);
+  }
+
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space);
     margin-top: var(--space);
   }
 </style>
