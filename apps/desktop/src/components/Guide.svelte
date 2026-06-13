@@ -39,8 +39,19 @@
       keys: [
         ["ctrl + / − / 0", "zoom in / out / reset"],
         ["ctrl [  /  ]", "collapse library / panels"],
+        ["corner click", "far top-left / top-right toggles the library / panels column"],
         [",", "open settings"],
         ["esc", "clear selection / dismiss"],
+      ],
+    },
+    {
+      title: "waveform mouse",
+      keys: [
+        ["left-drag", "select a range · click to seek · click a loop to select, click away to deselect"],
+        ["left lane", "drag across section headers · click a header to loop it"],
+        ["right-drag", "resize — grabs the nearest loop edge from anywhere (the only resize button); also the scrollbar window edges"],
+        ["middle-drag", "zoom into the dragged range · click with no drag to fit"],
+        ["wheel", "zoom · shift + wheel to pan"],
       ],
     },
   ];
@@ -59,8 +70,8 @@
       "Loop and selection edges snap to analyzed downbeats, for clean musical boundaries.",
     ],
     [
-      "sections & junctions",
-      "Sections are the song's structure (verse / chorus). Junction loops are auto-derived at section boundaries so you can drill the transitions.",
+      "sections & transitions",
+      "Sections are the song's structure (verse / chorus). Transition loops are auto-derived at section boundaries so you can drill the changes between them.",
     ],
     [
       "ratings",

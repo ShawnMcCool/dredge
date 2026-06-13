@@ -72,6 +72,10 @@
     | { mode: "lane"; anchor: { start: number; end: number }; moved: boolean }
     | { mode: "zoom"; anchorX: number; curX: number };
   let drag: Drag | null = null;
+  // after a resize is released, hold the new bounds visually until the
+  // loop.update round-trip lands in the store — otherwise the wave flashes back
+  // to the old bounds for the frames between release and refresh.
+  let pendingResize: { id: number; start: number; end: number } | null = null;
 
   // reset the view when a different song opens
   $effect(() => {
@@ -94,6 +98,9 @@
   function loopBounds(l: LoopRegion): { start: number; end: number } {
     if (drag?.mode === "resize" && drag.loop.id === l.id) {
       return { start: drag.start, end: drag.end };
+    }
+    if (pendingResize?.id === l.id) {
+      return { start: pendingResize.start, end: pendingResize.end };
     }
     return { start: l.start, end: l.end };
   }
@@ -134,7 +141,6 @@
 
     // waveform: per px column aggregate the buckets it covers
     const wave = css("--wave");
-    const played = css("--accent-dim");
     for (let x = 0; x < w; x++) {
       const b0 = Math.max(Math.floor(xToSec(view, x) / perBucket), first);
       const b1 = Math.min(Math.max(Math.floor(xToSec(view, x + 1) / perBucket), b0), last);
@@ -147,7 +153,7 @@
         hi = Math.max(hi, bucket[1]);
       }
       if (lo > hi) continue;
-      ctx.fillStyle = x < playheadX ? played : wave;
+      ctx.fillStyle = wave;
       const y0 = mid - hi * (WAVE_H / 2 - 2);
       const y1 = mid - lo * (WAVE_H / 2 - 2);
       ctx.fillRect(x, y0, 1, Math.max(y1 - y0, 1));
@@ -322,6 +328,23 @@
     return null;
   }
 
+  /** The loop edge (across all loops) nearest to canvas x. Right-drag grabs this
+   *  from anywhere — like Hyprland's super+right-drag snapping to the nearest
+   *  tile border instead of requiring a pixel-perfect hit. */
+  function nearestLoopEdge(x: number): { loop: LoopRegion; edge: "start" | "end" } | null {
+    const open = get(openSong);
+    if (!open) return null;
+    let best: { loop: LoopRegion; edge: "start" | "end" } | null = null;
+    let bestDist = Infinity;
+    for (const l of open.loops) {
+      const ds = Math.abs(secToX(view, l.start) - x);
+      if (ds < bestDist) ((bestDist = ds), (best = { loop: l, edge: "start" }));
+      const de = Math.abs(secToX(view, l.end) - x);
+      if (de < bestDist) ((bestDist = de), (best = { loop: l, edge: "end" }));
+    }
+    return best;
+  }
+
   function canvasX(e: MouseEvent): number {
     return e.clientX - canvas.getBoundingClientRect().left;
   }
@@ -357,6 +380,19 @@
       drag = { mode: "zoom", anchorX: x, curX: x };
       return;
     }
+    // right button is the ONLY resize: grab the nearest loop edge from anywhere
+    // (Hyprland super+right-drag feel) and drag it. inert if there are no loops.
+    if (e.button === 2) {
+      const edge = nearestLoopEdge(x);
+      if (edge) {
+        e.preventDefault();
+        canvas.setPointerCapture(e.pointerId);
+        drag = { mode: "resize", loop: edge.loop, edge: edge.edge, start: edge.loop.start, end: edge.loop.end };
+      }
+      return;
+    }
+    if (e.button !== 0) return;
+    // left button = select & drag only — it never resizes.
     // lane click/drag: start a lane drag; single click handled on pointer-up
     const span = hitLaneSpan(x, canvasY(e));
     if (span) {
@@ -365,10 +401,7 @@
       return;
     }
     canvas.setPointerCapture(e.pointerId);
-    const edge = hitLoopEdge(x);
-    drag = edge
-      ? { mode: "resize", loop: edge.loop, edge: edge.edge, start: edge.loop.start, end: edge.loop.end }
-      : { mode: "select", anchorX: x, moved: false };
+    drag = { mode: "select", anchorX: x, moved: false };
   }
 
   /** Double-click on a *suggested* span seeds the selection (l/p work on it). */
@@ -451,7 +484,14 @@
       return;
     }
     if (d.mode === "resize") {
-      void actions.updateLoop(d.loop.id, { start: d.start, end: d.end });
+      if (d.start !== d.loop.start || d.end !== d.loop.end) {
+        // pin the new bounds visually until the store reflects them, then release
+        pendingResize = { id: d.loop.id, start: d.start, end: d.end };
+        const id = d.loop.id;
+        void actions.updateLoop(id, { start: d.start, end: d.end }).finally(() => {
+          if (pendingResize?.id === id) pendingResize = null;
+        });
+      }
     } else if (!d.moved) {
       const cx = canvasX(e);
       // a plain click dismisses any drag-selection box + its Loop/Play chip
@@ -525,21 +565,27 @@
     const px = scrollPx(e);
     const x0 = (view.startSec / dur) * w;
     const x1 = (view.endSec / dur) * w;
-    const EDGE = 6;
-    let mode: "pan" | "start" | "end";
-    if (Math.abs(px - x0) <= EDGE) mode = "start";
-    else if (Math.abs(px - x1) <= EDGE) mode = "end";
-    else if (px > x0 && px < x1) mode = "pan";
-    else {
+    // right button is the ONLY resize: grab the nearest window edge from anywhere
+    // (Hyprland super+right-drag feel) and drag it.
+    if (e.button === 2) {
+      const mode = Math.abs(px - x0) <= Math.abs(px - x1) ? "start" : "end";
+      e.preventDefault();
+      scrollEl.setPointerCapture(e.pointerId);
+      scrollDrag = { mode, px0: px, s0: view.startSec, e0: view.endSec };
+      return;
+    }
+    if (e.button !== 0) return;
+    // left = pan the window (drag) or recenter (click outside) — never resizes.
+    if (px >= x0 && px <= x1) {
+      scrollEl.setPointerCapture(e.pointerId);
+      scrollDrag = { mode: "pan", px0: px, s0: view.startSec, e0: view.endSec };
+    } else {
       // click outside the window: recenter the window there (keep width)
       const width = view.endSec - view.startSec;
       const c = (px / w) * dur;
       const win = adjustWindow("pan", c - width / 2, c + width / 2, dur, MIN_WIN);
       view = { ...view, startSec: win.startSec, endSec: win.endSec };
-      return;
     }
-    scrollEl.setPointerCapture(e.pointerId);
-    scrollDrag = { mode, px0: px, s0: view.startSec, e0: view.endSec };
   }
   function onScrollMove(e: PointerEvent) {
     if (!scrollDrag) {
@@ -580,6 +626,7 @@
     onpointerup={onPointerUp}
     ondblclick={onDblClick}
     onwheel={onWheel}
+    oncontextmenu={(e) => e.preventDefault()}
   ></canvas>
   {#if $openSong?.analysis}
     <div class="grid-ctl">
@@ -608,7 +655,8 @@
     onpointerup={onScrollUp}
     onpointercancel={onScrollUp}
     ondblclick={resetView}
-    title="drag to scroll · drag edges to zoom · double-click to fit"
+    oncontextmenu={(e) => e.preventDefault()}
+    title="left-drag to scroll · right-drag to zoom (grabs nearest edge) · double-click to fit"
   >
     {#if dur > 0}
       <div
