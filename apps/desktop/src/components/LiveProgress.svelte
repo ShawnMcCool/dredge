@@ -2,6 +2,7 @@
   import {
     prepareState,
     workSample,
+    vram,
     profiles,
     type PrepareStepState,
   } from "../lib/stores";
@@ -63,7 +64,27 @@
             <div class="meter">
               <span class="mlabel mono">gpu</span>
               <span class="bar"><span class="fill" style="width: {$workSample.gpu_util}%"></span></span>
-              <span class="mval mono">{$workSample.gpu_util}%{#if $workSample.gpu_mem_total_mb} · {($workSample.gpu_mem_used_mb ?? 0) / 1024 | 0}/{($workSample.gpu_mem_total_mb / 1024) | 0} GB{/if}</span>
+              <span class="mval mono">{$workSample.gpu_util}%</span>
+            </div>
+          {/if}
+          {#if $vram && $vram.used.length}
+            <div class="meter">
+              <span class="mlabel mono">vram</span>
+              <span class="hist">
+                <svg viewBox="0 0 60 100" preserveAspectRatio="none">
+                  {#each $vram.used as u, i (i)}
+                    <rect x={i} y={100 - (u / $vram.total) * 100} width="1" height={(u / $vram.total) * 100} />
+                  {/each}
+                  <line
+                    x1="0"
+                    x2="60"
+                    y1={100 - ($vram.peak / $vram.total) * 100}
+                    y2={100 - ($vram.peak / $vram.total) * 100}
+                    class="peak"
+                  />
+                </svg>
+              </span>
+              <span class="mval mono">{($vram.used[$vram.used.length - 1] / 1024).toFixed(1)} / {Math.round($vram.total / 1024)} GB</span>
             </div>
           {/if}
         </div>
@@ -93,6 +114,10 @@
   .bar { flex: 1; height: 4px; background: var(--bg-raised); border-radius: 2px; overflow: hidden; max-width: 220px; }
   .fill { display: block; height: 100%; background: var(--accent); }
   .mval { font-size: 10px; color: var(--muted); width: 9em; }
+  .hist { flex: 1; height: 24px; max-width: 220px; background: var(--bg-raised); border-radius: 2px; overflow: hidden; }
+  .hist svg { width: 100%; height: 100%; display: block; }
+  .hist rect { fill: var(--accent); }
+  .hist line.peak { stroke: var(--shaky); stroke-width: 1; vector-effect: non-scaling-stroke; }
   .idle { color: var(--muted); }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
   @media (prefers-reduced-motion: reduce) { .glyph.running { animation: none; } }
