@@ -41,15 +41,10 @@
           {/if}
           <span class="stat"><b>{analysis.beats.length}</b><span class="k">beats</span></span>
           <span class="stat"><b>{analysis.downbeats.length}</b><span class="k">bars</span></span>
-          <span class="stat"><b>{analysis.sections.length}</b><span class="k">sections</span></span>
-        </div>
-        {#if analysis.sections.length}
-          <button class="timeline" onclick={() => sectionsOpen.set(true)} title="edit in the sections tab">
-            {#each analysis.sections as s (s.start)}
-              <span class="seg" style="flex: {Math.max(s.end - s.start, 0.1)}">{s.label}</span>
-            {/each}
+          <button class="stat link" onclick={() => sectionsOpen.set(true)} title="edit in the sections tab">
+            <b>{analysis.sections.length}</b><span class="k">sections</span>
           </button>
-        {/if}
+        </div>
         <p class="foot mono">{analysis.engine}</p>
       {:else}
         <div class="empty">
@@ -133,36 +128,16 @@
     color: var(--muted);
   }
 
-  .timeline {
-    display: flex;
-    width: 100%;
-    height: 18px;
-    margin-top: 10px;
-    padding: 0;
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    overflow: hidden;
+  /* the sections count doubles as the jump-to-sections-tab affordance */
+  .stat.link {
     background: none;
+    border: none;
+    padding: 0;
     cursor: pointer;
   }
-  .timeline:hover {
-    border-color: var(--muted);
-  }
-
-  .seg {
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 9px;
-    color: var(--muted);
-    background: var(--bg);
-    border-right: 1px solid var(--line);
-    white-space: nowrap;
-    overflow: hidden;
-  }
-  .seg:last-child {
-    border-right: none;
+  .stat.link:hover b,
+  .stat.link:hover .k {
+    color: var(--accent);
   }
 
   .foot {
