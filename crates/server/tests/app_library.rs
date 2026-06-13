@@ -220,6 +220,41 @@ fn import_emits_library_changed() {
 }
 
 #[test]
+fn delete_removes_song_clears_open_and_sweeps_sidecar() {
+    let (mut app, _dir, wav) = test_app();
+    let song = req(&mut app, "song.import", json!({"path": wav}));
+    let id = song["id"].as_i64().unwrap();
+    req(&mut app, "song.open", json!({"song_id": id}));
+    // a loop write produces a sidecar next to the audio file
+    req(
+        &mut app,
+        "loop.create",
+        json!({"song_id": id, "name": "x", "start": 0.0, "end": 1.0}),
+    );
+    assert!(practice::sidecar::read_sidecar(&wav).unwrap().is_some());
+    let _ = app.tick(); // drain the import's library_changed
+
+    req(&mut app, "song.delete", json!({"song_id": id}));
+
+    // gone from the library
+    let listed = req(&mut app, "song.list", Value::Null);
+    assert!(listed.as_array().unwrap().is_empty());
+    // open song cleared (status reports a null song_id)
+    let status = req(&mut app, "status", Value::Null);
+    assert!(status["song_id"].is_null());
+    // sidecar swept
+    assert!(practice::sidecar::read_sidecar(&wav).unwrap().is_none());
+    // the original audio file is untouched
+    assert!(wav.exists());
+    // library_changed announced
+    let events = app.tick();
+    assert!(
+        events.iter().any(|e| e.event == "library_changed"),
+        "expected library_changed in {events:?}"
+    );
+}
+
+#[test]
 fn unknown_command_errors() {
     let (mut app, _dir, _wav) = test_app();
     let resp = app.dispatch(Request {
