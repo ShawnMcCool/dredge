@@ -12,7 +12,11 @@
     orientation?: "horizontal" | "vertical";
     accent?: boolean;
     disabled?: boolean;
+    /** Fires live on every drag/keyboard step. */
     onchange?: (v: number) => void;
+    /** Fires once on pointer-release (or keyboard step) — for changes too
+     *  expensive to apply continuously, e.g. webview re-zoom. */
+    oncommit?: (v: number) => void;
     /** Title/aria text for the current value. */
     format?: (v: number) => string;
   }
@@ -26,6 +30,7 @@
     accent = false,
     disabled = false,
     onchange,
+    oncommit,
     format,
   }: Props = $props();
 
@@ -66,6 +71,12 @@
     fromPointer(e);
   }
 
+  function onpointerup(e: PointerEvent) {
+    if (!root?.hasPointerCapture(e.pointerId)) return;
+    root.releasePointerCapture(e.pointerId);
+    oncommit?.(value);
+  }
+
   function onkeydown(e: KeyboardEvent) {
     if (disabled) return;
     const nudge = (dir: number) =>
@@ -88,6 +99,7 @@
       default:
         return;
     }
+    oncommit?.(value);
     e.preventDefault();
   }
 </script>
@@ -109,6 +121,7 @@
   title={text}
   {onpointerdown}
   {onpointermove}
+  {onpointerup}
   {onkeydown}
 >
   <div class="track"></div>

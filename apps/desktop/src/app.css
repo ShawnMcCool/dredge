@@ -33,6 +33,19 @@
   box-sizing: border-box;
 }
 
+/* control surface, not a document: suppress stray text selection (it leaks in
+   during scrollbar / fader / waveform drags). editable fields opt back in. */
+:root {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 body {
   margin: 0;
   overflow: hidden;

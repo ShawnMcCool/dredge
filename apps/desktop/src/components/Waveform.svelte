@@ -248,7 +248,11 @@
       ctx.globalAlpha = 1;
       ctx.fillStyle = css("--fg");
       ctx.font = (s.suggested ? "italic " : "") + "11px " + css("--mono");
-      ctx.fillText(s.name, x0 + 4, LANE_H - 8, Math.max(x1 - x0 - 8, 0));
+      // sticky label: pin to the visible left edge while any of the span is on
+      // screen (but never past its right edge), and truncate against what's left
+      const lpad = 4;
+      const lx = Math.min(Math.max(x0 + lpad, lpad), x1 - lpad);
+      ctx.fillText(s.name, lx, LANE_H - 8, Math.max(x1 - lx - lpad, 0));
     }
 
     // playhead — 1 px accent line
@@ -429,6 +433,8 @@
       void actions.updateLoop(d.loop.id, { start: d.start, end: d.end });
     } else if (!d.moved) {
       const cx = canvasX(e);
+      // a plain click dismisses any drag-selection box + its Loop/Play chip
+      selection.set(null);
       // clicking inside a loop selects it (for handles / Delete) but still
       // seeks to the click — don't engage the transport loop on a plain click
       const loop = hitLoopBody(cx, canvasY(e));
@@ -514,7 +520,22 @@
     scrollDrag = { mode, px0: px, s0: view.startSec, e0: view.endSec };
   }
   function onScrollMove(e: PointerEvent) {
-    if (!scrollDrag) return;
+    if (!scrollDrag) {
+      // hover feedback: resize cursor over the window edges, grab over its body
+      if (dur <= 0) return;
+      const w = scrollEl.clientWidth;
+      const px = scrollPx(e);
+      const x0 = (view.startSec / dur) * w;
+      const x1 = (view.endSec / dur) * w;
+      const EDGE = 6;
+      scrollEl.style.cursor =
+        Math.abs(px - x0) <= EDGE || Math.abs(px - x1) <= EDGE
+          ? "ew-resize"
+          : px > x0 && px < x1
+            ? "grab"
+            : "default";
+      return;
+    }
     const d = pxToDsec(scrollPx(e) - scrollDrag.px0);
     let s = scrollDrag.s0;
     let en = scrollDrag.e0;

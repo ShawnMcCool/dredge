@@ -2,7 +2,6 @@
   import { onMount } from "svelte";
   import Capture from "./components/Capture.svelte";
   import DuePanel from "./components/DuePanel.svelte";
-  import ExitModal from "./components/ExitModal.svelte";
   import Library from "./components/Library.svelte";
   import Loops from "./components/Loops.svelte";
   import PlanBuilder from "./components/PlanBuilder.svelte";
@@ -99,9 +98,6 @@
     {/if}
   </aside>
 </div>
-
-<!-- portal-at-root: the overlays cover all three columns -->
-<ExitModal />
 
 <style>
   .shell {

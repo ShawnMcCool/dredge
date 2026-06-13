@@ -1,13 +1,13 @@
 // Keyboard-first: global bindings, skipped while typing in a field.
 
 import { get } from "svelte/store";
+import { quit } from "./ipc";
 import { zoomIn, zoomOut, zoomReset } from "./zoom";
 import {
   actions,
   BASS_STEM,
   focusMode,
   currentLoop,
-  exitPromptVisible,
   gridSnap,
   openSong,
   pendingRatings,
@@ -95,10 +95,12 @@ async function handle(e: KeyboardEvent): Promise<void> {
     case "Escape":
       // a closable Modal may have consumed this Escape already
       if (e.defaultPrevented) break;
-      if (get(exitPromptVisible)) exitPromptVisible.set(false);
-      else if (get(quickPromptVisible)) await actions.quickDiscard();
+      if (get(quickPromptVisible)) await actions.quickDiscard();
       else if (get(selection)) selection.set(null);
-      else exitPromptVisible.set(true);
+      break;
+    case "q":
+      // immediate quit — state is saved as we go, no exit ceremony
+      await quit();
       break;
     case "a":
       // one button: analysis then stems, with the progress modal

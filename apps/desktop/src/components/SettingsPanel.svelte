@@ -1,6 +1,7 @@
 <script lang="ts">
   // Durable settings — every control writes through to the server-side
-  // settings table immediately; the UI-scale fader live-applies on drag.
+  // settings table immediately; the UI-scale fader previews live but only
+  // applies the zoom on release (a re-zoom + DB write per pixel is too heavy).
   import {
     actions,
     ANALYSIS_DEVICE,
@@ -17,6 +18,10 @@
   const BUFFERS = [60, 120, 180, 300];
 
   let scale = $derived(Number($settings[UI_SCALE] ?? getZoom()));
+  // live preview while dragging; zoom is only applied on release (a full
+  // webview re-zoom + DB write is too heavy to run on every pixel)
+  let preview = $state<number | null>(null);
+  let shownScale = $derived(preview ?? scale);
   let snapDefault = $derived($settings[GRID_SNAP_DEFAULT] !== false);
   let bufferSecs = $derived(Number($settings[CAPTURE_BUFFER_SECS] ?? 180));
   let device = $derived(($settings[ANALYSIS_DEVICE] as string) ?? "auto");
@@ -32,15 +37,19 @@
 <div class="row">
   <span class="label">ui scale</span>
   <Fader
-    value={scale}
+    value={shownScale}
     min={0.75}
     max={2.5}
     step={0.05}
     accent
-    onchange={(v) => void setZoom(v)}
+    onchange={(v) => (preview = v)}
+    oncommit={(v) => {
+      preview = null;
+      void setZoom(v);
+    }}
     format={(v) => `ui scale ${Math.round(v * 100)}%`}
   />
-  <span class="readout mono">{Math.round(scale * 100)}%</span>
+  <span class="readout mono">{Math.round(shownScale * 100)}%</span>
 </div>
 <div class="row">
   <span class="label">grid snap by default</span>
