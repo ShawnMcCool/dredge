@@ -340,8 +340,16 @@
   }
 
   function onPointerMove(e: PointerEvent) {
-    if (!drag) return;
     const x = canvasX(e);
+    if (!drag) {
+      const y = canvasY(e);
+      let cursor = "crosshair";
+      if (hitLoopEdge(x)) cursor = "ew-resize";
+      else if (hitLaneSpan(x, y)) cursor = "grab";
+      else if (hitLoopBody(x, y)) cursor = "pointer";
+      canvas.style.cursor = cursor;
+      return;
+    }
     if (drag.mode === "lane") {
       const cur = spanAtTime(Math.min(Math.max(xToSec(view, x), 0), duration()));
       if (cur && (cur.start !== drag.anchor.start || cur.end !== drag.anchor.end)) {
