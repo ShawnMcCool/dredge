@@ -15,6 +15,7 @@
   } from "../lib/stores";
   import { labelColor } from "../lib/waveform-colors";
   import {
+    adjustWindow,
     playheadSecs,
     secToX,
     snapToGrid,
@@ -434,6 +435,57 @@
   }
 
   let chipLeft = $derived($selection ? Math.min(secToX(view, $selection.end) + 8, view.width - 180) : 0);
+
+  let dur = $derived($openSong?.song.duration_secs ?? 0);
+  const MIN_WIN = 1; // seconds — min visible window
+
+  let scrollEl: HTMLDivElement;
+  type ScrollDrag = { mode: "pan" | "start" | "end"; px0: number; s0: number; e0: number };
+  let scrollDrag: ScrollDrag | null = null;
+
+  function scrollPx(e: PointerEvent): number {
+    const rect = scrollEl.getBoundingClientRect();
+    return e.clientX - rect.left;
+  }
+  function pxToDsec(dpx: number): number {
+    const w = scrollEl?.clientWidth || 1;
+    return (dpx / w) * dur;
+  }
+  function onScrollDown(e: PointerEvent) {
+    if (dur <= 0) return;
+    const w = scrollEl.clientWidth;
+    const px = scrollPx(e);
+    const x0 = (view.startSec / dur) * w;
+    const x1 = (view.endSec / dur) * w;
+    const EDGE = 6;
+    let mode: "pan" | "start" | "end";
+    if (Math.abs(px - x0) <= EDGE) mode = "start";
+    else if (Math.abs(px - x1) <= EDGE) mode = "end";
+    else if (px > x0 && px < x1) mode = "pan";
+    else {
+      // click outside the window: recenter the window there (keep width)
+      const width = view.endSec - view.startSec;
+      const c = (px / w) * dur;
+      const win = adjustWindow("pan", c - width / 2, c + width / 2, dur, MIN_WIN);
+      view = { ...view, startSec: win.startSec, endSec: win.endSec };
+      return;
+    }
+    scrollEl.setPointerCapture(e.pointerId);
+    scrollDrag = { mode, px0: px, s0: view.startSec, e0: view.endSec };
+  }
+  function onScrollMove(e: PointerEvent) {
+    if (!scrollDrag) return;
+    const d = pxToDsec(scrollPx(e) - scrollDrag.px0);
+    let s = scrollDrag.s0;
+    let en = scrollDrag.e0;
+    if (scrollDrag.mode === "pan") { s += d; en += d; }
+    else if (scrollDrag.mode === "start") { s += d; }
+    else { en += d; }
+    const win = adjustWindow(scrollDrag.mode, s, en, dur, MIN_WIN);
+    view = { ...view, startSec: win.startSec, endSec: win.endSec };
+  }
+  function onScrollUp() { scrollDrag = null; }
+  function resetView() { view = { ...view, startSec: 0, endSec: dur }; }
 </script>
 
 <div class="waveform" use:canvasSize={applySize}>
@@ -445,6 +497,29 @@
     ondblclick={onDblClick}
     onwheel={onWheel}
   ></canvas>
+  <div
+    class="scrollbar"
+    role="scrollbar"
+    aria-label="waveform range selector"
+    aria-controls="waveform-canvas"
+    aria-valuenow={Math.round((view.startSec / (dur || 1)) * 100)}
+    aria-valuemin={0}
+    aria-valuemax={100}
+    tabindex="0"
+    bind:this={scrollEl}
+    onpointerdown={onScrollDown}
+    onpointermove={onScrollMove}
+    onpointerup={onScrollUp}
+    ondblclick={resetView}
+    title="drag to scroll · drag edges to zoom · double-click to fit"
+  >
+    {#if dur > 0}
+      <div
+        class="sb-window"
+        style="left: {(view.startSec / dur) * 100}%; width: {((view.endSec - view.startSec) / dur) * 100}%"
+      ></div>
+    {/if}
+  </div>
   {#if $openingSong !== null && $openSong}
     <!-- song switch in flight: keep the old waveform, show progress on top -->
     <div class="loading-bar"></div>
@@ -507,5 +582,26 @@
   .chip button {
     font-size: 12px;
     padding: 2px 6px;
+  }
+
+  .scrollbar {
+    position: relative;
+    height: 12px;
+    margin-top: 4px;
+    background: var(--bg-raised);
+    border-radius: 3px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .sb-window {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    min-width: 6px;
+    background: var(--accent);
+    opacity: 0.35;
+    border-radius: 3px;
+    box-sizing: border-box;
   }
 </style>

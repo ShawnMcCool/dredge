@@ -51,6 +51,32 @@ export function snapToGrid(
   return Math.abs(best - sec) * pxPerSec <= thresholdPx ? best : sec;
 }
 
+/** Adjust a viewport window [start,end] for a pan or edge-resize, clamped to
+ *  [0,duration] with a minimum width. Pan preserves width; "start"/"end" move
+ *  one edge keeping the other and enforcing minWidth. */
+export function adjustWindow(
+  mode: "pan" | "start" | "end",
+  start: number,
+  end: number,
+  duration: number,
+  minWidth: number,
+): { startSec: number; endSec: number } {
+  const dur = Math.max(duration, minWidth);
+  const minW = Math.min(minWidth, dur);
+  let s = start;
+  let e = end;
+  if (mode === "pan") {
+    const w = e - s;
+    s = Math.max(0, Math.min(s, dur - w));
+    e = s + w;
+  } else if (mode === "start") {
+    s = Math.max(0, Math.min(s, e - minW));
+  } else {
+    e = Math.min(dur, Math.max(e, s + minW));
+  }
+  return { startSec: s, endSec: e };
+}
+
 /** Bucket range of the peaks array visible in the view (for drawing). */
 export function visibleBuckets(
   v: View,

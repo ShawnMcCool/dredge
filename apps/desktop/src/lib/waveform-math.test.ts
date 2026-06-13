@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  adjustWindow,
   playheadSecs,
   secToX,
   snapToGrid,
@@ -97,6 +98,23 @@ describe("snapToGrid", () => {
 
   it("no downbeats → identity", () => {
     expect(snapToGrid(13.9, [], view, 10)).toBe(13.9);
+  });
+});
+
+describe("adjustWindow", () => {
+  it("pans within bounds, preserving width", () => {
+    expect(adjustWindow("pan", -5, 5, 100, 1)).toEqual({ startSec: 0, endSec: 10 });
+    expect(adjustWindow("pan", 95, 105, 100, 1)).toEqual({ startSec: 90, endSec: 100 });
+    expect(adjustWindow("pan", 20, 30, 100, 1)).toEqual({ startSec: 20, endSec: 30 });
+  });
+  it("resizes the start edge, keeping the end and a min width", () => {
+    expect(adjustWindow("start", 40, 60, 100, 1)).toEqual({ startSec: 40, endSec: 60 });
+    expect(adjustWindow("start", 59.5, 60, 100, 1)).toEqual({ startSec: 59, endSec: 60 }); // clamped to min width 1
+    expect(adjustWindow("start", -10, 60, 100, 1)).toEqual({ startSec: 0, endSec: 60 });
+  });
+  it("resizes the end edge, keeping the start and a min width", () => {
+    expect(adjustWindow("end", 40, 40.5, 100, 1)).toEqual({ startSec: 40, endSec: 41 }); // min width
+    expect(adjustWindow("end", 40, 200, 100, 1)).toEqual({ startSec: 40, endSec: 100 }); // clamp to duration
   });
 });
 
