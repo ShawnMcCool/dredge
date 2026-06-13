@@ -8,12 +8,10 @@
     GRID_SNAP_DEFAULT,
     gridSnap,
     settings,
-    settingsOpen,
     UI_SCALE,
   } from "../lib/stores";
   import Button from "../lib/ui/Button.svelte";
   import Fader from "../lib/ui/Fader.svelte";
-  import Modal from "../lib/ui/Modal.svelte";
   import { getZoom, setZoom } from "../lib/zoom";
 
   const BUFFERS = [60, 120, 180, 300];
@@ -23,8 +21,6 @@
   let bufferSecs = $derived(Number($settings[CAPTURE_BUFFER_SECS] ?? 180));
   let device = $derived(($settings[ANALYSIS_DEVICE] as string) ?? "auto");
 
-  const close = () => settingsOpen.set(false);
-
   function toggleSnap() {
     const next = !snapDefault;
     void actions.setSetting(GRID_SNAP_DEFAULT, next);
@@ -32,61 +28,60 @@
   }
 </script>
 
-<Modal open={$settingsOpen} title="settings" closable onclose={close}>
-  <div class="row">
-    <span class="label">ui scale</span>
-    <Fader
-      value={scale}
-      min={0.75}
-      max={2.5}
-      step={0.05}
-      accent
-      onchange={(v) => void setZoom(v)}
-      format={(v) => `ui scale ${Math.round(v * 100)}%`}
-    />
-    <span class="readout mono">{Math.round(scale * 100)}%</span>
+<h2>settings</h2>
+<div class="row">
+  <span class="label">ui scale</span>
+  <Fader
+    value={scale}
+    min={0.75}
+    max={2.5}
+    step={0.05}
+    accent
+    onchange={(v) => void setZoom(v)}
+    format={(v) => `ui scale ${Math.round(v * 100)}%`}
+  />
+  <span class="readout mono">{Math.round(scale * 100)}%</span>
+</div>
+<div class="row">
+  <span class="label">grid snap by default</span>
+  <Button variant="toggle" active={snapDefault} onclick={toggleSnap}>
+    {snapDefault ? "on" : "off"}
+  </Button>
+</div>
+<div class="row">
+  <span class="label">capture buffer</span>
+  <div class="chips">
+    {#each BUFFERS as b (b)}
+      <Button
+        variant="chip"
+        active={bufferSecs === b}
+        onclick={() => void actions.setSetting(CAPTURE_BUFFER_SECS, b)}
+      >
+        {b}s
+      </Button>
+    {/each}
   </div>
-  <div class="row">
-    <span class="label">grid snap by default</span>
-    <Button variant="toggle" active={snapDefault} onclick={toggleSnap}>
-      {snapDefault ? "on" : "off"}
+</div>
+<div class="row">
+  <span class="label">analysis device</span>
+  <div class="chips">
+    <Button
+      variant="chip"
+      active={device === "auto"}
+      onclick={() => void actions.setSetting(ANALYSIS_DEVICE, "auto")}
+    >
+      auto
+    </Button>
+    <Button
+      variant="chip"
+      active={device === "cpu"}
+      onclick={() => void actions.setSetting(ANALYSIS_DEVICE, "cpu")}
+    >
+      cpu
     </Button>
   </div>
-  <div class="row">
-    <span class="label">capture buffer</span>
-    <div class="chips">
-      {#each BUFFERS as b (b)}
-        <Button
-          variant="chip"
-          active={bufferSecs === b}
-          onclick={() => void actions.setSetting(CAPTURE_BUFFER_SECS, b)}
-        >
-          {b}s
-        </Button>
-      {/each}
-    </div>
-  </div>
-  <div class="row">
-    <span class="label">analysis device</span>
-    <div class="chips">
-      <Button
-        variant="chip"
-        active={device === "auto"}
-        onclick={() => void actions.setSetting(ANALYSIS_DEVICE, "auto")}
-      >
-        auto
-      </Button>
-      <Button
-        variant="chip"
-        active={device === "cpu"}
-        onclick={() => void actions.setSetting(ANALYSIS_DEVICE, "cpu")}
-      >
-        cpu
-      </Button>
-    </div>
-  </div>
-  <p class="hint mono">auto = GPU when it fits, else CPU · cpu = slower, never out of VRAM</p>
-</Modal>
+</div>
+<p class="hint mono">auto = GPU when it fits, else CPU · cpu = slower, never out of VRAM</p>
 
 <style>
   .row {

@@ -10,11 +10,10 @@
   import LiveProgress from "./components/LiveProgress.svelte";
   import ProfilingPanel from "./components/ProfilingPanel.svelte";
   import Sections from "./components/Sections.svelte";
-  import SettingsModal from "./components/SettingsModal.svelte";
+  import SettingsPanel from "./components/SettingsPanel.svelte";
   import StemMixer from "./components/StemMixer.svelte";
   import Transport from "./components/Transport.svelte";
   import Waveform from "./components/Waveform.svelte";
-  import Button from "./lib/ui/Button.svelte";
   import { installKeys, KEY_HELP } from "./lib/keys";
   import { initZoom } from "./lib/zoom";
   import {
@@ -28,7 +27,7 @@
     settingsOpen,
   } from "./lib/stores";
 
-  const TABS = ["sections", "loops", "plan", "capture", "due", "profile"] as const;
+  const TABS = ["sections", "loops", "plan", "capture", "due", "profile", "settings"] as const;
   // due panel greets you on app start — the schedule is the product
   let tab = $state<(typeof TABS)[number]>("due");
   let running = $derived(
@@ -38,6 +37,13 @@
       $quickPromptVisible ||
       $quickSavedName !== null,
   );
+
+  $effect(() => {
+    if ($settingsOpen) {
+      tab = "settings";
+      settingsOpen.set(false);
+    }
+  });
 
   onMount(() => {
     // settings drive zoom (ui_scale) and session defaults — load first
@@ -70,11 +76,6 @@
         {#each TABS as t (t)}
           <button class="tab" class:active={tab === t} onclick={() => (tab = t)}>{t}</button>
         {/each}
-        <span class="gear">
-          <Button variant="icon" title="settings" onclick={() => settingsOpen.set(true)}>
-            ⚙
-          </Button>
-        </span>
       </nav>
       {#key tab}
         <div class="fade-in">
@@ -88,8 +89,10 @@
             <Capture />
           {:else if tab === "due"}
             <DuePanel />
-          {:else}
+          {:else if tab === "profile"}
             <ProfilingPanel />
+          {:else}
+            <SettingsPanel />
           {/if}
         </div>
       {/key}
@@ -99,7 +102,6 @@
 
 <!-- portal-at-root: the overlays cover all three columns -->
 <ExitModal />
-<SettingsModal />
 
 <style>
   .shell {
@@ -172,7 +174,4 @@
     color: var(--accent);
   }
 
-  .gear {
-    margin-left: auto;
-  }
 </style>
