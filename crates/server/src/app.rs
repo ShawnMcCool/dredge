@@ -1133,6 +1133,8 @@ impl App {
         struct P {
             song_id: SongId,
             title: String,
+            // omitted artist clears it — socket/script clients can send {title} alone
+            #[serde(default)]
             artist: Option<String>,
         }
         let p: P = from_params(p)?;

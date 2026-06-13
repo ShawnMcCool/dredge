@@ -201,6 +201,14 @@ fn update_changes_metadata_and_syncs_sidecar() {
     let sc = practice::sidecar::read_sidecar(&wav).unwrap().unwrap();
     assert_eq!(sc.song.title, "Renamed");
     assert_eq!(sc.song.artist.as_deref(), Some("New Band"));
+
+    // a socket/script client may omit `artist` entirely — that clears it
+    let cleared = req(
+        &mut app,
+        "song.update",
+        json!({"song_id": id, "title": "Renamed"}),
+    );
+    assert!(cleared["artist"].is_null());
 }
 
 #[test]
