@@ -64,7 +64,8 @@
   type Drag =
     | { mode: "select"; anchorX: number; moved: boolean }
     | { mode: "resize"; loop: LoopRegion; edge: "start" | "end"; start: number; end: number }
-    | { mode: "lane"; anchor: { start: number; end: number }; moved: boolean };
+    | { mode: "lane"; anchor: { start: number; end: number }; moved: boolean }
+    | { mode: "zoom"; anchorX: number; curX: number };
   let drag: Drag | null = null;
 
   // reset the view when a different song opens
@@ -213,6 +214,20 @@
       ctx.strokeRect(x0 + 0.5, LANE_H + 0.5, x1 - x0 - 1, WAVE_H - 1);
     }
 
+    // middle-drag zoom preview — dashed accent box over the range to zoom into
+    if (drag?.mode === "zoom") {
+      const zx0 = Math.min(drag.anchorX, drag.curX);
+      const zw = Math.abs(drag.curX - drag.anchorX);
+      ctx.globalAlpha = 0.15;
+      ctx.fillStyle = accent;
+      ctx.fillRect(zx0, LANE_H, zw, WAVE_H);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = accent;
+      ctx.setLineDash([4, 3]);
+      ctx.strokeRect(zx0 + 0.5, LANE_H + 0.5, Math.max(zw - 1, 0), WAVE_H - 1);
+      ctx.setLineDash([]);
+    }
+
     // structure lane — label-colored spans: saved sections solid, analysis
     // suggestions dashed/dimmer/italic; clicked span gets a second fill pass
     for (const s of laneSpans(open)) {
@@ -313,6 +328,13 @@
   function onPointerDown(e: PointerEvent) {
     if (!get(openSong)) return;
     const x = canvasX(e);
+    // middle button: drag a range to zoom into it (click with no drag = fit)
+    if (e.button === 1) {
+      e.preventDefault();
+      canvas.setPointerCapture(e.pointerId);
+      drag = { mode: "zoom", anchorX: x, curX: x };
+      return;
+    }
     // lane click/drag: start a lane drag; single click handled on pointer-up
     const span = hitLaneSpan(x, canvasY(e));
     if (span) {
@@ -351,6 +373,10 @@
       canvas.style.cursor = cursor;
       return;
     }
+    if (drag.mode === "zoom") {
+      drag.curX = x;
+      return;
+    }
     if (drag.mode === "lane") {
       const cur = spanAtTime(Math.min(Math.max(xToSec(view, x), 0), duration()));
       if (cur && (cur.start !== drag.anchor.start || cur.end !== drag.anchor.end)) {
@@ -380,6 +406,18 @@
     const d = drag;
     drag = null;
     if (!d) return;
+    if (d.mode === "zoom") {
+      const a = xToSec(view, d.anchorX);
+      const b = xToSec(view, d.curX);
+      const lo = Math.max(0, Math.min(a, b));
+      const hi = Math.min(duration(), Math.max(a, b));
+      if (hi - lo >= 0.2 && Math.abs(d.curX - d.anchorX) >= CLICK_PX) {
+        view = { ...view, startSec: lo, endSec: hi };
+      } else {
+        view = { ...view, startSec: 0, endSec: Math.max(duration(), 2) };
+      }
+      return;
+    }
     if (d.mode === "lane") {
       if (!d.moved) {
         activeSpan = { start: d.anchor.start, end: d.anchor.end };
