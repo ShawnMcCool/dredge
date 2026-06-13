@@ -124,6 +124,34 @@ pub struct Analysis {
     pub engine: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProfileStage {
+    pub name: String,
+    pub ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// One timed run of a heavy operation. `started_at` is assigned by the store
+/// on save (SQLite `datetime('now')`); the in-flight value is ignored on insert.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProfileRun {
+    pub op: String, // "analysis" | "stems" | "open" | "import" | "grab"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub song_id: Option<SongId>,
+    #[serde(default)]
+    pub started_at: String,
+    pub total_ms: u64,
+    pub ok: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<String>, // "gpu" | "cpu" | "auto" | null
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine: Option<String>, // analysis only
+    pub stages: Vec<ProfileStage>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
