@@ -76,6 +76,22 @@ CREATE TABLE settings (
 );
 ";
 
+/// v4: per-operation profiling runs (heavy ops). `stages` is JSON.
+const SCHEMA_V4: &str = "
+CREATE TABLE profiles (
+    id INTEGER PRIMARY KEY,
+    op TEXT NOT NULL,
+    song_id INTEGER,
+    started_at TEXT NOT NULL DEFAULT (datetime('now')),
+    total_ms INTEGER NOT NULL,
+    ok INTEGER NOT NULL,
+    error TEXT,
+    device TEXT,
+    engine TEXT,
+    stages_json TEXT NOT NULL
+);
+";
+
 pub struct Store {
     conn: rusqlite::Connection,
 }
@@ -174,6 +190,10 @@ impl Store {
         if version < 3 {
             self.conn.execute_batch(SCHEMA_V3)?;
             self.conn.pragma_update(None, "user_version", 3)?;
+        }
+        if version < 4 {
+            self.conn.execute_batch(SCHEMA_V4)?;
+            self.conn.pragma_update(None, "user_version", 4)?;
         }
         Ok(())
     }
@@ -526,6 +546,57 @@ impl Store {
         Ok(rows)
     }
 
+    /// Insert one profiling run; trims history to the most recent 200.
+    /// Returns the `started_at` SQLite assigned.
+    pub fn save_profile(&self, run: &crate::model::ProfileRun) -> Result<String> {
+        let started: String = self.conn.query_row(
+            "INSERT INTO profiles (op, song_id, total_ms, ok, error, device, engine, stages_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             RETURNING started_at",
+            params![
+                run.op,
+                run.song_id.map(|s| s.0),
+                run.total_ms as i64,
+                run.ok as i64,
+                run.error,
+                run.device,
+                run.engine,
+                serde_json::to_string(&run.stages)?,
+            ],
+            |row| row.get(0),
+        )?;
+        self.conn.execute(
+            "DELETE FROM profiles WHERE id NOT IN
+                (SELECT id FROM profiles ORDER BY id DESC LIMIT 200)",
+            [],
+        )?;
+        Ok(started)
+    }
+
+    pub fn list_profiles(&self, limit: i64) -> Result<Vec<crate::model::ProfileRun>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT op, song_id, started_at, total_ms, ok, error, device, engine, stages_json
+             FROM profiles ORDER BY id DESC LIMIT ?1",
+        )?;
+        let rows = stmt
+            .query_map(params![limit], |row| {
+                let stages: String = row.get(8)?;
+                Ok(crate::model::ProfileRun {
+                    op: row.get(0)?,
+                    song_id: row.get::<_, Option<i64>>(1)?.map(crate::model::SongId),
+                    started_at: row.get(2)?,
+                    total_ms: row.get::<_, i64>(3)? as u64,
+                    ok: row.get::<_, i64>(4)? != 0,
+                    error: row.get(5)?,
+                    device: row.get(6)?,
+                    engine: row.get(7)?,
+                    stages: serde_json::from_str(&stages).map_err(json_err)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     /// Latest retest rating per loop — the retention metric.
     pub fn retention(&self, song_id: SongId) -> Result<Vec<(LoopId, Rating, String)>> {
         let mut stmt = self.conn.prepare(
@@ -545,5 +616,44 @@ impl Store {
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn profiles_roundtrip_and_trim() {
+        let store = Store::open_in_memory().unwrap();
+        let run = crate::model::ProfileRun {
+            op: "analysis".into(),
+            song_id: Some(crate::model::SongId(7)),
+            started_at: String::new(),
+            total_ms: 1234,
+            ok: true,
+            error: None,
+            device: Some("cpu".into()),
+            engine: Some("songformer".into()),
+            stages: vec![crate::model::ProfileStage { name: "analyze".into(), ms: 1234, note: None }],
+        };
+        let started = store.save_profile(&run).unwrap();
+        assert!(!started.is_empty(), "store assigns a timestamp");
+
+        let listed = store.list_profiles(10).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].op, "analysis");
+        assert_eq!(listed[0].total_ms, 1234);
+        assert_eq!(listed[0].engine.as_deref(), Some("songformer"));
+        assert_eq!(listed[0].stages.len(), 1);
+        assert!(!listed[0].started_at.is_empty());
+
+        // trim keeps only the most recent 200
+        for i in 0..205 {
+            let mut r = run.clone();
+            r.total_ms = i;
+            store.save_profile(&r).unwrap();
+        }
+        assert_eq!(store.list_profiles(1000).unwrap().len(), 200);
     }
 }
