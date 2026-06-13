@@ -325,6 +325,31 @@ fn update_song_changes_title_and_artist() {
 }
 
 #[test]
+fn update_song_clears_artist_when_none() {
+    let (store, song) = store_with_song();
+    // first set an artist
+    store
+        .update_song(song.id, &song.title, Some("Some Band"))
+        .unwrap();
+    // now clear it
+    let cleared = store.update_song(song.id, &song.title, None).unwrap();
+    assert_eq!(cleared.artist, None);
+    // persisted
+    let listed = store.list_songs().unwrap();
+    assert_eq!(listed[0].artist, None);
+}
+
+#[test]
+fn update_song_returns_not_found_for_stale_id() {
+    let store = Store::open_in_memory().unwrap();
+    let err = store.update_song(SongId(999), "Ghost", None).unwrap_err();
+    assert!(
+        matches!(err, practice::error::Error::NotFound),
+        "expected NotFound, got {err:?}"
+    );
+}
+
+#[test]
 fn settings_roundtrip_arbitrary_json() {
     let store = Store::open_in_memory().unwrap();
     assert!(store.get_setting("ui_scale").unwrap().is_none());

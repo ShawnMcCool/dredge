@@ -225,6 +225,15 @@ impl Store {
         Ok(songs)
     }
 
+    pub fn song_by_id(&self, id: SongId) -> Result<Option<Song>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, artist, path, file_hash, duration_secs
+             FROM songs WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query_map(params![id.0], Self::song_from_row)?;
+        rows.next().transpose().map_err(Into::into)
+    }
+
     pub fn delete_song(&self, id: SongId) -> Result<()> {
         self.conn
             .execute("DELETE FROM songs WHERE id = ?1", params![id.0])?;
@@ -236,13 +245,7 @@ impl Store {
             "UPDATE songs SET title = ?1, artist = ?2 WHERE id = ?3",
             params![title, artist, id.0],
         )?;
-        let song = self.conn.query_row(
-            "SELECT id, title, artist, path, file_hash, duration_secs
-             FROM songs WHERE id = ?1",
-            params![id.0],
-            Self::song_from_row,
-        )?;
-        Ok(song)
+        self.song_by_id(id)?.ok_or(crate::error::Error::NotFound)
     }
 
     /// Replace all sections for a song atomically (UI saves whole lane).
