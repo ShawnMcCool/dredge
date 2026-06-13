@@ -174,6 +174,44 @@ fn loop_update_moves_and_renames() {
 }
 
 #[test]
+fn update_changes_metadata_and_syncs_sidecar() {
+    let (mut app, _dir, wav) = test_app();
+    let song = req(&mut app, "song.import", json!({"path": wav}));
+    let id = song["id"].as_i64().unwrap();
+    req(&mut app, "song.open", json!({"song_id": id}));
+    // create a loop so a sidecar exists to be rewritten
+    req(
+        &mut app,
+        "loop.create",
+        json!({"song_id": id, "name": "x", "start": 0.0, "end": 1.0}),
+    );
+
+    let updated = req(
+        &mut app,
+        "song.update",
+        json!({"song_id": id, "title": "Renamed", "artist": "New Band"}),
+    );
+    assert_eq!(updated["title"], "Renamed");
+    assert_eq!(updated["artist"], "New Band");
+
+    // persisted in the library list
+    let listed = req(&mut app, "song.list", Value::Null);
+    assert_eq!(listed[0]["title"], "Renamed");
+    // sidecar reflects the new title
+    let sc = practice::sidecar::read_sidecar(&wav).unwrap().unwrap();
+    assert_eq!(sc.song.title, "Renamed");
+    assert_eq!(sc.song.artist.as_deref(), Some("New Band"));
+
+    // a socket/script client may omit `artist` entirely — that clears it
+    let cleared = req(
+        &mut app,
+        "song.update",
+        json!({"song_id": id, "title": "Renamed"}),
+    );
+    assert!(cleared["artist"].is_null());
+}
+
+#[test]
 fn import_emits_library_changed() {
     let (mut app, _dir, wav) = test_app();
     req(&mut app, "song.import", json!({"path": wav}));
@@ -187,6 +225,70 @@ fn import_emits_library_changed() {
     req(&mut app, "song.import", json!({"path": wav}));
     let events = app.tick();
     assert!(!events.iter().any(|e| e.event == "library_changed"));
+}
+
+#[test]
+fn delete_removes_song_clears_open_and_sweeps_sidecar() {
+    let (mut app, _dir, wav) = test_app();
+    let song = req(&mut app, "song.import", json!({"path": wav}));
+    let id = song["id"].as_i64().unwrap();
+    req(&mut app, "song.open", json!({"song_id": id}));
+    // a loop write produces a sidecar next to the audio file
+    req(
+        &mut app,
+        "loop.create",
+        json!({"song_id": id, "name": "x", "start": 0.0, "end": 1.0}),
+    );
+    assert!(practice::sidecar::read_sidecar(&wav).unwrap().is_some());
+    let _ = app.tick(); // drain the import's library_changed
+
+    req(&mut app, "song.delete", json!({"song_id": id}));
+
+    // gone from the library
+    let listed = req(&mut app, "song.list", Value::Null);
+    assert!(listed.as_array().unwrap().is_empty());
+    // open song cleared (status reports a null song_id)
+    let status = req(&mut app, "status", Value::Null);
+    assert!(status["song_id"].is_null());
+    // sidecar swept
+    assert!(practice::sidecar::read_sidecar(&wav).unwrap().is_none());
+    // the original audio file is untouched
+    assert!(wav.exists());
+    // library_changed announced
+    let events = app.tick();
+    assert!(
+        events.iter().any(|e| e.event == "library_changed"),
+        "expected library_changed in {events:?}"
+    );
+}
+
+#[test]
+fn delete_while_quick_session_clears_active_plan() {
+    let (mut app, _dir, wav) = test_app();
+    let song = req(&mut app, "song.import", json!({"path": wav}));
+    let id = song["id"].as_i64().unwrap();
+    req(&mut app, "song.open", json!({"song_id": id}));
+
+    // start an ephemeral quick session — sets active_plan + ephemeral
+    req(
+        &mut app,
+        "practice.quick",
+        json!({"start": 0.0, "end": 1.0}),
+    );
+    // sanity: a plan is now active
+    let status = req(&mut app, "status", Value::Null);
+    assert!(!status["plan"].is_null());
+
+    req(&mut app, "song.delete", json!({"song_id": id}));
+
+    // deleting the open song mid-session tears down the active session so the
+    // tick pump can't drive engine commands against the now-unloaded engine
+    let status = req(&mut app, "status", Value::Null);
+    assert!(status["song_id"].is_null());
+    assert!(
+        status["plan"].is_null(),
+        "active plan should be torn down on delete"
+    );
 }
 
 #[test]

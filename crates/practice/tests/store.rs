@@ -308,6 +308,48 @@ fn deleting_song_cascades() {
 }
 
 #[test]
+fn update_song_changes_title_and_artist() {
+    let (store, song) = store_with_song();
+    let updated = store
+        .update_song(song.id, "New Title", Some("New Band"))
+        .unwrap();
+    assert_eq!(updated.title, "New Title");
+    assert_eq!(updated.artist.as_deref(), Some("New Band"));
+    // path and hash are untouched
+    assert_eq!(updated.path, song.path);
+    assert_eq!(updated.file_hash, song.file_hash);
+    // persisted: a fresh list reflects the change
+    let listed = store.list_songs().unwrap();
+    assert_eq!(listed[0].title, "New Title");
+    assert_eq!(listed[0].artist.as_deref(), Some("New Band"));
+}
+
+#[test]
+fn update_song_clears_artist_when_none() {
+    let (store, song) = store_with_song();
+    // first set an artist
+    store
+        .update_song(song.id, &song.title, Some("Some Band"))
+        .unwrap();
+    // now clear it
+    let cleared = store.update_song(song.id, &song.title, None).unwrap();
+    assert_eq!(cleared.artist, None);
+    // persisted
+    let listed = store.list_songs().unwrap();
+    assert_eq!(listed[0].artist, None);
+}
+
+#[test]
+fn update_song_returns_not_found_for_stale_id() {
+    let store = Store::open_in_memory().unwrap();
+    let err = store.update_song(SongId(999), "Ghost", None).unwrap_err();
+    assert!(
+        matches!(err, practice::error::Error::NotFound),
+        "expected NotFound, got {err:?}"
+    );
+}
+
+#[test]
 fn settings_roundtrip_arbitrary_json() {
     let store = Store::open_in_memory().unwrap();
     assert!(store.get_setting("ui_scale").unwrap().is_none());

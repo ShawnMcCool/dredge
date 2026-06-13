@@ -336,6 +336,8 @@ impl App {
         match cmd {
             "song.import" => self.song_import(p),
             "song.list" => serde_json::to_value(self.store.list_songs().err_str()?).err_str(),
+            "song.update" => self.song_update(p),
+            "song.delete" => self.song_delete(p),
             "song.open" => self.song_open(p),
             "section.replace" => self.section_replace(p),
             "loop.create" => self.loop_create(p),
@@ -1004,10 +1006,12 @@ impl App {
         #[derive(Deserialize)]
         struct P {
             song_id: SongId,
+            #[serde(default)]
+            force: bool,
         }
         let p: P = from_params(p)?;
         let song = self.song_row(p.song_id)?;
-        if self.store.get_analysis(p.song_id).err_str()?.is_some() {
+        if !p.force && self.store.get_analysis(p.song_id).err_str()?.is_some() {
             return Ok(json!({"state": "cached"}));
         }
         if self.analyzing.contains(&p.song_id.0) {
@@ -1122,6 +1126,76 @@ impl App {
         }
         let prep = import_decode(p.path, p.title, hash)?;
         self.import_prepared(prep)
+    }
+
+    fn song_update(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            song_id: SongId,
+            title: String,
+            // omitted artist clears it — socket/script clients can send {title} alone
+            #[serde(default)]
+            artist: Option<String>,
+        }
+        let p: P = from_params(p)?;
+        let song = self
+            .store
+            .update_song(p.song_id, &p.title, p.artist.as_deref())
+            .err_str()?;
+        // keep the open song's header in sync if it's the one we renamed
+        if let Some(o) = self.open_song.as_mut() {
+            if o.song.id == p.song_id {
+                o.song = song.clone();
+            }
+        }
+        self.write_sidecar_for(p.song_id);
+        let _ = self.job_tx.send(Event {
+            event: "library_changed".into(),
+            data: Value::Null,
+        });
+        serde_json::to_value(song).err_str()
+    }
+
+    fn song_delete(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            song_id: SongId,
+        }
+        let p: P = from_params(p)?;
+        // capture path + hash before the row is gone — cleanup needs them
+        let song = self.song_row(p.song_id)?;
+
+        // stop playback and drop the handle if we're deleting the open song
+        if self.open_song.as_ref().map(|o| o.song.id) == Some(p.song_id) {
+            self.audio.send(EngineCmd::Pause);
+            self.active_plan = None;
+            self.ephemeral = None;
+            self.open_song = None;
+        }
+
+        // DB rows cascade (sections, loops, plans, reps, resurfacing, analysis)
+        self.store.delete_song(p.song_id).err_str()?;
+
+        // best-effort off-DB cleanup; the DB is the source of truth, so a
+        // failed file removal logs but does not fail the command
+        if let Err(e) = engine::peaks::remove_cache(&song.file_hash) {
+            eprintln!("earworm: peaks cleanup failed for {}: {e}", song.file_hash);
+        }
+        let stems = self.stems_cache_dir(&song.file_hash);
+        if let Err(e) = std::fs::remove_dir_all(&stems) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                eprintln!("earworm: stems cleanup failed for {}: {e}", song.file_hash);
+            }
+        }
+        if let Err(e) = practice::sidecar::remove_sidecar(Path::new(&song.path)) {
+            eprintln!("earworm: sidecar cleanup failed for {}: {e}", song.path);
+        }
+
+        let _ = self.job_tx.send(Event {
+            event: "library_changed".into(),
+            data: Value::Null,
+        });
+        Ok(Value::Null)
     }
 
     /// `song.import` dedupe check (needs the lock): a song with this content

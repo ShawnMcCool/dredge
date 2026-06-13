@@ -37,6 +37,17 @@ pub fn read_sidecar(audio_path: &Path) -> Result<Option<Sidecar>> {
     }
 }
 
+/// Delete the sidecar for an audio file. A missing sidecar is a no-op, not
+/// an error — deletion cleanup must not fail on an absent file.
+pub fn remove_sidecar(audio_path: &Path) -> std::io::Result<()> {
+    let path = sidecar_path(audio_path);
+    match std::fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -90,6 +101,21 @@ mod tests {
         assert!(read_sidecar(&dir.path().join("nope.flac"))
             .unwrap()
             .is_none());
+    }
+
+    #[test]
+    fn remove_sidecar_deletes_then_noops() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = sample(dir.path());
+        write_sidecar(&s).unwrap();
+        let audio = Path::new(&s.song.path);
+        assert!(sidecar_path(audio).exists());
+
+        remove_sidecar(audio).unwrap();
+        assert!(!sidecar_path(audio).exists());
+
+        // a second remove on the now-missing file is a clean no-op
+        remove_sidecar(audio).unwrap();
     }
 
     #[test]

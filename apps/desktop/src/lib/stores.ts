@@ -321,6 +321,25 @@ export const actions = {
     return song;
   },
 
+  async deleteSong(id: number): Promise<void> {
+    await cmd("song.delete", { song_id: id });
+    if (get(openSong)?.song.id === id) openSong.set(null);
+    await this.refreshSongs();
+  },
+
+  async updateSong(id: number, title: string, artist: string | null): Promise<void> {
+    const song = await cmd<Song>("song.update", { song_id: id, title, artist });
+    openSong.update((o) => (o && o.song.id === id ? { ...o, song } : o));
+    await this.refreshSongs();
+  },
+
+  async reanalyze(): Promise<void> {
+    const open = get(openSong);
+    if (!open) return;
+    // the analysis_progress event handler reloads the open song's analysis
+    await cmd("analysis.run", { song_id: open.song.id, force: true });
+  },
+
   async openSong(id: number): Promise<void> {
     openingSong.set(id);
     try {

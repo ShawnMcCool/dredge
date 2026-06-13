@@ -124,6 +124,35 @@ fn run_reports_done_then_caches() {
 }
 
 #[test]
+fn force_reruns_past_the_cache() {
+    let mut ctx = setup(Arc::new(FakeAnalyzer));
+
+    req(
+        &mut ctx.app,
+        "analysis.run",
+        json!({"song_id": ctx.song_id}),
+    );
+    assert_eq!(wait_for_progress(&mut ctx.app)["state"], "done");
+
+    // a plain run now short-circuits to cached
+    let out = req(
+        &mut ctx.app,
+        "analysis.run",
+        json!({"song_id": ctx.song_id}),
+    );
+    assert_eq!(out["state"], "cached");
+
+    // force bypasses the cache and re-runs
+    let out = req(
+        &mut ctx.app,
+        "analysis.run",
+        json!({"song_id": ctx.song_id, "force": true}),
+    );
+    assert_eq!(out["state"], "running");
+    assert_eq!(wait_for_progress(&mut ctx.app)["state"], "done");
+}
+
+#[test]
 fn failures_are_reported_not_cached() {
     struct FailingAnalyzer;
     impl Analyzer for FailingAnalyzer {
