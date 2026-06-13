@@ -257,6 +257,7 @@ export type PrepareStepState = "pending" | "running" | "done" | "failed" | "cach
 
 export interface PrepareState {
   open: boolean;
+  song_id: number;
   steps: { analysis: PrepareStepState; stems: PrepareStepState };
   errors: { analysis?: string; stems?: string };
 }
@@ -681,6 +682,7 @@ export const actions = {
     prepareSongId = id;
     prepareState.set({
       open: true,
+      song_id: id,
       steps: { analysis: "pending", stems: "pending" },
       errors: {},
     });

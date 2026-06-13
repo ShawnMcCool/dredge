@@ -2,7 +2,7 @@
   // Progress modal for the one-button prepare flow: two step rows over a
   // coarse overall bar. The subprocesses emit no percentages, so the bar is
   // honest-coarse (0 → 50 → 100) and each row is a state glyph.
-  import { actions, prepareState, type PrepareStepState } from "../lib/stores";
+  import { actions, prepareState, profiles, type PrepareStepState } from "../lib/stores";
   import Button from "../lib/ui/Button.svelte";
   import Modal from "../lib/ui/Modal.svelte";
 
@@ -26,6 +26,17 @@
     state ? Object.values(state.steps).filter(terminal).length * 50 : 0,
   );
   let failed = $derived(state !== null && Object.values(state.steps).includes("failed"));
+
+  function lastRun(step: string): string | null {
+    const s = $prepareState;
+    if (!s) return null;
+    const op = step === "analysis" ? "analysis" : "stems";
+    const run = $profiles.find((p) => p.op === op && p.song_id === s.song_id);
+    if (!run) return null;
+    const ms = run.total_ms;
+    const t = ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
+    return [t, run.device, run.engine].filter(Boolean).join(" · ");
+  }
 </script>
 
 {#if state}
@@ -44,6 +55,10 @@
           </span>
           <span class="name">{step.label}</span>
           {#if s === "cached"}<span class="note mono">cached</span>{/if}
+          {#if terminal(s)}
+            {@const summary = lastRun(step.key)}
+            {#if summary}<span class="note mono">{summary}</span>{/if}
+          {/if}
           {#if state.errors[step.key]}
             <span class="error">{state.errors[step.key]}</span>
           {/if}
