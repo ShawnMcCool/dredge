@@ -1030,7 +1030,7 @@ impl App {
         let audio_path = PathBuf::from(&song.path);
         let song_id = p.song_id;
         std::thread::spawn(move || {
-            let _ = tx.send((song_id, analyzer.analyze(&audio_path)));
+            let _ = tx.send((song_id, analyzer.analyze(&audio_path, false)));
         });
         Ok(json!({"state": "running"}))
     }
