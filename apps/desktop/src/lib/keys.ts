@@ -6,7 +6,7 @@ import { zoomIn, zoomOut, zoomReset } from "./zoom";
 import {
   actions,
   BASS_STEM,
-  focusMode,
+  bassFocus,
   currentLoop,
   gridSnap,
   openSong,
@@ -109,12 +109,9 @@ async function handle(e: KeyboardEvent): Promise<void> {
     case ",":
       settingsOpen.set(true);
       break;
-    case "b": {
-      const order = ["none", "bass", "vocal", "treble"] as const;
-      const cur = get(focusMode);
-      await actions.setFocus(order[(order.indexOf(cur) + 1) % order.length]);
+    case "b":
+      await actions.bassFocus(!get(bassFocus));
       break;
-    }
     case "g":
       // loop/selection edges snap to analyzed downbeats while on
       gridSnap.update((on) => !on);

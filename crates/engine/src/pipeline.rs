@@ -1,6 +1,5 @@
 use crate::buffer::{StemSet, CHANNELS, SAMPLE_RATE};
 use crate::filter::Focus;
-pub use crate::filter::FocusKind;
 use crate::looper::Looper;
 use crate::stretch::{Stretcher, BLOCK_FRAMES};
 
@@ -21,7 +20,6 @@ pub enum EngineCmd {
     /// semitones + cents, combined at the boundary into one scale factor
     SetPitchScale(f64),
     BassFocus(bool),
-    SetFocus(Option<FocusKind>),
     /// RecallSilent: audio muted, position keeps advancing.
     Mute(bool),
     /// Per-stem mix gain (0.0..=1.5); out-of-range stems ignored.
@@ -104,10 +102,7 @@ impl Pipeline {
                 self.stretch.set_pitch_scale(self.pitch_scale);
             }
             EngineCmd::BassFocus(on) => {
-                self.focus = if on { Some(Focus::new(FocusKind::Bass)) } else { None };
-            }
-            EngineCmd::SetFocus(kind) => {
-                self.focus = kind.map(Focus::new);
+                self.focus = if on { Some(Focus::new()) } else { None };
             }
             EngineCmd::Mute(on) => {
                 self.muted = on;

@@ -61,31 +61,24 @@ impl Biquad {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FocusKind {
-    Bass,
-    Vocal,
-    Treble,
-}
-
-/// Stereo focus filter: a cascade of biquads per channel, applied in-place.
-/// bass = low-pass 400 Hz; vocal = band-pass 300–3000 Hz; treble = high-pass 3500 Hz.
+/// Stereo bass-focus filter: a low-pass at 400 Hz per channel, applied
+/// in-place — isolates the low end so a bassline reads clearly.
 pub struct Focus {
     ch: [Vec<Biquad>; 2],
 }
 
+impl Default for Focus {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Focus {
-    pub fn new(kind: FocusKind) -> Self {
+    pub fn new() -> Self {
         let build = || -> Vec<Biquad> {
             let sr = 48_000.0;
             let q = std::f32::consts::FRAC_1_SQRT_2;
-            match kind {
-                FocusKind::Bass => vec![Biquad::lowpass(sr, 400.0, q)],
-                FocusKind::Vocal => {
-                    vec![Biquad::highpass(sr, 300.0, q), Biquad::lowpass(sr, 3000.0, q)]
-                }
-                FocusKind::Treble => vec![Biquad::highpass(sr, 3500.0, q)],
-            }
+            vec![Biquad::lowpass(sr, 400.0, q)]
         };
         Self { ch: [build(), build()] }
     }
@@ -134,22 +127,6 @@ mod tests {
         ((acc / (n as f64 / 2.0)).sqrt()) as f32
     }
 
-    fn rms_focus(kind: FocusKind, hz: f32) -> f32 {
-        let mut f = Focus::new(kind);
-        let sr = 48_000.0;
-        let mut acc = 0.0f64;
-        let n = 4800;
-        for i in 0..n {
-            let x = (std::f32::consts::TAU * hz * i as f32 / sr).sin();
-            let mut fr = [x, x];
-            f.process_interleaved(&mut fr);
-            if i > n / 2 {
-                acc += (fr[0] * fr[0]) as f64;
-            }
-        }
-        ((acc / (n as f64 / 2.0)).sqrt()) as f32
-    }
-
     #[test]
     fn passes_bass_attenuates_treble() {
         let low = rms_through(100.0); // bass region
@@ -168,13 +145,4 @@ mod tests {
         assert!(high > 0.5, "8000 Hz should pass: {high}");
     }
 
-    #[test]
-    fn focus_vocal_passes_mid_cuts_extremes() {
-        let mid = rms_focus(FocusKind::Vocal, 1000.0);
-        let low = rms_focus(FocusKind::Vocal, 80.0);
-        let high = rms_focus(FocusKind::Vocal, 9000.0);
-        assert!(mid > 0.4, "1k passes: {mid}");
-        assert!(low < 0.3, "80 Hz cut: {low}");
-        assert!(high < 0.3, "9k cut: {high}");
-    }
 }

@@ -1,7 +1,7 @@
 <script lang="ts">
   import {
     actions,
-    focusMode,
+    bassFocus,
     muted,
     openSong,
     pitch,
@@ -9,7 +9,6 @@
     position,
   } from "../lib/stores";
 
-  const FOCUS_KINDS = ["bass", "vocal", "treble"] as const;
   import Button from "../lib/ui/Button.svelte";
   import Fader from "../lib/ui/Fader.svelte";
   import Group from "../lib/ui/Group.svelte";
@@ -117,17 +116,13 @@
     </Group>
 
     <Group>
-      <span class="focus">
-        {#each FOCUS_KINDS as k (k)}
-          <Button
-            variant="chip"
-            active={$focusMode === k}
-            onclick={() => actions.setFocus($focusMode === k ? "none" : k)}
-          >
-            {k}
-          </Button>
-        {/each}
-      </span>
+      <Button
+        variant="chip"
+        active={$bassFocus}
+        onclick={() => actions.bassFocus(!$bassFocus)}
+      >
+        bass
+      </Button>
       <Button variant="toggle" active={$muted} onclick={() => actions.mute(!$muted)}>MUTE</Button>
       <Button
         variant="toggle"
@@ -178,6 +173,4 @@
     min-width: 4ch;
     text-align: right;
   }
-
-  .focus { display: inline-flex; gap: calc(var(--space) / 2); }
 </style>

@@ -27,11 +27,8 @@ fn req(app: &mut App, cmd: &str, params: Value) -> Value {
 }
 
 #[test]
-fn focus_command_dispatches() {
+fn bass_focus_command_dispatches() {
     let mut app = test_app();
-    req(&mut app, "focus", json!({"kind": "vocal"}));
-    req(&mut app, "focus", json!({"kind": "bass"}));
-    req(&mut app, "focus", json!({"kind": "treble"}));
-    req(&mut app, "focus", json!({"kind": "none"}));
-    req(&mut app, "focus", json!({}));
+    req(&mut app, "bass_focus", json!({"on": true}));
+    req(&mut app, "bass_focus", json!({"on": false}));
 }
