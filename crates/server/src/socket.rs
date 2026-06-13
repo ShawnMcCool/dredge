@@ -53,6 +53,13 @@ pub fn serve(
     let shutdown = Arc::new(AtomicBool::new(false));
     let subscribers: Arc<Mutex<Vec<UnixStream>>> = Arc::new(Mutex::new(Vec::new()));
 
+    // live work sampler — its own thread, never touches the App mutex during a tick
+    {
+        let (work_state, sample_tx) = app.lock().unwrap().sampler_handles();
+        let shutdown = shutdown.clone();
+        std::thread::spawn(move || crate::sampler::run(work_state, sample_tx, shutdown));
+    }
+
     let thread = {
         let shutdown = shutdown.clone();
         std::thread::spawn(move || {

@@ -2,6 +2,7 @@ use crate::analysis::Analyzer;
 use crate::capture_control::CaptureControl;
 use crate::control::AudioControl;
 use crate::protocol::{Event, Request, Response};
+use crate::sampler::{SharedWork, WorkReporter, WorkSample};
 use crate::stems::{StemSeparator, STEM_NAMES};
 use engine::pipeline::{EngineCmd, EngineEvent};
 use practice::model::{
@@ -269,6 +270,11 @@ pub struct App {
     /// `profile_run`.
     profile_tx: mpsc::Sender<ProfileRun>,
     profile_rx: mpsc::Receiver<ProfileRun>,
+    /// Shared "what's running now" slot, read by the sampler thread.
+    work_state: SharedWork,
+    /// Live work samples from the sampler thread; drained by `tick()`.
+    work_sample_tx: mpsc::Sender<WorkSample>,
+    work_sample_rx: mpsc::Receiver<WorkSample>,
 }
 
 struct OpenSong {
@@ -293,6 +299,7 @@ impl App {
         let (job_tx, job_rx) = mpsc::channel();
         let (analysis_tx, analysis_rx) = mpsc::channel();
         let (profile_tx, profile_rx) = mpsc::channel();
+        let (work_sample_tx, work_sample_rx) = mpsc::channel();
         Self {
             store,
             audio,
@@ -313,6 +320,9 @@ impl App {
             analyzing: HashSet::new(),
             profile_tx,
             profile_rx,
+            work_state: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            work_sample_tx,
+            work_sample_rx,
         }
     }
 
@@ -324,6 +334,17 @@ impl App {
     /// Swap the analyzer (tests use `FakeAnalyzer`).
     pub fn set_analyzer(&mut self, analyzer: Arc<dyn Analyzer>) {
         self.analyzer = analyzer;
+    }
+
+    /// Handles the sampler thread needs (work-state slot + sample sender).
+    /// Cloned out once by `serve` before it spawns the sampler.
+    pub fn sampler_handles(&self) -> (SharedWork, mpsc::Sender<WorkSample>) {
+        (self.work_state.clone(), self.work_sample_tx.clone())
+    }
+
+    /// A reporter the heavy workers use to publish their stage.
+    fn work_reporter(&self) -> WorkReporter {
+        WorkReporter::new(self.work_state.clone())
     }
 
     /// Override the stems cache root (tests use a tempdir).
@@ -842,6 +863,12 @@ impl App {
             }
             if let Ok(data) = serde_json::to_value(&run) {
                 events.push(Event { event: "profile_run".into(), data });
+            }
+        }
+        // live work samples from the sampler thread
+        while let Ok(sample) = self.work_sample_rx.try_recv() {
+            if let Ok(data) = serde_json::to_value(&sample) {
+                events.push(Event { event: "work_sample".into(), data });
             }
         }
         let mut last_pos = None;
