@@ -92,6 +92,14 @@ CREATE TABLE profiles (
 );
 ";
 
+/// v5: per-run max resource metrics on profiles.
+const SCHEMA_V5: &str = "
+ALTER TABLE profiles ADD COLUMN max_cpu_pct INTEGER;
+ALTER TABLE profiles ADD COLUMN max_gpu_util INTEGER;
+ALTER TABLE profiles ADD COLUMN max_vram_used_mb INTEGER;
+ALTER TABLE profiles ADD COLUMN vram_total_mb INTEGER;
+";
+
 pub struct Store {
     conn: rusqlite::Connection,
 }
@@ -194,6 +202,10 @@ impl Store {
         if version < 4 {
             self.conn.execute_batch(SCHEMA_V4)?;
             self.conn.pragma_update(None, "user_version", 4)?;
+        }
+        if version < 5 {
+            self.conn.execute_batch(SCHEMA_V5)?;
+            self.conn.pragma_update(None, "user_version", 5)?;
         }
         Ok(())
     }
@@ -550,8 +562,9 @@ impl Store {
     /// Returns the `started_at` SQLite assigned.
     pub fn save_profile(&self, run: &crate::model::ProfileRun) -> Result<String> {
         let started: String = self.conn.query_row(
-            "INSERT INTO profiles (op, song_id, total_ms, ok, error, device, engine, stages_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            "INSERT INTO profiles (op, song_id, total_ms, ok, error, device, engine, stages_json,
+                max_cpu_pct, max_gpu_util, max_vram_used_mb, vram_total_mb)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
              RETURNING started_at",
             params![
                 run.op,
@@ -562,6 +575,10 @@ impl Store {
                 run.device,
                 run.engine,
                 serde_json::to_string(&run.stages)?,
+                run.max_cpu_pct.map(|v| v as i64),
+                run.max_gpu_util.map(|v| v as i64),
+                run.max_vram_used_mb.map(|v| v as i64),
+                run.vram_total_mb.map(|v| v as i64),
             ],
             |row| row.get(0),
         )?;
@@ -575,7 +592,8 @@ impl Store {
 
     pub fn list_profiles(&self, limit: i64) -> Result<Vec<crate::model::ProfileRun>> {
         let mut stmt = self.conn.prepare(
-            "SELECT op, song_id, started_at, total_ms, ok, error, device, engine, stages_json
+            "SELECT op, song_id, started_at, total_ms, ok, error, device, engine, stages_json,
+                max_cpu_pct, max_gpu_util, max_vram_used_mb, vram_total_mb
              FROM profiles ORDER BY id DESC LIMIT ?1",
         )?;
         let rows = stmt
@@ -590,10 +608,10 @@ impl Store {
                     error: row.get(5)?,
                     device: row.get(6)?,
                     engine: row.get(7)?,
-                    max_cpu_pct: None,
-                    max_gpu_util: None,
-                    max_vram_used_mb: None,
-                    vram_total_mb: None,
+                    max_cpu_pct: row.get::<_, Option<i64>>(9)?.map(|v| v as u32),
+                    max_gpu_util: row.get::<_, Option<i64>>(10)?.map(|v| v as u32),
+                    max_vram_used_mb: row.get::<_, Option<i64>>(11)?.map(|v| v as u32),
+                    vram_total_mb: row.get::<_, Option<i64>>(12)?.map(|v| v as u32),
                     stages: serde_json::from_str(&stages).map_err(json_err)?,
                 })
             })?
@@ -639,10 +657,10 @@ mod tests {
             error: None,
             device: Some("cpu".into()),
             engine: Some("songformer".into()),
-            max_cpu_pct: None,
-            max_gpu_util: None,
-            max_vram_used_mb: None,
-            vram_total_mb: None,
+            max_cpu_pct: Some(496),
+            max_gpu_util: Some(41),
+            max_vram_used_mb: Some(6100),
+            vram_total_mb: Some(16000),
             stages: vec![crate::model::ProfileStage { name: "analyze".into(), ms: 1234, note: None }],
         };
         let started = store.save_profile(&run).unwrap();
@@ -655,6 +673,10 @@ mod tests {
         assert_eq!(listed[0].engine.as_deref(), Some("songformer"));
         assert_eq!(listed[0].stages.len(), 1);
         assert!(!listed[0].started_at.is_empty());
+        assert_eq!(listed[0].max_cpu_pct, Some(496));
+        assert_eq!(listed[0].max_gpu_util, Some(41));
+        assert_eq!(listed[0].max_vram_used_mb, Some(6100));
+        assert_eq!(listed[0].vram_total_mb, Some(16000));
 
         // trim keeps only the most recent 200
         for i in 0..205 {
