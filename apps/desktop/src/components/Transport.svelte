@@ -1,24 +1,9 @@
 <script lang="ts">
-  import {
-    actions,
-    bassFocus,
-    muted,
-    openSong,
-    pitch,
-    playbackVolume,
-    position,
-  } from "../lib/stores";
-
+  import { actions, bassFocus, muted, openSong, pitch, playbackVolume, position } from "../lib/stores";
   import Button from "../lib/ui/Button.svelte";
   import Fader from "../lib/ui/Fader.svelte";
-  import Group from "../lib/ui/Group.svelte";
-  import Toolbar from "../lib/ui/Toolbar.svelte";
 
   const RATE_PRESETS = [0.5, 0.7, 0.85, 1.0];
-  const SEMITONE_CHIPS = [-2, -1, 0, 1, 2];
-
-  // both jobs cached → quiet RE-PREPARE; anything missing → accent PREPARE
-  let prepared = $derived($openSong !== null && $openSong.stems && $openSong.analysis !== null);
 
   function fmt(secs: number): string {
     const s = Math.max(secs, 0);
@@ -33,76 +18,50 @@
     return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
   }
 
-  function onCentsInput(e: Event) {
-    const cents = Number((e.currentTarget as HTMLInputElement).value);
+  // pitch stepper: ± a semitone; scroll over it for ±5 cents
+  const clampSt = (st: number) => Math.max(-12, Math.min(12, st));
+  function stepPitch(d: number) {
+    void actions.setPitch(clampSt($pitch.semitones + d), $pitch.cents);
+  }
+  function pitchWheel(e: WheelEvent) {
+    e.preventDefault();
+    const cents = Math.max(-100, Math.min(100, $pitch.cents + (e.deltaY < 0 ? 5 : -5)));
     void actions.setPitch($pitch.semitones, cents);
   }
+
+  let pitchLabel = $derived(
+    `${$pitch.semitones > 0 ? "+" : ""}${$pitch.semitones} st` +
+      ($pitch.cents ? ` ${$pitch.cents > 0 ? "+" : ""}${$pitch.cents}¢` : ""),
+  );
 </script>
 
 <div class="transport">
-  <Toolbar>
-    <Group>
+  <div class="bar">
+    <!-- primary: the constantly-touched controls, given room -->
+    <div class="grp primary">
       <Button
         variant="icon"
-        style="width: 40px"
+        style="width: 50px; height: 38px; font-size: 18px;"
         onclick={() => ($position.playing ? actions.pause() : actions.play())}
       >
         {$position.playing ? "⏸" : "▶"}
       </Button>
       <span class="readout time">
-        {fmt($position.secs)} / {fmtTotal($openSong?.song.duration_secs ?? 0)}
+        {fmt($position.secs)} <span class="dim">/ {fmtTotal($openSong?.song.duration_secs ?? 0)}</span>
       </span>
-    </Group>
 
-    <Group grow>
-      <span class="readout rate">{Math.round($position.rate * 100)}%</span>
-      <Fader
-        value={$position.rate}
-        min={0.25}
-        max={2}
-        step={0.05}
-        accent
-        onchange={(v) => void actions.setRate(v)}
-        format={(v) => `rate ${Math.round(v * 100)}%`}
-      />
-    </Group>
+      <span class="vsep"></span>
 
-    <Group>
-      {#each RATE_PRESETS as r (r)}
-        <Button
-          variant="chip"
-          active={Math.abs($position.rate - r) < 0.001}
-          onclick={() => actions.setRate(r)}
-        >
-          {Math.round(r * 100)}
-        </Button>
-      {/each}
-    </Group>
-
-    <Group label="pitch">
-      {#each SEMITONE_CHIPS as st (st)}
-        <Button
-          variant="chip"
-          active={$pitch.semitones === st}
-          onclick={() => actions.setPitch(st, $pitch.cents)}
-        >
-          {st > 0 ? `+${st}` : st}
-        </Button>
-      {/each}
-      <input
-        class="cents"
-        type="number"
-        min="-100"
-        max="100"
-        step="5"
-        value={$pitch.cents}
-        oninput={onCentsInput}
-        title="cents"
-      />
-    </Group>
-
-    <Group label="vol">
-      <span class="vol-fader">
+      <button
+        class="spk"
+        class:muted={$muted}
+        onclick={() => actions.mute(!$muted)}
+        title={$muted ? "unmute" : "mute"}
+        aria-label={$muted ? "unmute" : "mute"}
+      >
+        {$muted ? "🔇" : "🔊"}
+      </button>
+      <span class="vol">
         <Fader
           value={$playbackVolume}
           min={0}
@@ -112,29 +71,52 @@
           format={(v) => `volume ${Math.round(v * 100)}%`}
         />
       </span>
-      <span class="readout vol">{Math.round($playbackVolume * 100)}%</span>
-    </Group>
+      <span class="readout volpct">{Math.round($playbackVolume * 100)}%</span>
 
-    <Group>
-      <Button
-        variant="chip"
-        active={$bassFocus}
-        onclick={() => actions.bassFocus(!$bassFocus)}
-      >
+      <span class="vsep"></span>
+
+      <Button variant="chip" active={$bassFocus} onclick={() => actions.bassFocus(!$bassFocus)}>
         bass
       </Button>
-      <Button variant="toggle" active={$muted} onclick={() => actions.mute(!$muted)}>MUTE</Button>
-      <Button
-        variant="toggle"
-        accent={!prepared}
-        disabled={!$openSong}
-        title={prepared ? "re-run analysis — structure + stems (a)" : "analyze — structure + stems (a)"}
-        onclick={() => void actions.prepare(prepared)}
-      >
-        {prepared ? "REANALYZE TRACK" : "ANALYZE TRACK"}
-      </Button>
-    </Group>
-  </Toolbar>
+    </div>
+
+    <!-- tools: occasional controls, compact -->
+    <div class="grp tools">
+      <span class="lbl">speed</span>
+      <span class="presets">
+        {#each RATE_PRESETS as r (r)}
+          <Button
+            variant="chip"
+            active={Math.abs($position.rate - r) < 0.001}
+            onclick={() => actions.setRate(r)}
+          >
+            {Math.round(r * 100)}
+          </Button>
+        {/each}
+      </span>
+      <span class="speed-fader">
+        <Fader
+          value={$position.rate}
+          min={0.25}
+          max={2}
+          step={0.05}
+          accent
+          onchange={(v) => void actions.setRate(v)}
+          format={(v) => `speed ${Math.round(v * 100)}%`}
+        />
+      </span>
+      <span class="readout rate">{Math.round($position.rate * 100)}%</span>
+
+      <span class="vsep"></span>
+
+      <span class="lbl">pitch</span>
+      <span class="stepper" onwheel={pitchWheel} title="± semitone · scroll for cents">
+        <Button variant="chip" onclick={() => stepPitch(-1)}>−</Button>
+        <span class="readout pitchval">{pitchLabel}</span>
+        <Button variant="chip" onclick={() => stepPitch(1)}>+</Button>
+      </span>
+    </div>
+  </div>
 </div>
 
 <style>
@@ -145,9 +127,82 @@
     min-width: 0;
   }
 
+  /* one row that wraps the tools group to a second tier when width runs out */
+  .bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 18px;
+  }
+
+  .grp {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .primary,
+  .tools {
+    flex: 1 1 auto;
+  }
+
+  .vsep {
+    width: 1px;
+    align-self: stretch;
+    min-height: 22px;
+    background: var(--line);
+    flex: 0 0 auto;
+  }
+
+  /* volume is generous (used often); speed slider stays compact (presets carry it) */
+  .vol {
+    display: flex;
+    flex: 1 1 120px;
+    max-width: 240px;
+  }
+
+  .speed-fader {
+    display: flex;
+    flex: 0 0 auto;
+    width: 80px;
+  }
+
+  .presets {
+    display: inline-flex;
+    gap: calc(var(--space) / 2);
+  }
+
+  .spk {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 0 2px;
+    line-height: 1;
+  }
+  .spk:hover {
+    color: var(--fg);
+  }
+  .spk.muted {
+    color: var(--accent);
+  }
+
+  .lbl {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    flex: 0 0 auto;
+  }
+
   .time {
     color: var(--fg);
-    min-width: 13ch;
+    flex: 0 0 auto;
+  }
+  .time .dim {
+    color: var(--muted);
   }
 
   .rate {
@@ -156,21 +211,21 @@
     text-align: right;
   }
 
-  .cents {
-    width: 4.5em;
-    font-size: 11px;
-    padding: 1px 4px;
-  }
-
-  /* compact, non-accent — the rate fader stays the visually dominant one */
-  .vol-fader {
-    display: flex;
-    width: 90px;
-  }
-
-  .vol {
+  .volpct {
     color: var(--muted);
     min-width: 4ch;
     text-align: right;
+  }
+
+  .stepper {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .pitchval {
+    min-width: 5ch;
+    text-align: center;
+    color: var(--fg);
   }
 </style>
