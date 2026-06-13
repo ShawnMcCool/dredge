@@ -1044,10 +1044,29 @@ impl App {
         self.analyzing.insert(p.song_id.0);
         let analyzer = self.analyzer.clone();
         let tx = self.analysis_tx.clone();
+        let profile_tx = self.profile_tx.clone();
         let audio_path = PathBuf::from(&song.path);
         let song_id = p.song_id;
+        let device_setting = self
+            .store
+            .get_setting("analysis_device")
+            .ok()
+            .flatten()
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .unwrap_or_else(|| "auto".into());
         std::thread::spawn(move || {
-            let _ = tx.send((song_id, analyzer.analyze(&audio_path, false)));
+            let mut timer = crate::profile::Timer::new("analysis", Some(song_id));
+            let (result, device) = crate::analysis::analyze_with_recovery(
+                analyzer.as_ref(),
+                &audio_path,
+                &device_setting,
+                &mut timer,
+            );
+            let engine = result.as_ref().ok().map(|a| a.engine.clone());
+            let err = result.as_ref().err().cloned();
+            let run = timer.finish(result.is_ok(), err, device, engine);
+            let _ = tx.send((song_id, result));
+            let _ = profile_tx.send(run);
         });
         Ok(json!({"state": "running"}))
     }

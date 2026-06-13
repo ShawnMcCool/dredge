@@ -132,6 +132,35 @@ impl Analyzer for FakeAnalyzer {
     }
 }
 
+/// Run analysis honoring the device setting, recovering a CUDA-OOM SongFormer
+/// fallback onto CPU when `auto`. Records stages into `timer`. Returns the
+/// chosen result and the resolved device label.
+pub fn analyze_with_recovery(
+    analyzer: &dyn Analyzer,
+    audio: &Path,
+    device_setting: &str,
+    timer: &mut crate::profile::Timer,
+) -> (Result<Analysis, String>, Option<String>) {
+    if device_setting == "cpu" {
+        let r = timer.stage("analyze", || analyzer.analyze(audio, true));
+        return (r, Some("cpu".into()));
+    }
+    // auto: GPU first
+    let r = timer.stage("analyze (gpu)", || analyzer.analyze(audio, false));
+    match &r {
+        Ok(a) if a.engine == "songformer" => (r, Some("gpu".into())),
+        Ok(_) if songformer_venv_present() => {
+            timer.note_last("songformer fell back; retrying on cpu");
+            let r2 = timer.stage("analyze (cpu)", || analyzer.analyze(audio, true));
+            match &r2 {
+                Ok(a2) if a2.engine == "songformer" => (r2, Some("cpu".into())),
+                _ => (r2, None),
+            }
+        }
+        _ => (r, None),
+    }
+}
+
 /// True when the optional SongFormer venv python is present and executable —
 /// mirrors `scripts/analyze_impl.py::songformer_python`.
 pub fn songformer_venv_present() -> bool {
