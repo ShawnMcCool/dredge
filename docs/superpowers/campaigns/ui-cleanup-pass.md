@@ -94,6 +94,23 @@ are final unless noted.
 - **Delete on-disk stem `.wav` files** for the song on `delete_song` (and any cached
   artifacts). Confirm full teardown leaves nothing orphaned.
 
+## Status: complete (all waves A–J shipped)
+
+Verification: `cargo test` (engine/server/practice) green, `pnpm vitest` 54 pass,
+clippy `-D warnings` clean, `svelte-check` 0 errors.
+
+**Pre-existing caveat — `cargo fmt --check` fails repo-wide.** The committed code
+uses a compact single-line style that `cargo fmt` would expand (e.g. untouched
+`crates/server/tests/app_profiling.rs` has 13 such hunks; `app.rs:443/862`,
+`store.rs:666` likewise). This predates the campaign — the maintainer evidently
+doesn't run `cargo fmt`. New code here matches the surrounding compact style, so
+no repo-wide reformat was done (it would rewrite ~15 unrelated files against the
+author's style). Run `cargo fmt` separately if you want the whole tree normalized.
+
 ## Notes
 - Pitch cents: kept, reachable via scroll/hold on the stepper (not a visible spinner).
 - `m` key = mute bass *stem* (unchanged); distinct from transport playback mute.
+- Per-process re-run: structure box has "re-analyze"; stems re-run rides the
+  combined analyze (no separate stems-only button added).
+- LiveProgress trimmed to the running state; idle perf summaries live in the
+  profile tab (ProfilingPanel).
