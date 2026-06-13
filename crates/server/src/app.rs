@@ -1006,10 +1006,12 @@ impl App {
         #[derive(Deserialize)]
         struct P {
             song_id: SongId,
+            #[serde(default)]
+            force: bool,
         }
         let p: P = from_params(p)?;
         let song = self.song_row(p.song_id)?;
-        if self.store.get_analysis(p.song_id).err_str()?.is_some() {
+        if !p.force && self.store.get_analysis(p.song_id).err_str()?.is_some() {
             return Ok(json!({"state": "cached"}));
         }
         if self.analyzing.contains(&p.song_id.0) {
