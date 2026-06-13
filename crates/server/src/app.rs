@@ -336,6 +336,7 @@ impl App {
         match cmd {
             "song.import" => self.song_import(p),
             "song.list" => serde_json::to_value(self.store.list_songs().err_str()?).err_str(),
+            "song.update" => self.song_update(p),
             "song.open" => self.song_open(p),
             "section.replace" => self.section_replace(p),
             "loop.create" => self.loop_create(p),
@@ -1122,6 +1123,32 @@ impl App {
         }
         let prep = import_decode(p.path, p.title, hash)?;
         self.import_prepared(prep)
+    }
+
+    fn song_update(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            song_id: SongId,
+            title: String,
+            artist: Option<String>,
+        }
+        let p: P = from_params(p)?;
+        let song = self
+            .store
+            .update_song(p.song_id, &p.title, p.artist.as_deref())
+            .err_str()?;
+        // keep the open song's header in sync if it's the one we renamed
+        if let Some(o) = self.open_song.as_mut() {
+            if o.song.id == p.song_id {
+                o.song = song.clone();
+            }
+        }
+        self.write_sidecar_for(p.song_id);
+        let _ = self.job_tx.send(Event {
+            event: "library_changed".into(),
+            data: Value::Null,
+        });
+        serde_json::to_value(song).err_str()
     }
 
     /// `song.import` dedupe check (needs the lock): a song with this content

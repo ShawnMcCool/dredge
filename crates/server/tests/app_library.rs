@@ -174,6 +174,36 @@ fn loop_update_moves_and_renames() {
 }
 
 #[test]
+fn update_changes_metadata_and_syncs_sidecar() {
+    let (mut app, _dir, wav) = test_app();
+    let song = req(&mut app, "song.import", json!({"path": wav}));
+    let id = song["id"].as_i64().unwrap();
+    req(&mut app, "song.open", json!({"song_id": id}));
+    // create a loop so a sidecar exists to be rewritten
+    req(
+        &mut app,
+        "loop.create",
+        json!({"song_id": id, "name": "x", "start": 0.0, "end": 1.0}),
+    );
+
+    let updated = req(
+        &mut app,
+        "song.update",
+        json!({"song_id": id, "title": "Renamed", "artist": "New Band"}),
+    );
+    assert_eq!(updated["title"], "Renamed");
+    assert_eq!(updated["artist"], "New Band");
+
+    // persisted in the library list
+    let listed = req(&mut app, "song.list", Value::Null);
+    assert_eq!(listed[0]["title"], "Renamed");
+    // sidecar reflects the new title
+    let sc = practice::sidecar::read_sidecar(&wav).unwrap().unwrap();
+    assert_eq!(sc.song.title, "Renamed");
+    assert_eq!(sc.song.artist.as_deref(), Some("New Band"));
+}
+
+#[test]
 fn import_emits_library_changed() {
     let (mut app, _dir, wav) = test_app();
     req(&mut app, "song.import", json!({"path": wav}));
