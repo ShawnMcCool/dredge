@@ -188,6 +188,8 @@ export const currentLoop = writable<LoopRegion | null>(null);
 export const pitch = writable({ semitones: 0, cents: 0, octaveUp: false });
 export const bassFocusOn = writable(false);
 export const muted = writable(false);
+/** User playback volume 0..1.5 — engine multiplier, persisted as a setting. */
+export const playbackVolume = writable(1.0);
 export const due = writable<DueItem[]>([]);
 export const retention = writable<RetentionRow[]>([]);
 /** Rating prompts queued by step_finished — drained by the runner UI. */
@@ -219,6 +221,7 @@ export const gridSnap = writable(true);
 export const UI_SCALE = "ui_scale";
 export const GRID_SNAP_DEFAULT = "grid_snap_default";
 export const CAPTURE_BUFFER_SECS = "capture_buffer_secs";
+export const PLAYBACK_VOLUME = "playback_volume";
 
 /** Local mirror of the settings table; `loadSettings` fills it at launch and
  *  `setSetting` writes through. */
@@ -276,6 +279,9 @@ let dueAtPlanStart = new Set<number>();
 let repsThisPlan = 0;
 let stepsThisPlan = 0;
 
+/** Debounce handle for the volume fader's settings write-through. */
+let volumeSaveTimer: ReturnType<typeof setTimeout> | undefined;
+
 function loopName(id: number): string {
   return get(openSong)?.loops.find((l) => l.id === id)?.name ?? `loop ${id}`;
 }
@@ -288,11 +294,14 @@ export const actions = {
   // --- settings ---
 
   /** Pull the durable settings once at launch and apply the ones that act
-   *  as session defaults (grid snap). */
+   *  as session defaults (grid snap, playback volume). */
   async loadSettings(): Promise<void> {
     const all = await cmd<Record<string, unknown>>("settings.get_all");
     settings.set(all);
     if (typeof all[GRID_SNAP_DEFAULT] === "boolean") gridSnap.set(all[GRID_SNAP_DEFAULT]);
+    const vol = typeof all[PLAYBACK_VOLUME] === "number" ? all[PLAYBACK_VOLUME] : 1.0;
+    playbackVolume.set(vol);
+    await cmd("volume", { value: vol });
   },
 
   /** Write-through: update the local mirror, persist server-side. */
@@ -374,6 +383,18 @@ export const actions = {
   async mute(on: boolean): Promise<void> {
     muted.set(on);
     await cmd("mute", { on });
+  },
+
+  /** Live engine volume on every change; the setting write is debounced so
+   *  a fader drag lands as one row, not hundreds. */
+  async setVolume(value: number): Promise<void> {
+    const v = Math.min(1.5, Math.max(0, value));
+    playbackVolume.set(v);
+    clearTimeout(volumeSaveTimer);
+    volumeSaveTimer = setTimeout(() => {
+      void this.setSetting(PLAYBACK_VOLUME, v);
+    }, 300);
+    await cmd("volume", { value: v });
   },
 
   /** Point the transport at a span without persisting anything. */

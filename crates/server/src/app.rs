@@ -349,6 +349,7 @@ impl App {
             "pause" => self.send_ok(EngineCmd::Pause),
             "seek" => self.seek(p),
             "rate" => self.rate(p),
+            "volume" => self.volume(p),
             "loop.set" => self.loop_set(p),
             "loop.clear" => self.send_ok(EngineCmd::ClearLoop),
             "bass_focus" => self.bass_focus(p),
@@ -498,6 +499,17 @@ impl App {
         }
         let p: P = from_params(p)?;
         self.send_ok(EngineCmd::SetRate(p.value))
+    }
+
+    /// User playback volume → engine multiplier (engine clamps 0.0..=1.5).
+    /// Persistence lives in the `playback_volume` setting, written by the UI.
+    fn volume(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            value: f32,
+        }
+        let p: P = from_params(p)?;
+        self.send_ok(EngineCmd::SetVolume(p.value))
     }
 
     fn loop_set(&mut self, p: Value) -> Result<Value, String> {

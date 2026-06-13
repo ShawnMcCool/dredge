@@ -1,5 +1,13 @@
 <script lang="ts">
-  import { actions, bassFocusOn, muted, openSong, pitch, position } from "../lib/stores";
+  import {
+    actions,
+    bassFocusOn,
+    muted,
+    openSong,
+    pitch,
+    playbackVolume,
+    position,
+  } from "../lib/stores";
   import Button from "../lib/ui/Button.svelte";
   import Fader from "../lib/ui/Fader.svelte";
   import Group from "../lib/ui/Group.svelte";
@@ -92,6 +100,20 @@
       />
     </Group>
 
+    <Group label="vol">
+      <span class="vol-fader">
+        <Fader
+          value={$playbackVolume}
+          min={0}
+          max={1.5}
+          step={0.05}
+          onchange={(v) => void actions.setVolume(v)}
+          format={(v) => `volume ${Math.round(v * 100)}%`}
+        />
+      </span>
+      <span class="readout vol">{Math.round($playbackVolume * 100)}%</span>
+    </Group>
+
     <Group>
       <Button variant="toggle" active={$bassFocusOn} onclick={() => actions.bassFocus(!$bassFocusOn)}>
         BASS FOCUS
@@ -133,5 +155,17 @@
     width: 4.5em;
     font-size: 11px;
     padding: 1px 4px;
+  }
+
+  /* compact, non-accent — the rate fader stays the visually dominant one */
+  .vol-fader {
+    display: flex;
+    width: 90px;
+  }
+
+  .vol {
+    color: var(--muted);
+    min-width: 4ch;
+    text-align: right;
   }
 </style>

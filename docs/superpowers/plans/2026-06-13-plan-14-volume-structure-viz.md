@@ -14,10 +14,10 @@
 
 ### Task 2: Playback volume (engine → UI)
 
-- [ ] `engine::pipeline`: `EngineCmd::SetVolume(f32)` (clamped 0.0–1.5) — a user-volume multiplier SEPARATE from the mute/pause gain ramp, with its own ~5 ms linear ramp to the target (no zipper noise). Render applies `gain * volume`. Tests: render at volume 0.5 halves RMS vs 1.0; mute still silences regardless of volume; wrap events unaffected.
-- [ ] `server`: `"volume" {value}` dispatch arm → SetVolume. Persist nothing server-side beyond settings: stores already has the settings mirror — UI sends `volume` on startup from setting `playback_volume` (default 1.0).
-- [ ] UI: Transport gains a volume Group — compact horizontal Fader (~90 px, non-accent) + `%` readout, placed before BASS FOCUS/MUTE. Writes through to `settings.set playback_volume` (debounced ~300 ms) and dispatches `volume` live while dragging.
-- [ ] Tests green workspace-wide. Commit: `feat: playback volume — engine ramped multiplier, transport fader, persisted`
+- [x] `engine::pipeline`: `EngineCmd::SetVolume(f32)` (clamped 0.0–1.5) — a user-volume multiplier SEPARATE from the mute/pause gain ramp, with its own ~5 ms linear ramp to the target (no zipper noise). Render applies `gain * volume`. Tests: render at volume 0.5 halves RMS vs 1.0; mute still silences regardless of volume; wrap events unaffected.
+- [x] `server`: `"volume" {value}` dispatch arm → SetVolume. Persist nothing server-side beyond settings: stores already has the settings mirror — UI sends `volume` on startup from setting `playback_volume` (default 1.0).
+- [x] UI: Transport gains a volume Group — compact horizontal Fader (~90 px, non-accent) + `%` readout, placed before BASS FOCUS/MUTE. Writes through to `settings.set playback_volume` (debounced ~300 ms) and dispatches `volume` live while dragging.
+- [x] Tests green workspace-wide. Commit: `feat: playback volume — engine ramped multiplier, transport fader, persisted`
 
 ### Task 3: Structure visualization on the waveform
 

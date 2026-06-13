@@ -27,6 +27,9 @@ pub enum EngineCmd {
         idx: usize,
         gain: f32,
     },
+    /// User playback volume (clamped 0.0..=1.5) — a multiplier separate
+    /// from the play/pause/mute gain ramp, with its own ramp to target.
+    SetVolume(f32),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -46,6 +49,8 @@ pub struct Pipeline {
     muted: bool,
     gain: f32,
     target_gain: f32,
+    volume: f32,
+    target_volume: f32,
     feed_buf: Vec<f32>,
 }
 
@@ -61,6 +66,8 @@ impl Pipeline {
             muted: false,
             gain: 0.0,
             target_gain: 0.0,
+            volume: 1.0,
+            target_volume: 1.0,
             feed_buf: vec![0.0; BLOCK_FRAMES * CHANNELS],
         }
     }
@@ -102,6 +109,7 @@ impl Pipeline {
                 self.target_gain = if on || !self.playing { 0.0 } else { 1.0 };
             }
             EngineCmd::SetStemGain { idx, gain } => self.looper.set_gain(idx, gain),
+            EngineCmd::SetVolume(v) => self.target_volume = v.clamp(0.0, 1.5),
         }
     }
 
@@ -149,7 +157,9 @@ impl Pipeline {
             bf.process_interleaved(out);
         }
 
-        // Linear gain ramp toward target, applied per frame.
+        // Linear ramps toward targets, applied per frame: the play/pause/mute
+        // gain and the user volume each move at full-scale-per-5-ms, then the
+        // frame is scaled by their product (no zipper noise on either knob).
         let step = 1.0 / GAIN_RAMP_FRAMES as f32;
         for fr in out.chunks_exact_mut(CHANNELS) {
             if self.gain < self.target_gain {
@@ -157,8 +167,14 @@ impl Pipeline {
             } else if self.gain > self.target_gain {
                 self.gain = (self.gain - step).max(self.target_gain);
             }
-            fr[0] *= self.gain;
-            fr[1] *= self.gain;
+            if self.volume < self.target_volume {
+                self.volume = (self.volume + step).min(self.target_volume);
+            } else if self.volume > self.target_volume {
+                self.volume = (self.volume - step).max(self.target_volume);
+            }
+            let scale = self.gain * self.volume;
+            fr[0] *= scale;
+            fr[1] *= scale;
         }
 
         // A completed ramp-down means pause — unless we're muted (position
@@ -317,6 +333,76 @@ mod tests {
             "after = {after}, expected ≈ {one_stem}"
         );
         assert!(after < before * 0.85, "before = {before}, after = {after}");
+    }
+
+    #[test]
+    fn volume_half_halves_output_rms() {
+        let run = |volume: Option<f32>| {
+            let mut p = Pipeline::new(sine_buf(4.0));
+            if let Some(v) = volume {
+                p.apply(EngineCmd::SetVolume(v));
+            }
+            p.apply(EngineCmd::Play);
+            let (out, _) = render_secs(&mut p, 1.0);
+            rms(&out[out.len() / 2..]) // steady state, past both ramps
+        };
+        let full = run(None);
+        let half = run(Some(0.5));
+        assert!(full > 0.2, "full = {full}");
+        assert!(
+            (half - full / 2.0).abs() / (full / 2.0) < 0.05,
+            "half = {half}, full = {full}"
+        );
+    }
+
+    #[test]
+    fn volume_clamps_to_one_point_five() {
+        let run = |v: f32| {
+            let mut p = Pipeline::new(sine_buf(4.0));
+            p.apply(EngineCmd::SetVolume(v));
+            p.apply(EngineCmd::Play);
+            let (out, _) = render_secs(&mut p, 1.0);
+            rms(&out[out.len() / 2..])
+        };
+        let max = run(1.5);
+        let over = run(9.0);
+        assert!(
+            (over - max).abs() / max < 0.01,
+            "over = {over}, max = {max}"
+        );
+    }
+
+    #[test]
+    fn mute_silences_regardless_of_volume() {
+        let mut p = Pipeline::new(sine_buf(10.0));
+        p.apply(EngineCmd::SetVolume(1.5));
+        p.apply(EngineCmd::SetLoopSecs {
+            start: 0.0,
+            end: 1.0,
+        });
+        p.apply(EngineCmd::Play);
+        p.apply(EngineCmd::Mute(true));
+        let (out, _) = render_secs(&mut p, 2.5);
+        let tail = &out[out.len() / 2..];
+        assert!(rms(tail) < 1e-4, "tail rms = {}", rms(tail));
+    }
+
+    #[test]
+    fn volume_does_not_change_loop_wrap_cadence() {
+        let mut p = Pipeline::new(sine_buf(10.0));
+        p.apply(EngineCmd::SetVolume(0.5));
+        p.apply(EngineCmd::SetLoopSecs {
+            start: 1.0,
+            end: 2.0,
+        }); // 1 s loop
+        p.apply(EngineCmd::Play);
+        let (_, events) = render_secs(&mut p, 3.5);
+        let wraps = events
+            .iter()
+            .filter(|e| **e == EngineEvent::LoopWrapped)
+            .count();
+        // 3.5 s of output at 1× covers ~3.5 loop periods (minus RB latency)
+        assert!((2..=4).contains(&wraps), "wraps = {wraps}");
     }
 
     #[test]
