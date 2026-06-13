@@ -238,6 +238,7 @@ fn separate_unavailable_errors_helpfully() {
             &self,
             _audio: &std::path::Path,
             _out_dir: &std::path::Path,
+            _force_cpu: bool,
         ) -> Result<Vec<PathBuf>, String> {
             Err("unreachable".into())
         }

@@ -951,7 +951,7 @@ impl App {
         let audio_path = PathBuf::from(&song.path);
         let song_id = p.song_id;
         std::thread::spawn(move || {
-            let result = separator.separate(&audio_path, &cache);
+            let result = separator.separate(&audio_path, &cache, false);
             separating.lock().unwrap().remove(&song_id.0);
             let data = match result {
                 Ok(_) => json!({"song_id": song_id, "state": "done"}),

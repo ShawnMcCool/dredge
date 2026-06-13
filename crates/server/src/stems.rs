@@ -10,7 +10,7 @@ pub const STEM_NAMES: [&str; 4] = ["vocals", "drums", "bass", "other"];
 pub trait StemSeparator: Send + Sync {
     /// Blocking; writes `<out_dir>/{vocals,drums,bass,other}.wav`, returns
     /// their paths in STEM_NAMES order.
-    fn separate(&self, audio: &Path, out_dir: &Path) -> Result<Vec<PathBuf>, String>;
+    fn separate(&self, audio: &Path, out_dir: &Path, force_cpu: bool) -> Result<Vec<PathBuf>, String>;
     fn is_available(&self) -> bool;
 }
 
@@ -42,14 +42,18 @@ impl DemucsSeparator {
 }
 
 impl StemSeparator for DemucsSeparator {
-    fn separate(&self, audio: &Path, out_dir: &Path) -> Result<Vec<PathBuf>, String> {
+    fn separate(&self, audio: &Path, out_dir: &Path, force_cpu: bool) -> Result<Vec<PathBuf>, String> {
         std::fs::create_dir_all(out_dir)
             .map_err(|e| format!("cannot create {}: {e}", out_dir.display()))?;
         let tmp = out_dir.join(".demucs-tmp");
         std::fs::create_dir_all(&tmp).map_err(|e| format!("cannot create tmp dir: {e}"))?;
 
-        let output = std::process::Command::new(&self.binary)
-            .args(Self::command_args(audio, &tmp))
+        let mut cmd = std::process::Command::new(&self.binary);
+        cmd.args(Self::command_args(audio, &tmp));
+        if force_cpu {
+            cmd.env("CUDA_VISIBLE_DEVICES", "");
+        }
+        let output = cmd
             .output()
             .map_err(|e| format!("failed to run {}: {e}", self.binary))?;
         let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
@@ -136,7 +140,7 @@ pub struct FakeSeparator;
 const FAKE_SCALES: [f32; 4] = [0.4, 0.3, 0.2, 0.1];
 
 impl StemSeparator for FakeSeparator {
-    fn separate(&self, audio: &Path, out_dir: &Path) -> Result<Vec<PathBuf>, String> {
+    fn separate(&self, audio: &Path, out_dir: &Path, _force_cpu: bool) -> Result<Vec<PathBuf>, String> {
         let buf = engine::decode::decode_file(audio).map_err(|e| e.to_string())?;
         std::fs::create_dir_all(out_dir).map_err(|e| e.to_string())?;
         let mut out = Vec::with_capacity(STEM_NAMES.len());
@@ -224,6 +228,27 @@ mod tests {
     }
 
     #[test]
+    fn separate_forwards_force_cpu_env() {
+        let dir = tempfile::tempdir().unwrap();
+        // stub `demucs` that fails unless CUDA_VISIBLE_DEVICES is empty,
+        // proving force_cpu reached the Command env.
+        let bin = dir.path().join("demucs");
+        std::fs::write(
+            &bin,
+            "#!/bin/sh\nif [ -z \"${CUDA_VISIBLE_DEVICES+x}\" ]; then exit 7; fi\nexit 9\n",
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let sep = DemucsSeparator { binary: bin.to_string_lossy().into_owned() };
+        let out = dir.path().join("out");
+        // force_cpu=true → env present → stub exits 9 (not 7); separate returns Err
+        // whose message contains the exit code, proving the env was set.
+        let err = sep.separate(Path::new("/tmp/a.mp3"), &out, true).unwrap_err();
+        assert!(err.contains("9"), "force_cpu must set the env: {err}");
+    }
+
+    #[test]
     fn fake_separator_writes_four_decodable_stems_with_4321_rms() {
         // 1 s of 440 Hz sine at 0.5 amplitude
         let samples: Vec<f32> = (0..48_000)
@@ -237,7 +262,7 @@ mod tests {
         engine::capture::write_wav(&src, &samples).unwrap();
 
         let out_dir = dir.path().join("stems");
-        let paths = FakeSeparator.separate(&src, &out_dir).unwrap();
+        let paths = FakeSeparator.separate(&src, &out_dir, false).unwrap();
         assert_eq!(paths.len(), 4);
 
         let rms = |data: &[f32]| -> f64 {
