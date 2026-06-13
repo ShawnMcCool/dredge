@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { prepareState, workSample, vram, profiles, type PrepareStepState } from "../lib/stores";
-  import { effortSummaries } from "../lib/livesummary";
+  import { prepareState, workSample, vram, type PrepareStepState } from "../lib/stores";
 
   const STEPS = [
     { key: "analysis", label: "analyzing structure", op: "analysis", model: "SongFormer" },
@@ -17,7 +16,6 @@
     return s < 60 ? `${s.toFixed(1)} s` : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
   }
 
-  let summaries = $derived(effortSummaries($profiles));
 </script>
 
 {#if $prepareState}
@@ -86,20 +84,6 @@
       </div>
     {/if}
   </section>
-{:else if summaries.length}
-  <section class="live idle">
-    {#each summaries as e (e.op)}
-      <div class="effort">
-        <div class="ehead mono">{e.op} · {fmt(e.total_ms)}{#if e.device} · {e.device}{/if}{#if e.engine} · {e.engine}{/if}</div>
-        {#if e.stages.length}
-          <div class="esub mono">{e.stages.map((st) => `${st.name} ${fmt(st.ms)}`).join(" · ")}</div>
-        {/if}
-        {#if e.maxLine}
-          <div class="esub mono">{e.maxLine}</div>
-        {/if}
-      </div>
-    {/each}
-  </section>
 {/if}
 
 <style>
@@ -131,10 +115,6 @@
   .vrow { display: flex; gap: 4px; align-items: stretch; }
   .vminmax { display: flex; flex-direction: column; justify-content: space-between; font-size: 9px; color: var(--muted); text-align: right; min-width: 2.2em; }
   .vmin { color: var(--muted); }
-  .effort { margin-bottom: 6px; }
-  .ehead { font-size: 11px; }
-  .esub { font-size: 10px; color: var(--muted); margin-left: 1em; }
-  .idle { color: var(--muted); }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
   @media (prefers-reduced-motion: reduce) { .glyph.running { animation: none; } }
 </style>

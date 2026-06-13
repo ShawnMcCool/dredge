@@ -140,7 +140,7 @@ export interface OpenSong {
 }
 
 /** Fixed stem order contract: vocals/drums/bass/other. */
-export const STEM_LABELS = ["VOC", "DRM", "BASS", "OTH"] as const;
+export const STEM_LABELS = ["VOCALS", "DRUMS", "BASS", "OTHER"] as const;
 export const BASS_STEM = 2;
 
 export interface StemMix {
@@ -276,6 +276,8 @@ export const panelsCollapsed = writable(false);
 export const settings = writable<Record<string, unknown>>({});
 /** Settings modal visibility (gear button or `,`). */
 export const settingsOpen = writable(false);
+/** Request: jump to the sections tab (e.g. from the structure summary). */
+export const sectionsOpen = writable(false);
 
 // --- prepare flow -----------------------------------------------------------
 

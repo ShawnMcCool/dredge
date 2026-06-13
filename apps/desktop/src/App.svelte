@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import Analysis from "./components/Analysis.svelte";
   import Capture from "./components/Capture.svelte";
   import DuePanel from "./components/DuePanel.svelte";
   import Guide from "./components/Guide.svelte";
@@ -7,7 +8,6 @@
   import Loops from "./components/Loops.svelte";
   import PlanBuilder from "./components/PlanBuilder.svelte";
   import PlanRunner from "./components/PlanRunner.svelte";
-  import LiveProgress from "./components/LiveProgress.svelte";
   import ProfilingPanel from "./components/ProfilingPanel.svelte";
   import Sections from "./components/Sections.svelte";
   import SettingsPanel from "./components/SettingsPanel.svelte";
@@ -25,6 +25,7 @@
     planStatus,
     quickPromptVisible,
     quickSavedName,
+    sectionsOpen,
     sessionSummary,
     settingsOpen,
   } from "./lib/stores";
@@ -58,6 +59,13 @@
     }
   });
 
+  $effect(() => {
+    if ($sectionsOpen) {
+      tab = "sections";
+      sectionsOpen.set(false);
+    }
+  });
+
   onMount(() => {
     // settings drive zoom (ui_scale) and session defaults — load first
     void actions.loadSettings().then(() => initZoom());
@@ -82,8 +90,10 @@
   <main class="stage">
     <Waveform />
     <Transport />
-    <StemMixer />
-    <LiveProgress />
+    <div class="results">
+      <StemMixer />
+      <Analysis />
+    </div>
   </main>
   <aside class="panels" class:collapsed={$panelsCollapsed}>
     {#if $panelsCollapsed}
@@ -219,6 +229,15 @@
     overflow-x: hidden;
     overflow-y: auto;
     padding: var(--space);
+  }
+
+  /* stems + structure boxes side by side, filling the stage width */
+  .results {
+    display: flex;
+    align-items: stretch;
+    gap: var(--space);
+    padding: var(--space) 0;
+    min-width: 0;
   }
 
   .panels {

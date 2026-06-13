@@ -1,89 +1,110 @@
 <script lang="ts">
-  // Stem mixer strip: four channels (vocals/drums/bass/other) with level,
-  // mute, solo — all changes collapse into one stems.gains call. When the
-  // song has no cached stems yet, a quiet pointer to PREPARE (the modal owns
-  // separation progress now).
+  // Stem mixer box: four channels (vocals/drums/bass/other) with level, mute,
+  // solo — all changes collapse into one stems.gains call. Sits beside the
+  // structure box; when there are no cached stems yet, points at analyze.
   import { actions, BASS_STEM, openSong, STEM_LABELS, stemMix, stemsError } from "../lib/stores";
   import Button from "../lib/ui/Button.svelte";
   import Fader from "../lib/ui/Fader.svelte";
-  import Toolbar from "../lib/ui/Toolbar.svelte";
 </script>
 
 {#if $openSong}
-  <div class="stems">
-    <Toolbar>
+  <section class="box">
+    <div class="head"><span class="lbl">stems</span></div>
+    <div class="body">
       {#if $openSong.stems}
-        {#each STEM_LABELS as label, i (label)}
-          <div class="channel" class:bass={i === BASS_STEM}>
-            <div class="fader">
-              <Fader
-                orientation="vertical"
-                value={$stemMix.levels[i] / 100}
-                min={0}
-                max={1}
-                step={0.01}
-                accent={i === BASS_STEM}
-                onchange={(v) => void actions.setStemLevel(i, Math.round(v * 100))}
-                format={(v) => `${label} ${Math.round(v * 100)}%`}
-              />
+        <div class="channels">
+          {#each STEM_LABELS as label, i (label)}
+            <div class="channel" class:bass={i === BASS_STEM}>
+              <div class="fader">
+                <Fader
+                  orientation="vertical"
+                  value={$stemMix.levels[i] / 100}
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  accent={i === BASS_STEM}
+                  onchange={(v) => void actions.setStemLevel(i, Math.round(v * 100))}
+                  format={(v) => `${label} ${Math.round(v * 100)}%`}
+                />
+              </div>
+              <span class="name mono">{label}</span>
+              <span class="toggles">
+                <Button
+                  variant="chip"
+                  active={$stemMix.mutes[i]}
+                  onclick={() => actions.toggleStemMute(i)}
+                  title="mute {label}"
+                >
+                  M
+                </Button>
+                <Button
+                  variant="chip"
+                  active={$stemMix.solos[i]}
+                  onclick={() => actions.toggleStemSolo(i)}
+                  title="solo {label}"
+                >
+                  S
+                </Button>
+              </span>
             </div>
-            <span class="name mono">{label}</span>
-            <span class="toggles">
-              <Button
-                variant="chip"
-                active={$stemMix.mutes[i]}
-                onclick={() => actions.toggleStemMute(i)}
-                title="mute {label}"
-              >
-                M
-              </Button>
-              <Button
-                variant="chip"
-                active={$stemMix.solos[i]}
-                onclick={() => actions.toggleStemSolo(i)}
-                title="solo {label}"
-              >
-                S
-              </Button>
-            </span>
-          </div>
-        {/each}
+          {/each}
+        </div>
       {:else}
-        <span class="status mono">no stems yet — ANALYZE TRACK (a)</span>
+        <p class="status mono">no stems yet — analyze the track</p>
       {/if}
       {#if $stemsError}
-        <span class="error">{$stemsError}</span>
+        <p class="error">{$stemsError}</p>
       {/if}
-    </Toolbar>
-  </div>
+    </div>
+  </section>
 {/if}
 
 <style>
-  .stems {
-    /* never flex-shrink below content height in the stage column — the
-       explicit min-height would otherwise let the mixer collapse to 32px */
+  .box {
     flex: 0 0 auto;
-    padding: var(--space) 0;
-    border-bottom: 1px solid var(--line);
-    min-height: 32px;
     min-width: 0;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: var(--bg-raised);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .head {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .lbl {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .body {
+    padding: 10px;
+  }
+
+  .channels {
+    display: flex;
+    gap: 18px;
   }
 
   .channel {
     display: flex;
     flex-direction: column;
     align-items: center;
-    flex: 0 0 auto;
     gap: 4px;
   }
 
   .fader {
-    height: 96px;
+    height: 92px;
   }
 
   .name {
     font-size: 10px;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.05em;
     color: var(--muted);
   }
 
@@ -103,7 +124,8 @@
 
   .error {
     font-size: 11px;
-    color: var(--accent);
+    color: var(--miss);
     max-width: 60ch;
+    margin: 6px 0 0;
   }
 </style>
