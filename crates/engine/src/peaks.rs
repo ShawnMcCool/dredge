@@ -26,6 +26,20 @@ pub fn compute_peaks(buf: &SongBuffer) -> Peaks {
     }
 }
 
+/// Delete the cached peaks for a song hash. A missing cache (or no cache dir)
+/// is a no-op — deletion cleanup must not fail on an absent file.
+pub fn remove_cache(file_hash: &str) -> std::io::Result<()> {
+    let Some(base) = dirs::cache_dir() else {
+        return Ok(());
+    };
+    let path = base.join("earworm/peaks").join(format!("{file_hash}.json"));
+    match std::fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
 /// Cache under ~/.cache/earworm/peaks/<file_hash>.json; load if present.
 pub fn load_or_compute(buf: &SongBuffer, file_hash: &str) -> std::io::Result<Peaks> {
     let dir = dirs::cache_dir()
@@ -78,5 +92,25 @@ mod tests {
         // cleanup
         let dir = dirs::cache_dir().unwrap().join("earworm/peaks");
         let _ = std::fs::remove_file(dir.join(format!("{hash}.json")));
+    }
+
+    #[test]
+    fn remove_cache_deletes_then_noops() {
+        let buf = SongBuffer {
+            data: vec![0.2f32; FRAMES_PER_BUCKET * CHANNELS],
+        };
+        let hash = format!("rm-{}", std::process::id());
+        load_or_compute(&buf, &hash).unwrap();
+        let path = dirs::cache_dir()
+            .unwrap()
+            .join("earworm/peaks")
+            .join(format!("{hash}.json"));
+        assert!(path.exists());
+
+        remove_cache(&hash).unwrap();
+        assert!(!path.exists());
+
+        // second remove on the missing file is a clean no-op
+        remove_cache(&hash).unwrap();
     }
 }
