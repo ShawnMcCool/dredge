@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { profiles, songs, type ProfileRun } from "../lib/stores";
+  import { profiles, songs } from "../lib/stores";
 
   function songTitle(id?: number): string {
     if (id == null) return "";
@@ -8,10 +8,6 @@
 
   function secs(ms: number): string {
     return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
-  }
-
-  function maxStage(run: ProfileRun): number {
-    return Math.max(1, ...run.stages.map((s) => s.ms));
   }
 </script>
 
@@ -35,9 +31,8 @@
         {#if run.stages.length}
           <div class="stages">
             {#each run.stages as st (st.name)}
-              <div class="stage" title={`${st.name}: ${secs(st.ms)}${st.note ? ` — ${st.note}` : ""}`}>
+              <div class="stage" title={st.note ?? ""}>
                 <span class="sname mono">{st.name}</span>
-                <span class="bar"><span class="fill" style="width: {(st.ms / maxStage(run)) * 100}%"></span></span>
                 <span class="sms mono">{secs(st.ms)}</span>
               </div>
             {/each}
@@ -60,9 +55,7 @@
   .badge.eng { color: var(--accent); }
   .badge.err { color: var(--miss); }
   .stages { margin-top: 4px; display: flex; flex-direction: column; gap: 2px; }
-  .stage { display: flex; align-items: center; gap: 6px; }
-  .sname { font-size: 10px; color: var(--muted); width: 7em; flex: 0 0 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .bar { flex: 1; height: 4px; background: var(--bg-raised); border-radius: 2px; overflow: hidden; }
-  .fill { display: block; height: 100%; background: var(--accent); }
+  .stage { display: flex; align-items: baseline; gap: 6px; }
+  .sname { font-size: 10px; color: var(--muted); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sms { font-size: 10px; color: var(--muted); width: 4em; text-align: right; flex: 0 0 auto; }
 </style>

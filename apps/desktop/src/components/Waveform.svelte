@@ -632,10 +632,11 @@
     cursor: crosshair;
   }
 
-  /* grid control overlay — top-right corner of the waveform */
+  /* grid control overlay — lower-right of the canvas, above the scrollbar
+     (kept clear of the section lane along the top) */
   .grid-ctl {
     position: absolute;
-    top: 4px;
+    bottom: 20px;
     right: 4px;
     display: flex;
     align-items: center;
