@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import Capture from "./components/Capture.svelte";
   import DuePanel from "./components/DuePanel.svelte";
+  import Guide from "./components/Guide.svelte";
   import Library from "./components/Library.svelte";
   import Loops from "./components/Loops.svelte";
   import PlanBuilder from "./components/PlanBuilder.svelte";
@@ -13,7 +14,7 @@
   import StemMixer from "./components/StemMixer.svelte";
   import Transport from "./components/Transport.svelte";
   import Waveform from "./components/Waveform.svelte";
-  import { installKeys, KEY_HELP } from "./lib/keys";
+  import { installKeys } from "./lib/keys";
   import { initZoom } from "./lib/zoom";
   import {
     actions,
@@ -28,7 +29,7 @@
     settingsOpen,
   } from "./lib/stores";
 
-  const TABS = ["sections", "loops", "plan", "capture", "due", "profile", "settings"] as const;
+  const TABS = ["sections", "loops", "plan", "capture", "due", "profile", "settings", "guide"] as const;
   // one-line purpose blurb shown under each tab — answers "what is this for?"
   const TAB_DESC: Record<(typeof TABS)[number], string> = {
     sections: "The song's structural map (verse/chorus). Drives the junction loops you practice.",
@@ -38,6 +39,7 @@
     due: "What's scheduled for practice right now — the spaced-repetition queue.",
     profile: "Timing breakdown of the last analysis & stem-separation runs.",
     settings: "App preferences — UI scale, grid snap, capture buffer, analysis device.",
+    guide: "Keyboard shortcuts and what the concepts mean.",
   };
   // due panel greets you on app start — the schedule is the product
   let tab = $state<(typeof TABS)[number]>("due");
@@ -82,7 +84,6 @@
     <Transport />
     <StemMixer />
     <LiveProgress />
-    <footer class="help mono">{KEY_HELP}</footer>
   </main>
   <aside class="panels" class:collapsed={$panelsCollapsed}>
     {#if $panelsCollapsed}
@@ -112,8 +113,10 @@
             <DuePanel />
           {:else if tab === "profile"}
             <ProfilingPanel />
-          {:else}
+          {:else if tab === "settings"}
             <SettingsPanel />
+          {:else}
+            <Guide />
           {/if}
         </div>
       {/key}
@@ -227,13 +230,6 @@
     overflow-y: auto;
   }
 
-  .help {
-    margin-top: auto;
-    padding-top: var(--space);
-    font-size: 11px;
-    color: var(--muted);
-    overflow-wrap: anywhere;
-  }
 
   .tabs {
     display: flex;
