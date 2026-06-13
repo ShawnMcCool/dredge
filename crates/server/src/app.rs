@@ -1021,10 +1021,17 @@ impl App {
             reporter.begin("stems", "separating stems");
             let mut timer = crate::profile::Timer::new("stems", Some(song_id));
             let result = timer.stage("demucs", || separator.separate(&audio_path, &cache, force_cpu));
+            let m = reporter.maxes();
             reporter.end();
             separating.lock().unwrap().remove(&song_id.0);
             let err = result.as_ref().err().cloned();
-            let run = timer.finish(result.is_ok(), err.clone(), Some(device), None);
+            let mut run = timer.finish(result.is_ok(), err.clone(), Some(device), None);
+            if let Some((cpu, gpu, vram_used, vram_total)) = m {
+                run.max_cpu_pct = Some(cpu);
+                run.max_gpu_util = gpu;
+                run.max_vram_used_mb = vram_used;
+                run.vram_total_mb = vram_total;
+            }
             let data = match result {
                 Ok(_) => json!({"song_id": song_id, "state": "done"}),
                 Err(e) => json!({"song_id": song_id, "state": "failed", "error": e}),
@@ -1119,10 +1126,17 @@ impl App {
                 &mut timer,
                 &reporter,
             );
+            let m = reporter.maxes();
             reporter.end();
             let engine = result.as_ref().ok().map(|a| a.engine.clone());
             let err = result.as_ref().err().cloned();
-            let run = timer.finish(result.is_ok(), err, device, engine);
+            let mut run = timer.finish(result.is_ok(), err, device, engine);
+            if let Some((cpu, gpu, vram_used, vram_total)) = m {
+                run.max_cpu_pct = Some(cpu);
+                run.max_gpu_util = gpu;
+                run.max_vram_used_mb = vram_used;
+                run.vram_total_mb = vram_total;
+            }
             let _ = tx.send((song_id, result));
             let _ = profile_tx.send(run);
         });

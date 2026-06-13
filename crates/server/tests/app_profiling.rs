@@ -122,3 +122,14 @@ fn analysis_with_reporter_still_completes_and_profiles() {
     assert_eq!(data["op"], "analysis");
     assert_eq!(data["engine"], "songformer");
 }
+
+#[test]
+fn analysis_profile_includes_max_metrics() {
+    let mut ctx = setup(Arc::new(DeviceAwareAnalyzer));
+    req(&mut ctx.app, "settings.set", json!({"key":"analysis_device","value":"cpu"}));
+    req(&mut ctx.app, "analysis.run", json!({"song_id": ctx.song_id, "force": true}));
+    let data = wait_for_event(&mut ctx.app, "profile_run");
+    // sampler isn't spawned in tests, so observe() never runs → max_cpu_pct is 0,
+    // but it must be present (the worker stamped the maxima onto the profile).
+    assert!(data["max_cpu_pct"].is_number(), "max_cpu_pct present: {data}");
+}

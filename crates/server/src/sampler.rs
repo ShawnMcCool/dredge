@@ -102,6 +102,7 @@ impl WorkReporter {
     }
 
     /// Read the run's maxima (cpu, gpu_util, vram_used, vram_total), or None if idle.
+    #[allow(clippy::type_complexity)]
     pub fn maxes(&self) -> Option<(u32, Option<u32>, Option<u32>, Option<u32>)> {
         self.state
             .lock()
