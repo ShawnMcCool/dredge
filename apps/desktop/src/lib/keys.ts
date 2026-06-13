@@ -48,6 +48,12 @@ async function handle(e: KeyboardEvent): Promise<void> {
     } else if (e.key === "0") {
       e.preventDefault();
       await zoomReset();
+    } else if (e.key === "[" && !isTyping(e.target)) {
+      e.preventDefault();
+      await actions.toggleLibrary();
+    } else if (e.key === "]" && !isTyping(e.target)) {
+      e.preventDefault();
+      await actions.togglePanels();
     }
     return;
   }

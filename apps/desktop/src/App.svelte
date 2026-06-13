@@ -18,6 +18,8 @@
   import {
     actions,
     initEvents,
+    libraryCollapsed,
+    panelsCollapsed,
     pendingRatings,
     planStatus,
     quickPromptVisible,
@@ -66,9 +68,14 @@
   });
 </script>
 
-<div class="shell">
-  <aside class="library">
-    <Library />
+<div class="shell" class:lib-collapsed={$libraryCollapsed} class:panels-collapsed={$panelsCollapsed}>
+  <aside class="library" class:collapsed={$libraryCollapsed}>
+    {#if $libraryCollapsed}
+      <button class="rail" onclick={() => actions.toggleLibrary()} title="show library (Ctrl+[)" aria-label="show library">›</button>
+    {:else}
+      <button class="edge left" onclick={() => actions.toggleLibrary()} title="hide library (Ctrl+[)" aria-label="hide library">‹</button>
+      <Library />
+    {/if}
   </aside>
   <main class="stage">
     <Waveform />
@@ -77,9 +84,13 @@
     <LiveProgress />
     <footer class="help mono">{KEY_HELP}</footer>
   </main>
-  <aside class="panels">
-    {#if running}
-      <PlanRunner />
+  <aside class="panels" class:collapsed={$panelsCollapsed}>
+    {#if $panelsCollapsed}
+      <button class="rail" onclick={() => actions.togglePanels()} title="show panels (Ctrl+])" aria-label="show panels">‹</button>
+    {:else}
+      <button class="edge right" onclick={() => actions.togglePanels()} title="hide panels (Ctrl+])" aria-label="hide panels">›</button>
+      {#if running}
+        <PlanRunner />
     {:else}
       <nav class="tabs">
         {#each TABS as t (t)}
@@ -106,14 +117,21 @@
           {/if}
         </div>
       {/key}
+      {/if}
     {/if}
   </aside>
 </div>
 
 <style>
   .shell {
+    /* per-column widths as custom props so collapse + the responsive media
+       query can each set them without fighting over one shorthand */
+    --col-lib: minmax(170px, 240px);
+    --col-center: minmax(320px, 1fr);
+    --col-panels: minmax(250px, 340px);
+    --rail-w: 22px;
     display: grid;
-    grid-template-columns: minmax(170px, 240px) minmax(320px, 1fr) minmax(250px, 340px);
+    grid-template-columns: var(--col-lib) var(--col-center) var(--col-panels);
     height: 100vh;
   }
 
@@ -121,15 +139,74 @@
      columns further instead of pushing the right rail off-screen */
   @media (max-width: 745px) {
     .shell {
-      grid-template-columns: minmax(110px, 240px) minmax(220px, 1fr) minmax(130px, 340px);
+      --col-lib: minmax(110px, 240px);
+      --col-center: minmax(220px, 1fr);
+      --col-panels: minmax(130px, 340px);
     }
   }
 
+  /* collapsed side columns become thin rails (two-class specificity beats the
+     media query's single-class rule, so collapse holds at every width) */
+  .shell.lib-collapsed {
+    --col-lib: var(--rail-w);
+  }
+  .shell.panels-collapsed {
+    --col-panels: var(--rail-w);
+  }
+
   .library {
+    position: relative;
     border-right: 1px solid var(--line);
     padding: var(--space);
     min-width: 0;
     overflow-y: auto;
+  }
+
+  .library.collapsed,
+  .panels.collapsed {
+    padding: 0;
+    overflow: hidden;
+  }
+
+  /* thin expand rail shown when a side column is collapsed */
+  .rail {
+    width: 100%;
+    height: 100%;
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 14px;
+  }
+  .rail:hover {
+    background: var(--bg-raised);
+    color: var(--fg);
+  }
+
+  /* small collapse handle pinned to a column's inner edge */
+  .edge {
+    position: absolute;
+    top: 4px;
+    z-index: 2;
+    width: 18px;
+    height: 22px;
+    padding: 0;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    color: var(--muted);
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .edge:hover {
+    color: var(--fg);
+    border-color: var(--muted);
+  }
+  .edge.left {
+    right: 4px;
+  }
+  .edge.right {
+    left: 4px;
   }
 
   .stage {
@@ -142,6 +219,7 @@
   }
 
   .panels {
+    position: relative;
     border-left: 1px solid var(--line);
     padding: var(--space);
     min-width: 0;

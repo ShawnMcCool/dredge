@@ -264,6 +264,12 @@ export const GRID_SNAP_DEFAULT = "grid_snap_default";
 export const CAPTURE_BUFFER_SECS = "capture_buffer_secs";
 export const PLAYBACK_VOLUME = "playback_volume";
 export const ANALYSIS_DEVICE = "analysis_device";
+export const LIBRARY_COLLAPSED = "library_collapsed";
+export const PANELS_COLLAPSED = "panels_collapsed";
+
+/** Side-column collapse state — persisted to settings, restored at launch. */
+export const libraryCollapsed = writable(false);
+export const panelsCollapsed = writable(false);
 
 /** Local mirror of the settings table; `loadSettings` fills it at launch and
  *  `setSetting` writes through. */
@@ -342,6 +348,8 @@ export const actions = {
     const all = await cmd<Record<string, unknown>>("settings.get_all");
     settings.set(all);
     if (typeof all[GRID_SNAP_DEFAULT] === "boolean") gridSnap.set(all[GRID_SNAP_DEFAULT]);
+    if (typeof all[LIBRARY_COLLAPSED] === "boolean") libraryCollapsed.set(all[LIBRARY_COLLAPSED]);
+    if (typeof all[PANELS_COLLAPSED] === "boolean") panelsCollapsed.set(all[PANELS_COLLAPSED]);
     const vol = typeof all[PLAYBACK_VOLUME] === "number" ? all[PLAYBACK_VOLUME] : 1.0;
     playbackVolume.set(vol);
     await cmd("volume", { value: vol });
@@ -377,6 +385,18 @@ export const actions = {
   async setSetting(key: string, value: unknown): Promise<void> {
     settings.update((s) => ({ ...s, [key]: value }));
     await cmd("settings.set", { key, value });
+  },
+
+  async toggleLibrary(): Promise<void> {
+    const v = !get(libraryCollapsed);
+    libraryCollapsed.set(v);
+    await this.setSetting(LIBRARY_COLLAPSED, v);
+  },
+
+  async togglePanels(): Promise<void> {
+    const v = !get(panelsCollapsed);
+    panelsCollapsed.set(v);
+    await this.setSetting(PANELS_COLLAPSED, v);
   },
 
   async refreshSongs(): Promise<void> {
