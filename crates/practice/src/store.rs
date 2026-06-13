@@ -231,6 +231,20 @@ impl Store {
         Ok(())
     }
 
+    pub fn update_song(&self, id: SongId, title: &str, artist: Option<&str>) -> Result<Song> {
+        self.conn.execute(
+            "UPDATE songs SET title = ?1, artist = ?2 WHERE id = ?3",
+            params![title, artist, id.0],
+        )?;
+        let song = self.conn.query_row(
+            "SELECT id, title, artist, path, file_hash, duration_secs
+             FROM songs WHERE id = ?1",
+            params![id.0],
+            Self::song_from_row,
+        )?;
+        Ok(song)
+    }
+
     /// Replace all sections for a song atomically (UI saves whole lane).
     pub fn replace_sections(
         &mut self,

@@ -308,6 +308,23 @@ fn deleting_song_cascades() {
 }
 
 #[test]
+fn update_song_changes_title_and_artist() {
+    let (store, song) = store_with_song();
+    let updated = store
+        .update_song(song.id, "New Title", Some("New Band"))
+        .unwrap();
+    assert_eq!(updated.title, "New Title");
+    assert_eq!(updated.artist.as_deref(), Some("New Band"));
+    // path and hash are untouched
+    assert_eq!(updated.path, song.path);
+    assert_eq!(updated.file_hash, song.file_hash);
+    // persisted: a fresh list reflects the change
+    let listed = store.list_songs().unwrap();
+    assert_eq!(listed[0].title, "New Title");
+    assert_eq!(listed[0].artist.as_deref(), Some("New Band"));
+}
+
+#[test]
 fn settings_roundtrip_arbitrary_json() {
     let store = Store::open_in_memory().unwrap();
     assert!(store.get_setting("ui_scale").unwrap().is_none());
