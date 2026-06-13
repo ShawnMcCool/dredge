@@ -18,7 +18,6 @@
     cached: "✓",
     failed: "✗",
   };
-  const terminal = (s: PrepareStepState) => s !== "pending" && s !== "running";
 
   function fmt(ms: number): string {
     if (ms < 1000) return `${ms} ms`;
