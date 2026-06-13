@@ -124,6 +124,8 @@ export interface WorkSample {
   gpu_util?: number;
   gpu_mem_used_mb?: number;
   gpu_mem_total_mb?: number;
+  ram_used_mb?: number;
+  ram_total_mb?: number;
 }
 
 export interface OpenSong {

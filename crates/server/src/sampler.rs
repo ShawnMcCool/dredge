@@ -40,6 +40,10 @@ pub struct WorkSample {
     pub gpu_mem_used_mb: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gpu_mem_total_mb: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ram_used_mb: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ram_total_mb: Option<u32>,
 }
 
 /// What a heavy run is currently doing. Not serialized — internal only.
@@ -159,6 +163,27 @@ fn analysis_cpu_ticks() -> u64 {
     total
 }
 
+/// Parse /proc/meminfo for (used_mb, total_mb). used = MemTotal - MemAvailable.
+pub fn parse_meminfo(text: &str) -> Option<(u32, u32)> {
+    let mut total_kb: Option<u64> = None;
+    let mut avail_kb: Option<u64> = None;
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("MemTotal:") {
+            total_kb = rest.split_whitespace().next().and_then(|n| n.parse().ok());
+        } else if let Some(rest) = line.strip_prefix("MemAvailable:") {
+            avail_kb = rest.split_whitespace().next().and_then(|n| n.parse().ok());
+        }
+    }
+    let total = total_kb?;
+    let avail = avail_kb?;
+    Some(((total.saturating_sub(avail) / 1024) as u32, (total / 1024) as u32))
+}
+
+/// Best-effort system RAM snapshot (used_mb, total_mb). None on failure.
+fn ram_snapshot() -> Option<(u32, u32)> {
+    parse_meminfo(&std::fs::read_to_string("/proc/meminfo").ok()?)
+}
+
 /// Best-effort GPU snapshot via `nvidia-smi`. None on any failure.
 fn gpu_snapshot() -> Option<(u32, u32, u32)> {
     let out = std::process::Command::new("nvidia-smi")
@@ -209,6 +234,7 @@ pub fn run(state: SharedWork, tx: Sender<WorkSample>, shutdown: Arc<AtomicBool>)
             None
         };
         reporter.observe(cpu, gpu);
+        let ram = ram_snapshot();
         let _ = tx.send(WorkSample {
             op,
             stage,
@@ -217,6 +243,8 @@ pub fn run(state: SharedWork, tx: Sender<WorkSample>, shutdown: Arc<AtomicBool>)
             gpu_util: gpu.map(|g| g.0),
             gpu_mem_used_mb: gpu.map(|g| g.1),
             gpu_mem_total_mb: gpu.map(|g| g.2),
+            ram_used_mb: ram.map(|r| r.0),
+            ram_total_mb: ram.map(|r| r.1),
         });
     }
 }
@@ -266,6 +294,15 @@ mod tests {
         assert_eq!(r.maxes(), Some((120, Some(50), Some(6000), Some(16000))));
         r.end();
         assert_eq!(r.maxes(), None);
+    }
+
+    #[test]
+    fn parse_meminfo_reads_used_and_total() {
+        let text = "MemTotal:       32000000 kB\nMemFree:         1000000 kB\nMemAvailable:    8000000 kB\nBuffers:          200000 kB\n";
+        // used = (total - available)/1024 MB = (32000000-8000000)/1024 = 23437; total = 32000000/1024 = 31250
+        assert_eq!(parse_meminfo(text), Some((23437, 31250)));
+        assert_eq!(parse_meminfo("garbage"), None);
+        assert_eq!(parse_meminfo("MemTotal: 100 kB"), None); // no MemAvailable
     }
 
     #[test]
