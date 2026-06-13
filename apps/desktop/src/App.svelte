@@ -27,6 +27,16 @@
   } from "./lib/stores";
 
   const TABS = ["sections", "loops", "plan", "capture", "due", "profile", "settings"] as const;
+  // one-line purpose blurb shown under each tab — answers "what is this for?"
+  const TAB_DESC: Record<(typeof TABS)[number], string> = {
+    sections: "The song's structural map (verse/chorus). Drives the junction loops you practice.",
+    loops: "Your saved practice loops, plus auto-derived junctions at section boundaries.",
+    plan: "Assemble an evidence-based practice plan from loops and steps.",
+    capture: "Record audio from a system source straight into the library.",
+    due: "What's scheduled for practice right now — the spaced-repetition queue.",
+    profile: "Timing breakdown of the last analysis & stem-separation runs.",
+    settings: "App preferences — UI scale, grid snap, capture buffer, analysis device.",
+  };
   // due panel greets you on app start — the schedule is the product
   let tab = $state<(typeof TABS)[number]>("due");
   let running = $derived(
@@ -76,6 +86,7 @@
           <button class="tab" class:active={tab === t} onclick={() => (tab = t)}>{t}</button>
         {/each}
       </nav>
+      <p class="tab-desc">{TAB_DESC[tab]}</p>
       {#key tab}
         <div class="fade-in">
           {#if tab === "sections"}
@@ -168,6 +179,13 @@
 
   .tab.active {
     color: var(--accent);
+  }
+
+  .tab-desc {
+    margin: 0 0 var(--space);
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--muted);
   }
 
 </style>

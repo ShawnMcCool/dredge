@@ -31,10 +31,18 @@
       lastSongId = null;
       return;
     }
-    if (open.song.id !== lastSongId || !dirty) {
+    const switching = open.song.id !== lastSongId;
+    if (switching || !dirty) {
       lastSongId = open.song.id;
-      rows = open.sections.map((s) => ({ name: s.name, start: s.start, end: s.end }));
-      if (open.song.id !== lastSongId) dirty = false;
+      if (open.sections.length > 0) {
+        rows = open.sections.map((s) => ({ name: s.name, start: s.start, end: s.end }));
+        if (switching) dirty = false;
+      } else {
+        // no saved sections yet — seed the editor from cached analysis so the
+        // structure is editable without re-running the model (provisional rows)
+        rows = (open.analysis?.sections ?? []).map(toRow);
+        dirty = rows.length > 0;
+      }
     }
   });
 
@@ -57,8 +65,7 @@
     };
   }
 
-  let hasSaved = $derived(rows.some((r) => !r.suggested));
-  let hasSuggested = $derived(rows.some((r) => r.suggested));
+  let hasAnalysis = $derived(($openSong?.analysis?.sections?.length ?? 0) > 0);
 
   let engineLabel = $derived.by(() => {
     const e = $openSong?.analysis?.engine;
@@ -68,8 +75,10 @@
     return e;
   });
 
-  function replaceWithSuggestions() {
-    rows = rows.filter((r) => r.suggested);
+  // revert the editor to the cached analysis — no model rerun needed, the
+  // SongFormer result lives in the DB. Replaces the current (unsaved) edits.
+  function revertToAnalysis() {
+    rows = ($openSong?.analysis?.sections ?? []).map(toRow);
     touch();
   }
 
@@ -152,8 +161,10 @@
   </ul>
   <div class="bar">
     <Button onclick={add}>+ add</Button>
-    {#if hasSaved && hasSuggested}
-      <Button onclick={replaceWithSuggestions}>replace with suggestions</Button>
+    {#if hasAnalysis}
+      <Button onclick={revertToAnalysis} title="discard edits, reload the analyzed structure">
+        revert to analysis
+      </Button>
     {/if}
     <Button onclick={() => (confirmReanalyze = true)}>re-analyze</Button>
     <Button accent disabled={!dirty} onclick={save}>save</Button>
