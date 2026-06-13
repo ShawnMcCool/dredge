@@ -267,6 +267,11 @@ impl Store {
     }
 
     pub fn delete_song(&self, id: SongId) -> Result<()> {
+        // profiles.song_id has no FK (it's nullable — some runs aren't
+        // song-scoped), so cascade won't reach it; clear this song's rows
+        // explicitly. Everything else cascades via ON DELETE CASCADE.
+        self.conn
+            .execute("DELETE FROM profiles WHERE song_id = ?1", params![id.0])?;
         self.conn
             .execute("DELETE FROM songs WHERE id = ?1", params![id.0])?;
         Ok(())
@@ -685,5 +690,64 @@ mod tests {
             store.save_profile(&r).unwrap();
         }
         assert_eq!(store.list_profiles(1000).unwrap().len(), 200);
+    }
+
+    #[test]
+    fn delete_song_clears_its_profiles_only() {
+        let store = Store::open_in_memory().unwrap();
+        let a = store
+            .insert_song(NewSong {
+                title: "A",
+                artist: None,
+                path: "/a",
+                file_hash: "ha",
+                duration_secs: 1.0,
+            })
+            .unwrap();
+        let b = store
+            .insert_song(NewSong {
+                title: "B",
+                artist: None,
+                path: "/b",
+                file_hash: "hb",
+                duration_secs: 1.0,
+            })
+            .unwrap();
+
+        let mk = |sid: Option<SongId>| crate::model::ProfileRun {
+            op: "analysis".into(),
+            song_id: sid,
+            started_at: String::new(),
+            total_ms: 1,
+            ok: true,
+            error: None,
+            device: None,
+            engine: None,
+            max_cpu_pct: None,
+            max_gpu_util: None,
+            max_vram_used_mb: None,
+            vram_total_mb: None,
+            stages: vec![],
+        };
+        store.save_profile(&mk(Some(a.id))).unwrap();
+        store.save_profile(&mk(Some(b.id))).unwrap();
+        store.save_profile(&mk(None)).unwrap(); // not song-scoped
+
+        store.delete_song(a.id).unwrap();
+
+        let left = store.list_profiles(100).unwrap();
+        assert!(
+            !left.iter().any(|p| p.song_id.map(|s| s.0) == Some(a.id.0)),
+            "deleted song's profiles are cleared"
+        );
+        assert!(
+            left.iter().any(|p| p.song_id.map(|s| s.0) == Some(b.id.0)),
+            "another song's profiles are kept"
+        );
+        assert!(
+            left.iter().any(|p| p.song_id.is_none()),
+            "non-song-scoped profiles are kept"
+        );
+        assert!(store.song_by_id(b.id).unwrap().is_some(), "other song untouched");
     }
 }
