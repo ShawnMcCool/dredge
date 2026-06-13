@@ -7,7 +7,7 @@
   import Loops from "./components/Loops.svelte";
   import PlanBuilder from "./components/PlanBuilder.svelte";
   import PlanRunner from "./components/PlanRunner.svelte";
-  import PrepareModal from "./components/PrepareModal.svelte";
+  import LiveProgress from "./components/LiveProgress.svelte";
   import ProfilingPanel from "./components/ProfilingPanel.svelte";
   import Sections from "./components/Sections.svelte";
   import SettingsModal from "./components/SettingsModal.svelte";
@@ -59,6 +59,7 @@
     <Waveform />
     <Transport />
     <StemMixer />
+    <LiveProgress />
     <footer class="help mono">{KEY_HELP}</footer>
   </main>
   <aside class="panels">
@@ -97,7 +98,6 @@
 </div>
 
 <!-- portal-at-root: the overlays cover all three columns -->
-<PrepareModal />
 <ExitModal />
 <SettingsModal />
 
