@@ -352,7 +352,14 @@ impl Store {
         self.conn.execute(
             "INSERT INTO loops (song_id, name, name_override, start_secs, end_secs, kind_json)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![song_id.0, l.name, l.name_override, l.start, l.end, kind_json],
+            params![
+                song_id.0,
+                l.name,
+                l.name_override,
+                l.start,
+                l.end,
+                kind_json
+            ],
         )?;
         Ok(LoopRegion {
             id: LoopId(self.conn.last_insert_rowid()),

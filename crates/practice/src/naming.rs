@@ -27,7 +27,7 @@ fn occurrence_label(section: &Section, sections: &[Section]) -> String {
 
 /// Sections the loop `[start, end]` overlaps, in `position` order. A section
 /// barely touched at a shared boundary (within EPS) does not count.
-fn overlapping<'a>(start: f64, end: f64, sections: &'a [Section]) -> Vec<&'a Section> {
+fn overlapping(start: f64, end: f64, sections: &[Section]) -> Vec<&Section> {
     let mut ordered: Vec<&Section> = sections
         .iter()
         .filter(|s| s.start < end - EPS && s.end > start + EPS)
@@ -147,12 +147,18 @@ mod tests {
     #[test]
     fn partial_end_section_is_sub() {
         // starts at verse2.start, ends inside chorus
-        assert_eq!(loop_name(30.0, 60.0, &song(), &[]), "verse 2 → sub chorus 1");
+        assert_eq!(
+            loop_name(30.0, 60.0, &song(), &[]),
+            "verse 2 → sub chorus 1"
+        );
     }
 
     #[test]
     fn partial_start_section_is_sub() {
-        assert_eq!(loop_name(40.0, 70.0, &song(), &[]), "sub verse 2 → chorus 1");
+        assert_eq!(
+            loop_name(40.0, 70.0, &song(), &[]),
+            "sub verse 2 → chorus 1"
+        );
     }
 
     #[test]

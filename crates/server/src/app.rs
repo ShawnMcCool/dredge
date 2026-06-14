@@ -1583,7 +1583,9 @@ impl App {
             .filter(|l| Some(l.id) != exclude)
             .map(|l| l.name)
             .collect();
-        Ok(practice::naming::loop_name(start, end, &sections, &existing))
+        Ok(practice::naming::loop_name(
+            start, end, &sections, &existing,
+        ))
     }
 
     /// Recompute the dynamic name of every non-overridden manual loop on the
