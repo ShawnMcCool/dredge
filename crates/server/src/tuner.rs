@@ -98,6 +98,14 @@ impl TunerControl for RealTuner {
     }
 }
 
+impl Drop for RealTuner {
+    /// Clean up the sampler thread + capture on shutdown, mirroring
+    /// `CaptureSession`'s drop discipline.
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
 /// Sampler loop: snapshot the ring, downmix+detect, smooth, send. Sends a
 /// zero-confidence reading when no pitch is found so the UI shows "listening".
 fn tuner_loop(ring: Arc<Mutex<RollingRing>>, tx: Sender<TunerReading>, stop: Arc<AtomicBool>) {
