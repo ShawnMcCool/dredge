@@ -11,6 +11,7 @@ pub mod looper;
 pub mod output;
 pub mod peaks;
 pub mod pipeline;
+pub mod pitch;
 pub mod ring;
 pub mod stretch;
 
