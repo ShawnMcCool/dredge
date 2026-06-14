@@ -10,3 +10,4 @@ pub mod protocol;
 mod sampler;
 pub mod socket;
 pub mod stems;
+pub mod tuner;
