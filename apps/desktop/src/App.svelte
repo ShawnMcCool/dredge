@@ -39,17 +39,6 @@
   type Tab = (typeof ALL_TABS)[number];
   // the practice-routine tabs — concealed unless "practice tools" is on in settings
   const PRACTICE_TABS: Tab[] = ["plan", "due"];
-  // one-line purpose blurb shown under each tab — answers "what is this for?"
-  const TAB_DESC: Record<Tab, string> = {
-    sections: "The song's structural map (verse/chorus). Drives the transition loops you practice.",
-    loops: "Your saved practice loops, plus auto-derived transitions at section boundaries.",
-    plan: "Assemble an evidence-based practice plan from loops and steps.",
-    capture: "Record audio from a system source straight into the library.",
-    due: "How recent retests of this song's loops landed — the spaced-practice log.",
-    profile: "Timing breakdown of the last analysis & stem-separation runs.",
-    settings: "App preferences — UI scale, grid snap, capture buffer, analysis device.",
-    guide: "Keyboard shortcuts and what the concepts mean.",
-  };
   // practice tools are off by default; the routine tabs only appear once enabled
   let practiceOn = $derived($settings[PRACTICE_TOOLS] === true);
   let tabs = $derived(ALL_TABS.filter((t) => practiceOn || !PRACTICE_TABS.includes(t)));
@@ -139,7 +128,6 @@
           <button class="tab" class:active={tab === t} onclick={() => (tab = t)}>{t}</button>
         {/each}
       </nav>
-      <p class="tab-desc">{TAB_DESC[tab]}</p>
       {#key tab}
         <div class="fade-in">
           {#if tab === "sections"}
@@ -211,6 +199,9 @@
   .panels.collapsed {
     padding: 0;
     overflow: visible;
+    /* the divider belongs to the open pane — once collapsed there's nothing to
+       separate, so drop it rather than leave a free-floating vertical line */
+    border: none;
   }
 
   /* thin expand rail shown when a side column is collapsed. Absolutely placed so
@@ -227,6 +218,9 @@
     color: var(--muted);
     cursor: pointer;
     font-size: 14px;
+    /* expand chevron stays hidden until the cursor is over the collapsed rail */
+    opacity: 0;
+    transition: opacity 120ms ease;
   }
   .library.collapsed .rail {
     left: -6px;
@@ -239,6 +233,7 @@
   .rail:hover {
     background: var(--bg-raised);
     color: var(--fg);
+    opacity: 1;
   }
 
   /* Collapse handle tucked into the window's top outer corner. It BLEEDS 6px
@@ -258,10 +253,15 @@
     color: var(--muted);
     font-size: 11px;
     cursor: pointer;
+    /* collapse chevron stays hidden until the cursor nears the corner (its hit
+       area is unchanged, so the corner-slam still collapses) */
+    opacity: 0;
+    transition: opacity 120ms ease;
   }
   .edge:hover {
     color: var(--fg);
     border-color: var(--muted);
+    opacity: 1;
   }
   /* square the off-screen (outer) corner; pad the chevron into the on-screen part */
   .edge.left {
@@ -331,11 +331,5 @@
     color: var(--accent);
   }
 
-  .tab-desc {
-    margin: 0 0 var(--space);
-    font-size: 11px;
-    line-height: 1.4;
-    color: var(--muted);
-  }
 
 </style>

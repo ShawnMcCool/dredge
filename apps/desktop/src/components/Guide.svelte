@@ -74,8 +74,8 @@
       "Drag a selection, then ⟳ loops it instantly (transient — nothing saved) and 🖫 saves it to the Loops tab without changing playback. Saved loops are named automatically from the sections they cover (“verse 2”, “verse 2 → chorus 1”); double-click a name to pin your own, and “fit” snaps a loop's edges to the nearest section boundaries.",
     ],
     [
-      "sections & transitions",
-      "Sections are the song's structure (verse / chorus). Transition loops are auto-derived at section boundaries so you can drill the changes between them.",
+      "sections",
+      "Sections are the song's structure (verse / chorus / inst). Click a section header to play from there; double-click to loop it. Saved loops are named from the sections they cover.",
     ],
     [
       "ratings",

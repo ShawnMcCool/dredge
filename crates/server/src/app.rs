@@ -6,8 +6,8 @@ use crate::sampler::{SharedWork, WorkReporter, WorkSample};
 use crate::stems::{StemSeparator, STEM_NAMES};
 use engine::pipeline::{EngineCmd, EngineEvent};
 use practice::model::{
-    Analysis, LoopId, LoopKind, LoopRegion, Plan, PlanId, PlanStep, ProfileRun, Rating, Song,
-    SongId, TempoCurve,
+    Analysis, AnalysisSection, LoopId, LoopKind, LoopRegion, Plan, PlanId, PlanStep, ProfileRun,
+    Rating, Section, SectionId, Song, SongId, TempoCurve,
 };
 use practice::runner::{PlanRunner, RepMode, RepSpec};
 use practice::schedule::Resurfacing;
@@ -373,7 +373,6 @@ impl App {
             "loop.delete" => self.loop_delete(p),
             "loop.fit" => self.loop_fit(p),
             "loop.list" => self.loop_list(p),
-            "junctions.derive" => self.junctions_derive(p),
             "plan.save" => self.plan_save(p),
             "plan.list" => self.plan_list(p),
             "play" => self.send_ok(EngineCmd::Play),
@@ -848,12 +847,26 @@ impl App {
         // finished analyses: persist here (the store is not Sync) and report
         while let Ok((song_id, result)) = self.analysis_rx.try_recv() {
             self.analyzing.remove(&song_id.0);
-            let data = match result.and_then(|a| {
-                self.store
-                    .save_analysis(song_id, &a)
-                    .map_err(|e| e.to_string())
-            }) {
-                Ok(()) => json!({"song_id": song_id, "state": "done"}),
+            let data = match result {
+                Ok(a) => match self.store.save_analysis(song_id, &a) {
+                    Ok(()) => {
+                        // commit the model's section layout as real sections so
+                        // structure + loop names are correct with no manual save.
+                        // `sections` rides the event so clients refresh without a
+                        // round-trip.
+                        let sections = match self.commit_analysis_sections(song_id, &a.sections) {
+                            Ok(s) => serde_json::to_value(s).unwrap_or(Value::Null),
+                            Err(e) => {
+                                eprintln!("earworm: auto-save sections after analysis: {e}");
+                                Value::Null
+                            }
+                        };
+                        json!({"song_id": song_id, "state": "done", "sections": sections})
+                    }
+                    Err(e) => {
+                        json!({"song_id": song_id, "state": "failed", "error": e.to_string()})
+                    }
+                },
                 Err(e) => json!({"song_id": song_id, "state": "failed", "error": e}),
             };
             events.push(Event {
@@ -1484,85 +1497,92 @@ impl App {
             sections: Vec<SecIn>,
         }
         let p: P = from_params(p)?;
-        let sections = self
-            .store
-            .replace_sections(
-                p.song_id,
-                &p.sections
-                    .iter()
-                    .map(|s| NewSection {
-                        name: &s.name,
-                        start: s.start,
-                        end: s.end,
-                        position: s.position,
-                    })
-                    .collect::<Vec<_>>(),
-            )
-            .err_str()?;
-        let junctions = self.refresh_junctions(p.song_id, 2.0, 2.0)?;
-        self.recompute_loop_names(p.song_id)?;
-        self.write_sidecar_for(p.song_id);
-        Ok(json!({ "sections": sections, "junctions": junctions }))
+        let news: Vec<NewSection> = p
+            .sections
+            .iter()
+            .map(|s| NewSection {
+                name: &s.name,
+                start: s.start,
+                end: s.end,
+                position: s.position,
+            })
+            .collect();
+        let sections = self.commit_sections(p.song_id, &news)?;
+        Ok(json!({ "sections": sections }))
     }
 
-    /// Delete existing junction loops for the song and re-derive them from
-    /// its current sections. When the song has an analyzed beat grid, loop
-    /// windows snap to the downbeats around each boundary; otherwise they
-    /// fall back to fixed `tail`/`head` seconds.
-    fn refresh_junctions(
+    /// Persist a section layout, rename the dynamic loops, and write the
+    /// sidecar. Shared by the `section.replace` command and the post-analysis
+    /// auto-commit. Also clears any auto-derived transition loops left over from
+    /// when those were created automatically (the app no longer makes them).
+    fn commit_sections(
         &mut self,
         song_id: SongId,
-        tail: f64,
-        head: f64,
-    ) -> Result<Vec<LoopRegion>, String> {
+        sections: &[NewSection],
+    ) -> Result<Vec<Section>, String> {
+        let saved = self.store.replace_sections(song_id, sections).err_str()?;
         for l in self.store.list_loops(song_id).err_str()? {
             if matches!(l.kind, LoopKind::Junction { .. }) {
                 self.store.delete_loop(l.id).err_str()?;
             }
         }
-        let sections = self.store.list_sections(song_id).err_str()?;
-        let downbeats = self
-            .store
-            .get_analysis(song_id)
-            .err_str()?
-            .map(|a| a.downbeats)
-            .filter(|d| !d.is_empty());
-        let derived = match downbeats {
-            Some(d) => practice::junction::derive_junctions_snapped(&sections, &d),
-            None => practice::junction::derive_junctions(&sections, tail, head),
-        };
-        let mut saved = Vec::new();
-        for j in derived {
-            saved.push(
-                self.store
-                    .insert_loop(
-                        song_id,
-                        NewLoop {
-                            name: &j.name,
-                            name_override: None,
-                            start: j.start,
-                            end: j.end,
-                            kind: j.kind,
-                        },
-                    )
-                    .err_str()?,
-            );
-        }
+        self.recompute_loop_names(song_id)?;
+        self.write_sidecar_for(song_id);
         Ok(saved)
     }
 
-    fn junctions_derive(&mut self, p: Value) -> Result<Value, String> {
-        #[derive(Deserialize)]
-        struct P {
-            song_id: SongId,
-            tail: Option<f64>,
-            head: Option<f64>,
+    /// Save the analyzer's suggested sections as the song's real sections. A
+    /// run that found no sections leaves any existing layout untouched (so a
+    /// failed/empty pass never wipes hand-tuned structure).
+    fn commit_analysis_sections(
+        &mut self,
+        song_id: SongId,
+        suggestions: &[AnalysisSection],
+    ) -> Result<Vec<Section>, String> {
+        if suggestions.is_empty() {
+            return self.store.list_sections(song_id).err_str();
         }
-        let p: P = from_params(p)?;
-        let junctions =
-            self.refresh_junctions(p.song_id, p.tail.unwrap_or(2.0), p.head.unwrap_or(2.0))?;
-        self.write_sidecar_for(p.song_id);
-        serde_json::to_value(junctions).err_str()
+        let news: Vec<NewSection> = suggestions
+            .iter()
+            .enumerate()
+            .map(|(i, s)| NewSection {
+                name: &s.label,
+                start: s.start,
+                end: s.end,
+                position: i as i32,
+            })
+            .collect();
+        let sections = self.commit_sections(song_id, &news)?;
+        Ok(sections)
+    }
+
+    /// Sections to name loops against. Prefer the user's saved sections; when a
+    /// song has none yet, fall back to the analysis *suggestions* — the same
+    /// dashed spans the waveform's structure lane shows. Without this, looping a
+    /// suggested-but-unsaved section names every loop `riff m:ss–m:ss`.
+    /// Suggestions get synthetic ids/positions in their natural order, which is
+    /// all `naming::loop_name` needs.
+    fn naming_sections(&self, song_id: SongId) -> Result<Vec<Section>, String> {
+        let saved = self.store.list_sections(song_id).err_str()?;
+        if !saved.is_empty() {
+            return Ok(saved);
+        }
+        let Some(analysis) = self.store.get_analysis(song_id).err_str()? else {
+            return Ok(saved); // empty — namer falls back to the timestamp form
+        };
+        Ok(analysis
+            .sections
+            .into_iter()
+            .enumerate()
+            .map(|(i, s)| Section {
+                id: SectionId(i as i64),
+                song_id,
+                name: s.label,
+                start: s.start,
+                end: s.end,
+                position: i as i32,
+            })
+            .collect())
     }
 
     /// Effective dynamic name for a loop on this song, disambiguated against
@@ -1574,7 +1594,7 @@ impl App {
         end: f64,
         exclude: Option<LoopId>,
     ) -> Result<String, String> {
-        let sections = self.store.list_sections(song_id).err_str()?;
+        let sections = self.naming_sections(song_id)?;
         let existing: Vec<String> = self
             .store
             .list_loops(song_id)
@@ -1593,7 +1613,7 @@ impl App {
     /// left untouched.
     fn recompute_loop_names(&mut self, song_id: SongId) -> Result<(), String> {
         let loops = self.store.list_loops(song_id).err_str()?;
-        let sections = self.store.list_sections(song_id).err_str()?;
+        let sections = self.naming_sections(song_id)?;
         for l in &loops {
             if l.name_override.is_some() || !matches!(l.kind, LoopKind::Manual) {
                 continue;

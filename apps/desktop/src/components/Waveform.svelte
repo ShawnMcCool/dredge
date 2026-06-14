@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { fade } from "svelte/transition";
   import { get } from "svelte/store";
   import { canvasSize } from "../lib/actions/canvasSize";
   import {
@@ -9,6 +10,7 @@
     gridSnap,
     gridSubdivision,
     gridVisible,
+    libraryCollapsed,
     openingSong,
     openSong,
     position,
@@ -17,6 +19,7 @@
     type LoopRegion,
     type OpenSong,
   } from "../lib/stores";
+  import HoverActions from "../lib/ui/HoverActions.svelte";
   import { labelColor } from "../lib/waveform-colors";
   import {
     adjustWindow,
@@ -38,6 +41,7 @@
   const CLICK_PX = 5; // below this a drag is a click → seek
   const SNAP_PX = 10; // grid-snap pull radius around a downbeat
   const MIN_TICK_PX = 6; // hide beat ticks when they'd sit closer than this
+  const DBLCLICK_MS = 300; // two lane clicks within this = double-click
 
   let canvas: HTMLCanvasElement;
   let view: View = $state({ startSec: 0, endSec: 1, width: 1 });
@@ -70,9 +74,11 @@
   type Drag =
     | { mode: "select"; anchorX: number; moved: boolean }
     | { mode: "resize"; loop: LoopRegion; edge: "start" | "end"; start: number; end: number }
-    | { mode: "lane"; anchor: { start: number; end: number }; moved: boolean }
+    | { mode: "lane"; anchor: { start: number; end: number }; moved: boolean; double: boolean }
     | { mode: "zoom"; anchorX: number; curX: number };
   let drag: Drag | null = null;
+  // timestamp of the last lane-header pointerdown — for double-click detection
+  let lastLaneDownAt = 0;
   // after a resize is released, hold the new bounds visually until the
   // loop.update round-trip lands in the store — otherwise the wave flashes back
   // to the old bounds for the frames between release and refresh.
@@ -135,16 +141,7 @@
     ctx.fillStyle = css("--bg");
     ctx.fillRect(0, 0, w, LANE_H + WAVE_H);
 
-    if (!open) {
-      ctx.fillStyle = css("--muted");
-      ctx.font = "13px " + css("--mono");
-      ctx.fillText(
-        get(openingSong) !== null ? "opening…" : "no song open",
-        8,
-        LANE_H + WAVE_H / 2,
-      );
-      return;
-    }
+    if (!open) return; // empty state is the .wave-empty HTML overlay
 
     const playhead = playheadSecs(get(position), performance.now());
     const playheadX = secToX(view, playhead);
@@ -412,21 +409,19 @@
     }
     if (e.button !== 0) return;
     // left button = select & drag only — it never resizes.
-    // lane click/drag: start a lane drag; single click handled on pointer-up
+    // lane click/drag: single click plays the section through; double click (or
+    // double-click-drag) loops it — resolved on pointer-up using `double`.
     const span = hitLaneSpan(x, canvasY(e));
     if (span) {
+      const double = e.timeStamp - lastLaneDownAt < DBLCLICK_MS;
+      lastLaneDownAt = e.timeStamp;
       canvas.setPointerCapture(e.pointerId);
-      drag = { mode: "lane", anchor: { start: span.start, end: span.end }, moved: false };
+      drag = { mode: "lane", anchor: { start: span.start, end: span.end }, moved: false, double };
       return;
     }
+    lastLaneDownAt = 0; // a non-lane click breaks any double-click sequence
     canvas.setPointerCapture(e.pointerId);
     drag = { mode: "select", anchorX: x, moved: false };
-  }
-
-  /** Double-click on a *suggested* span seeds the selection (l/p work on it). */
-  function onDblClick(e: MouseEvent) {
-    const span = hitLaneSpan(canvasX(e), canvasY(e));
-    if (span?.suggested) selection.set({ start: span.start, end: span.end });
   }
 
   /** Pull a time onto the nearest grid line (at the chosen subdivision) when
@@ -496,10 +491,21 @@
       return;
     }
     if (d.mode === "lane") {
-      if (!d.moved) {
-        activeSpan = { start: d.anchor.start, end: d.anchor.end };
-        void actions.setTransportLoop(d.anchor.start, d.anchor.end);
+      if (d.double) {
+        // double click (± drag across headers) → loop the section / selection
+        if (!d.moved) {
+          selection.set({ start: d.anchor.start, end: d.anchor.end });
+          activeSpan = { start: d.anchor.start, end: d.anchor.end };
+        } else {
+          activeSpan = null; // multi-section: the selection box shows the range
+        }
+        void loopSelection();
+      } else if (!d.moved) {
+        // single click → play from the section start through the rest of the track
+        void playSection(d.anchor.start);
       }
+      // single-click drag (!double && moved): selection was set during the drag;
+      // leave it for the user to loop/save by hand — no auto-loop.
       return;
     }
     if (d.mode === "resize") {
@@ -539,6 +545,15 @@
     }
   }
 
+  /** Single-click a section header: play from its start through the rest of the
+   *  track — no loop (clears any active transport loop and selection). */
+  async function playSection(start: number) {
+    selection.set(null);
+    await actions.clearTransportLoop();
+    await actions.seek(start);
+    await actions.play();
+  }
+
   /** Primary glyph: loop the selection now — transient, nothing saved. */
   async function loopSelection() {
     const sel = get(selection);
@@ -557,34 +572,30 @@
     selection.set(null);
   }
 
-  // Loop/save glyph buttons for the current selection. Placement is dynamic:
-  // tucked inside the loop's bottom-right when it's wide enough to hold them,
-  // otherwise just outside the right edge — or the left edge if the right would
-  // spill past the viewport.
-  const SA_BTN = 24; // glyph button size (px)
-  const SA_GAP = 4; // gap between the two buttons
-  const SA_PAD = 6; // breathing room from the loop edge / bottom
-  const SA_GROUP_W = SA_BTN * 2 + SA_GAP;
+  /** Loop glyph on the selected loop: point the transport at it and play. */
+  async function playCurrentLoop() {
+    const l = get(currentLoop);
+    if (!l) return;
+    const b = loopBounds(l);
+    await actions.setTransportLoop(b.start, b.end);
+    await actions.seek(b.start);
+    await actions.play();
+  }
 
-  let selActions = $derived.by(() => {
-    const sel = $selection;
-    if (!sel) return null;
-    const x0 = secToX(view, sel.start);
-    const x1 = secToX(view, sel.end);
-    const top = LANE_H + WAVE_H - SA_BTN - SA_PAD; // bottom of the loop, padded
-    let left: number;
-    if (x1 - x0 >= SA_GROUP_W + SA_PAD * 2) {
-      // fits inside — right-aligned against the loop's right edge
-      left = x1 - SA_PAD - SA_GROUP_W;
-    } else if (x1 + SA_PAD + SA_GROUP_W <= view.width) {
-      // too narrow — sit just outside the right edge
-      left = x1 + SA_PAD;
-    } else {
-      // no room on the right either — fall to just outside the left edge
-      left = x0 - SA_PAD - SA_GROUP_W;
-    }
-    return { left, top };
-  });
+  /** ✕ glyph on the selected loop: delete it (clears the transport loop too). */
+  async function deleteCurrentLoop() {
+    const l = get(currentLoop);
+    if (l) await actions.deleteLoop(l.id);
+  }
+
+  /** Empty-state "library" link: reveal the library pane if it's collapsed. */
+  function openLibrary() {
+    if (get(libraryCollapsed)) void actions.toggleLibrary();
+  }
+
+  // Cursor position in waveform px (or null off-canvas) — drives the hover-reveal
+  // action clusters for the selection and the selected loop.
+  let hoverPt = $state<{ x: number; y: number } | null>(null);
 
   let dur = $derived($openSong?.song.duration_secs ?? 0);
   const MIN_WIN = 1; // seconds — min visible window
@@ -659,19 +670,57 @@
   function resetView() { view = { ...view, startSec: 0, endSec: dur }; }
 </script>
 
-<div class="waveform" use:canvasSize={applySize}>
+<!-- pointer tracked at the container (not the canvas) so moving onto the overlay
+     action buttons — children of .waveform — never reads as leaving, which would
+     flicker the hover clusters at the canvas/button seam -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+  class="waveform"
+  use:canvasSize={applySize}
+  onpointermove={(e) => (hoverPt = { x: canvasX(e), y: canvasY(e) })}
+  onpointerleave={() => (hoverPt = null)}
+>
   <canvas
     id="waveform-canvas"
     bind:this={canvas}
     onpointerdown={onPointerDown}
     onpointermove={onPointerMove}
     onpointerup={onPointerUp}
-    ondblclick={onDblClick}
     onwheel={onWheel}
     oncontextmenu={(e) => e.preventDefault()}
   ></canvas>
-  {#if $openSong?.analysis}
-    <div class="grid-ctl">
+  {#if !$openSong}
+    <div class="wave-empty" style="top: {LANE_H}px; height: {WAVE_H}px;">
+      {#if $openingSong !== null}
+        <span class="we-title">opening…</span>
+      {:else}
+        <svg
+          class="we-glyph"
+          width="40"
+          height="26"
+          viewBox="0 0 40 26"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+        >
+          <line x1="4" y1="11" x2="4" y2="15" />
+          <line x1="9" y1="8" x2="9" y2="18" />
+          <line x1="14" y1="3" x2="14" y2="23" />
+          <line x1="19" y1="9" x2="19" y2="17" />
+          <line x1="24" y1="5" x2="24" y2="21" />
+          <line x1="29" y1="10" x2="29" y2="16" />
+          <line x1="34" y1="7" x2="34" y2="19" />
+        </svg>
+        <span class="we-title">no song open</span>
+        <span class="we-hint">
+          pick a track in the <button class="we-link" onclick={openLibrary}>library</button>
+        </span>
+      {/if}
+    </div>
+  {/if}
+  {#if $openSong?.analysis && hoverPt}
+    <div class="grid-ctl" transition:fade={{ duration: 120 }}>
       <button class:on={$gridSnap} onclick={() => void actions.setGridSnap(!$gridSnap)} title="snap to grid (g)">snap</button>
       <button class:on={$gridVisible} onclick={() => void actions.setGridVisible(!$gridVisible)} title="show grid">grid</button>
       <button class:on={$gridLines} onclick={() => void actions.setGridLines(!$gridLines)} title="full gridlines vs bottom ticks">lines</button>
@@ -711,11 +760,33 @@
     <!-- song switch in flight: keep the old waveform, show progress on top -->
     <div class="loading-bar"></div>
   {/if}
-  {#if $selection && selActions}
-    <div class="sel-actions fade-in" style="left: {selActions.left}px; top: {selActions.top}px">
+  {#if $selection}
+    <HoverActions
+      left={secToX(view, $selection.start)}
+      right={secToX(view, $selection.end)}
+      bandTop={LANE_H}
+      bandHeight={WAVE_H}
+      viewWidth={view.width}
+      pointer={hoverPt}
+      count={2}
+    >
       <button class="sa-btn" onclick={loopSelection} title="loop selection" aria-label="loop selection">⟳</button>
       <button class="sa-btn" onclick={saveSelection} title="save loop" aria-label="save loop">🖫</button>
-    </div>
+    </HoverActions>
+  {/if}
+  {#if $currentLoop}
+    <HoverActions
+      left={secToX(view, loopBounds($currentLoop).start)}
+      right={secToX(view, loopBounds($currentLoop).end)}
+      bandTop={LANE_H}
+      bandHeight={WAVE_H}
+      viewWidth={view.width}
+      pointer={hoverPt}
+      count={2}
+    >
+      <button class="sa-btn" onclick={playCurrentLoop} title="play loop" aria-label="play loop">⟳</button>
+      <button class="sa-btn danger" onclick={deleteCurrentLoop} title="delete loop" aria-label="delete loop">✕</button>
+    </HoverActions>
   {/if}
 </div>
 
@@ -800,13 +871,7 @@
     }
   }
 
-  /* loop/play glyph buttons over the selection — see selActions for placement */
-  .sel-actions {
-    position: absolute;
-    display: flex;
-    gap: 4px;
-  }
-
+  /* glyph buttons rendered inside HoverActions (selection + selected loop) */
   .sa-btn {
     width: 24px;
     height: 24px;
@@ -824,7 +889,52 @@
   }
   .sa-btn:hover {
     color: var(--accent);
-    border-color: var(--accent-dim);
+  }
+  .sa-btn.danger:hover {
+    color: var(--shaky);
+  }
+
+  /* empty state, centered over the wave area (canvas draws nothing when no song) */
+  .wave-empty {
+    position: absolute;
+    left: 0;
+    right: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    text-align: center;
+    /* let pointer tracking / interactions fall through to the canvas; only the
+       link opts back in */
+    pointer-events: none;
+  }
+  .we-glyph {
+    color: var(--muted);
+    opacity: 0.5;
+  }
+  .we-title {
+    color: var(--muted);
+    font-size: 14px;
+    letter-spacing: 0.04em;
+  }
+  .we-hint {
+    color: var(--muted);
+    opacity: 0.75;
+    font-size: 11px;
+  }
+  .we-link {
+    pointer-events: auto;
+    background: none;
+    border: none;
+    font: inherit;
+    color: var(--accent-dim);
+    cursor: pointer;
+    padding: 0;
+    text-decoration: underline;
+  }
+  .we-link:hover {
+    color: var(--accent);
   }
 
   .scrollbar {

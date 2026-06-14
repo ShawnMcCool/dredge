@@ -66,7 +66,7 @@ fn import_then_list_then_open() {
 }
 
 #[test]
-fn sections_autoderive_junctions() {
+fn sections_replace_creates_no_junction_loops() {
     let (mut app, _dir, wav) = test_app();
     let song = req(&mut app, "song.import", json!({"path": wav}));
     let id = song["id"].as_i64().unwrap();
@@ -80,17 +80,11 @@ fn sections_autoderive_junctions() {
             {"name": "B", "start": 1.0, "end": 2.0, "position": 1},
         ]}),
     );
-    let junctions = out["junctions"].as_array().unwrap();
-    assert_eq!(junctions.len(), 1);
-    let j = &junctions[0];
-    assert_eq!(j["name"], "A→B");
-    assert_eq!(j["kind"]["kind"], "junction");
-    // tail/head 2.0 clamped to section bounds: max(1-2, 0)=0, min(1+2, 2)=2
-    assert_eq!(j["start"], 0.0);
-    assert_eq!(j["end"], 2.0);
-
+    // sections are saved, but transition loops are no longer auto-created
+    assert_eq!(out["sections"].as_array().unwrap().len(), 2);
+    assert!(out.get("junctions").is_none());
     let loops = req(&mut app, "loop.list", json!({"song_id": id}));
-    assert_eq!(loops.as_array().unwrap().len(), 1);
+    assert!(loops.as_array().unwrap().is_empty());
 }
 
 #[test]

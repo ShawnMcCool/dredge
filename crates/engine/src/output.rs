@@ -24,6 +24,9 @@ struct State {
     current_song: Option<Arc<StemSet>>,
     render_buf: Vec<f32>,
     events: Vec<EngineEvent>,
+    /// User volume, held here (not just in the Pipeline) so it survives song
+    /// swaps and an early SetVolume that arrives before any song is loaded.
+    volume: f32,
 }
 
 pub fn spawn(
@@ -73,6 +76,7 @@ fn run(
         current_song: None,
         render_buf: vec![0.0; MAX_QUANTUM_FRAMES * CHANNELS],
         events: Vec::with_capacity(64),
+        volume: 1.0,
     };
 
     let _listener = stream
@@ -92,13 +96,24 @@ fn run(
                 (None, None) => false,
             };
             if swapped {
-                // StemSet clone is cheap: a Vec of Arcs + gains.
-                state.pipeline = song.clone().map(|s| Pipeline::new((*s).clone()));
+                // StemSet clone is cheap: a Vec of Arcs + gains. Seed the fresh
+                // pipeline with the current user volume so song swaps don't reset
+                // it back to the Pipeline default.
+                state.pipeline = song.clone().map(|s| {
+                    let mut p = Pipeline::new((*s).clone());
+                    p.apply(EngineCmd::SetVolume(state.volume));
+                    p
+                });
                 state.current_song = song;
             }
 
-            // Drain control commands into the pipeline.
+            // Drain control commands into the pipeline. SetVolume is also latched
+            // into State so it persists across song swaps and survives arriving
+            // before any pipeline exists (e.g. the saved volume sent at boot).
             while let Ok(cmd) = state.cmd_rx.pop() {
+                if let EngineCmd::SetVolume(v) = cmd {
+                    state.volume = v;
+                }
                 if let Some(p) = state.pipeline.as_mut() {
                     p.apply(cmd);
                 }

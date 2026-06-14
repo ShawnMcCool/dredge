@@ -4,7 +4,6 @@
     analysisError,
     openSong,
     selection,
-    suggestedSections,
     type AnalysisSection,
   } from "../lib/stores";
   import Button from "../lib/ui/Button.svelte";
@@ -20,6 +19,7 @@
 
   let rows = $state<Row[]>([]);
   let dirty = $state(false);
+  let editing = $state(false);
   let lastSongId: number | null = null;
 
   // mirror the store unless there are unsaved edits
@@ -34,26 +34,18 @@
     const switching = open.song.id !== lastSongId;
     if (switching || !dirty) {
       lastSongId = open.song.id;
+      if (switching) editing = false;
       if (open.sections.length > 0) {
         rows = open.sections.map((s) => ({ name: s.name, start: s.start, end: s.end }));
         if (switching) dirty = false;
       } else {
-        // no saved sections yet — seed the editor from cached analysis so the
-        // structure is editable without re-running the model (provisional rows)
+        // no saved sections yet (e.g. a song analyzed before auto-save landed) —
+        // seed the editor from cached analysis so the structure is editable
+        // without re-running the model (provisional rows until saved)
         rows = (open.analysis?.sections ?? []).map(toRow);
         dirty = rows.length > 0;
       }
     }
-  });
-
-  // fresh analysis suggestions land as prefilled UNSAVED rows: appended
-  // below any existing sections, persisted only by the normal save
-  $effect(() => {
-    const suggestions = $suggestedSections;
-    if (!suggestions || !$openSong) return;
-    suggestedSections.set(null);
-    rows = [...rows.filter((r) => !r.suggested), ...suggestions.map(toRow)];
-    if (rows.some((r) => r.suggested)) touch();
   });
 
   function toRow(s: AnalysisSection): Row {
@@ -63,6 +55,18 @@
       end: Math.round(s.end * 10) / 10,
       suggested: true,
     };
+  }
+
+  /** Compact m:ss for the read-only display. */
+  function fmtT(s: number): string {
+    const m = Math.floor(s / 60);
+    const r = Math.round(s % 60);
+    return `${m}:${String(r).padStart(2, "0")}`;
+  }
+
+  /** Click a section in display mode → highlight its span on the waveform. */
+  function highlight(row: Row) {
+    selection.set({ start: row.start, end: row.end });
   }
 
   let hasAnalysis = $derived(($openSong?.analysis?.sections?.length ?? 0) > 0);
@@ -114,6 +118,7 @@
       rows.map((r, i) => ({ name: r.name, start: r.start, end: r.end, position: i })),
     );
     dirty = false;
+    editing = false;
   }
 
   let confirmReanalyze = $state(false);
@@ -124,7 +129,14 @@
   }
 </script>
 
-<h2>sections</h2>
+<div class="head">
+  <h2>sections</h2>
+  {#if $openSong}
+    <button class="edit-toggle" onclick={() => (editing = !editing)}>
+      {editing ? "done" : "edit"}
+    </button>
+  {/if}
+</div>
 {#if !$openSong}
   <p class="empty">open a song first</p>
 {:else}
@@ -133,44 +145,47 @@
       sections: {engineLabel}
     </p>
   {/if}
-  <ul>
-    {#each rows as row, i (i)}
-      <li class="row" class:suggested={row.suggested}>
-        <input class="name" bind:value={row.name} oninput={touch} />
-        <input
-          class="mono t"
-          type="number"
-          step="0.1"
-          min="0"
-          bind:value={row.start}
-          oninput={touch}
-        />
-        <input
-          class="mono t"
-          type="number"
-          step="0.1"
-          min="0"
-          bind:value={row.end}
-          oninput={touch}
-        />
-        <Button variant="chip" onclick={() => move(i, -1)} title="up">↑</Button>
-        <Button variant="chip" onclick={() => move(i, 1)} title="down">↓</Button>
-        <Button variant="chip" onclick={() => remove(i)} title="delete">×</Button>
-      </li>
-    {/each}
-  </ul>
-  <div class="bar">
-    <Button onclick={add}>+ add</Button>
-    {#if hasAnalysis}
-      <Button onclick={revertToAnalysis} title="discard edits, reload the analyzed structure">
-        revert to analysis
-      </Button>
+
+  {#if editing}
+    <ul>
+      {#each rows as row, i (i)}
+        <li class="row" class:suggested={row.suggested}>
+          <input class="name" bind:value={row.name} oninput={touch} />
+          <input class="mono t" type="number" step="0.1" min="0" bind:value={row.start} oninput={touch} />
+          <input class="mono t" type="number" step="0.1" min="0" bind:value={row.end} oninput={touch} />
+          <Button variant="chip" onclick={() => move(i, -1)} title="up">↑</Button>
+          <Button variant="chip" onclick={() => move(i, 1)} title="down">↓</Button>
+          <Button variant="chip" onclick={() => remove(i)} title="delete">×</Button>
+        </li>
+      {/each}
+    </ul>
+    <div class="bar">
+      <Button onclick={add}>+ add</Button>
+      {#if hasAnalysis}
+        <Button onclick={revertToAnalysis} title="discard edits, reload the analyzed structure">
+          revert to analysis
+        </Button>
+      {/if}
+      <Button onclick={() => (confirmReanalyze = true)}>re-analyze</Button>
+      <Button accent disabled={!dirty} onclick={save}>save</Button>
+    </div>
+    {#if $analysisError}
+      <p class="error">{$analysisError}</p>
     {/if}
-    <Button onclick={() => (confirmReanalyze = true)}>re-analyze</Button>
-    <Button accent disabled={!dirty} onclick={save}>save</Button>
-  </div>
-  {#if $analysisError}
-    <p class="error">{$analysisError}</p>
+  {:else if rows.length === 0}
+    <p class="empty">no sections yet — hit edit to add them, or analyze the song</p>
+  {:else}
+    <ul class="display">
+      {#each rows as row, i (i)}
+        <li class="drow" class:suggested={row.suggested}>
+          <button class="row-btn" onclick={() => highlight(row)} title="highlight on the waveform">
+            <span class="sec-name">{row.name}</span>
+            <span class="sec-time mono">{fmtT(row.start)}–{fmtT(row.end)}</span>
+          </button>
+        </li>
+      {/each}
+    </ul>
+    {#if dirty}<p class="note unsaved">unsaved edits — open edit to save</p>{/if}
   {/if}
 
   <Modal open={confirmReanalyze} title="re-analyze" closable onclose={() => (confirmReanalyze = false)}>
@@ -180,14 +195,37 @@
       <Button accent onclick={reanalyze}>re-analyze</Button>
     </div>
   </Modal>
-  <p class="note">saving re-derives junction loops (bar-aware once analyzed)</p>
 {/if}
 
 <style>
+  .head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space);
+  }
+
+  .edit-toggle {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 2px 4px;
+  }
+  .edit-toggle:hover {
+    color: var(--accent);
+  }
+
   .empty,
   .note {
     font-size: 11px;
     color: var(--muted);
+  }
+  .note.unsaved {
+    color: var(--shaky);
   }
 
   .engine {
@@ -217,6 +255,54 @@
   .row.suggested input {
     color: var(--muted);
     border-color: var(--accent-dim);
+  }
+
+  /* read-only display rows */
+  .display {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .drow {
+    padding: 0;
+    min-width: 0;
+  }
+  .drow.suggested {
+    color: var(--muted);
+  }
+  /* the whole row is the click target (highlight the section) */
+  .row-btn {
+    display: flex;
+    width: 100%;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space);
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+    padding: 2px 4px;
+    border-radius: var(--radius);
+    min-width: 0;
+  }
+  .row-btn:hover {
+    background: var(--bg-raised);
+  }
+  .row-btn:hover .sec-name {
+    color: var(--accent);
+  }
+  .sec-name {
+    font-size: 13px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sec-time {
+    flex: 0 0 auto;
+    font-size: 11px;
+    color: var(--muted);
   }
 
   .error {

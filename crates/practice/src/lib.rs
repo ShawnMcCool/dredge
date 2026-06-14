@@ -1,7 +1,6 @@
-//! Practice intelligence core: domain model, tempo curves, junctions, plan runner, scheduling, persistence.
+//! Practice intelligence core: domain model, tempo curves, plan runner, scheduling, persistence.
 
 pub mod error;
-pub mod junction;
 pub mod model;
 pub mod naming;
 pub mod runner;

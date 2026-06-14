@@ -1,5 +1,5 @@
-//! Analysis through the dispatcher: background job, cache, song.open payload,
-//! downbeat-aware junction derivation. Hermetic via FakeAnalyzer.
+//! Analysis through the dispatcher: background job, cache, song.open payload.
+//! Hermetic via FakeAnalyzer.
 
 use practice::store::Store;
 use serde_json::{json, Value};
@@ -231,49 +231,4 @@ fn open_returns_cached_analysis() {
         opened["analysis"],
         serde_json::to_value(fake_analysis()).unwrap()
     );
-}
-
-#[test]
-fn junctions_snap_to_downbeats_when_analysis_exists() {
-    let mut ctx = setup(Arc::new(FakeAnalyzer));
-    // boundary at 4.5 s: binary-exact, and strictly between downbeats 4 and 6
-    let sections = json!([
-        {"name": "A", "start": 0.0, "end": 4.5, "position": 0},
-        {"name": "B", "start": 4.5, "end": 10.0, "position": 1},
-    ]);
-
-    // without analysis: fixed 2 s tail/head windows
-    let out = req(
-        &mut ctx.app,
-        "section.replace",
-        json!({"song_id": ctx.song_id, "sections": sections}),
-    );
-    assert_eq!(out["junctions"][0]["start"], 2.5);
-    assert_eq!(out["junctions"][0]["end"], 6.5);
-
-    req(
-        &mut ctx.app,
-        "analysis.run",
-        json!({"song_id": ctx.song_id}),
-    );
-    wait_for_progress(&mut ctx.app);
-
-    // with downbeats every 2 s: boundary 4.9 snaps to the enclosing pair
-    let out = req(
-        &mut ctx.app,
-        "section.replace",
-        json!({"song_id": ctx.song_id, "sections": sections}),
-    );
-    assert_eq!(out["junctions"][0]["name"], "A→B");
-    assert_eq!(out["junctions"][0]["start"], 4.0);
-    assert_eq!(out["junctions"][0]["end"], 6.0);
-
-    // junctions.derive goes through the same downbeat-aware path
-    let derived = req(
-        &mut ctx.app,
-        "junctions.derive",
-        json!({"song_id": ctx.song_id}),
-    );
-    assert_eq!(derived[0]["start"], 4.0);
-    assert_eq!(derived[0]["end"], 6.0);
 }

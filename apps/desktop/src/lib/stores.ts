@@ -249,8 +249,6 @@ export const captureStatus = writable<CaptureStatus>({ running: false });
 export const stemMix = writable<StemMix>(defaultStemMix());
 export const stemsError = writable<string | null>(null);
 export const analysisError = writable<string | null>(null);
-/** Fresh suggestions for the Sections lane; consumed (set null) once shown. */
-export const suggestedSections = writable<AnalysisSection[] | null>(null);
 /** Loop edges snap to downbeats while on (only meaningful with analysis). */
 export const gridSnap = writable(true);
 /** Grid display (persisted): show/hide the drawn grid, full lines vs bottom
@@ -482,7 +480,6 @@ export const actions = {
       stemMix.set(defaultStemMix());
       stemsError.set(null);
       analysisError.set(null);
-      suggestedSections.set(null);
       await this.refreshRetention();
     } finally {
       openingSong.set(null);
@@ -617,7 +614,7 @@ export const actions = {
     await this.refreshLoops();
   },
 
-  /** Replace the whole section lane; server re-derives junction loops. */
+  /** Replace the whole section lane. */
   async replaceSections(
     sections: { name: string; start: number; end: number; position: number }[],
   ): Promise<void> {
@@ -628,13 +625,6 @@ export const actions = {
       sections,
     });
     openSong.update((o) => (o ? { ...o, sections: out.sections } : o));
-    await this.refreshLoops();
-  },
-
-  async deriveJunctions(tail: number, head: number): Promise<void> {
-    const open = get(openSong);
-    if (!open) return;
-    await cmd("junctions.derive", { song_id: open.song.id, tail, head });
     await this.refreshLoops();
   },
 
@@ -876,7 +866,6 @@ export const actions = {
     const analysis = await cmd<Analysis | null>("analysis.get", { song_id: songId });
     if (get(openSong)?.song.id !== songId) return;
     openSong.update((o) => (o ? { ...o, analysis } : o));
-    if (analysis) suggestedSections.set(analysis.sections);
   },
 
   async refreshRetention(): Promise<void> {
@@ -965,17 +954,26 @@ export async function initEvents(): Promise<() => void> {
         break;
       }
       case "analysis_progress": {
-        const data = ev.data as { song_id: number; state: string; error?: string };
-        const waiter = takePrepareWaiter("analysis", data);
-        if (waiter) {
-          waiter(data);
-          break;
-        }
-        if (data.state === "done") {
-          if (get(openSong)?.song.id === data.song_id) void actions.loadAnalysis(data.song_id);
+        const data = ev.data as {
+          song_id: number;
+          state: string;
+          error?: string;
+          sections?: Section[];
+        };
+        // analysis now auto-commits its sections server-side: apply the saved
+        // layout and refresh loops (section changes may have pruned some) so the
+        // structure is live without a manual save. Runs for the prepare flow too.
+        if (data.state === "done" && get(openSong)?.song.id === data.song_id) {
+          if (data.sections) {
+            openSong.update((o) => (o ? { ...o, sections: data.sections! } : o));
+          }
+          void actions.loadAnalysis(data.song_id);
+          void actions.refreshLoops();
         } else if (data.state === "failed") {
           analysisError.set(data.error ?? "analysis failed");
         }
+        const waiter = takePrepareWaiter("analysis", data);
+        if (waiter) waiter(data);
         break;
       }
       case "work_sample":

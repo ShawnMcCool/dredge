@@ -76,7 +76,7 @@
       <span class="vsep"></span>
 
       <Button variant="chip" active={$bassFocus} onclick={() => actions.bassFocus(!$bassFocus)}>
-        bass
+        bass focus
       </Button>
     </div>
 
