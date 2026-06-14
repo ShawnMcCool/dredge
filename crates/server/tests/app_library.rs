@@ -131,14 +131,27 @@ fn loop_update_moves_and_renames() {
     let song = req(&mut app, "song.import", json!({"path": wav}));
     let id = song["id"].as_i64().unwrap();
 
+    // create takes no name — with no sections the server names it from the
+    // timestamp fallback
     let l = req(
         &mut app,
         "loop.create",
-        json!({"song_id": id, "name": "intro", "start": 0.0, "end": 1.0}),
+        json!({"song_id": id, "start": 0.0, "end": 1.0}),
     );
     let loop_id = l["id"].as_i64().unwrap();
+    assert_eq!(l["name"], "riff 0:00.0–0:01.0");
+    assert_eq!(l["name_override"], serde_json::Value::Null);
 
-    // partial update: move the end only — name and start keep their values
+    // a non-empty name pins a manual override
+    let named = req(
+        &mut app,
+        "loop.update",
+        json!({"loop_id": loop_id, "name": "intro"}),
+    );
+    assert_eq!(named["name"], "intro");
+    assert_eq!(named["name_override"], "intro");
+
+    // partial update: move the end only — the override holds, start is kept
     let moved = req(
         &mut app,
         "loop.update",
@@ -171,6 +184,57 @@ fn loop_update_moves_and_renames() {
         params: json!({"loop_id": 999, "end": 2.0}),
     });
     assert!(!resp.ok);
+}
+
+#[test]
+fn loop_naming_dynamic_override_and_fit() {
+    let (mut app, _dir, wav) = test_app();
+    let song = req(&mut app, "song.import", json!({"path": wav}));
+    let id = song["id"].as_i64().unwrap();
+
+    // two verse sections then a chorus
+    req(
+        &mut app,
+        "section.replace",
+        json!({"song_id": id, "sections": [
+            {"name": "verse",  "start": 0.0, "end": 1.0, "position": 0},
+            {"name": "verse",  "start": 1.0, "end": 2.0, "position": 1},
+            {"name": "chorus", "start": 2.0, "end": 3.0, "position": 2}
+        ]}),
+    );
+
+    // a loop exactly over the 2nd verse → dynamic name "verse 2"
+    let l = req(
+        &mut app,
+        "loop.create",
+        json!({"song_id": id, "start": 1.0, "end": 2.0}),
+    );
+    let lid = l["id"].as_i64().unwrap();
+    assert_eq!(l["name"], "verse 2");
+    assert_eq!(l["name_override"], serde_json::Value::Null);
+
+    // pin then clear → reverts to the dynamic name
+    req(
+        &mut app,
+        "loop.update",
+        json!({"loop_id": lid, "name": "my riff"}),
+    );
+    let cleared = req(&mut app, "loop.update", json!({"loop_id": lid, "name": ""}));
+    assert_eq!(cleared["name"], "verse 2");
+    assert_eq!(cleared["name_override"], serde_json::Value::Null);
+
+    // a sloppy hand-drawn loop, then fit snaps its edges to section boundaries
+    let h = req(
+        &mut app,
+        "loop.create",
+        json!({"song_id": id, "start": 1.1, "end": 2.9}),
+    );
+    let hid = h["id"].as_i64().unwrap();
+    assert_eq!(h["name"], "sub verse 2 → sub chorus 1");
+    let fit = req(&mut app, "loop.fit", json!({"loop_id": hid}));
+    assert_eq!(fit["start"], 1.0);
+    assert_eq!(fit["end"], 3.0);
+    assert_eq!(fit["name"], "verse 2 → chorus 1");
 }
 
 #[test]

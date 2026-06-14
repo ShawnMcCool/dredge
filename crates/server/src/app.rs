@@ -371,6 +371,7 @@ impl App {
             "loop.create" => self.loop_create(p),
             "loop.update" => self.loop_update(p),
             "loop.delete" => self.loop_delete(p),
+            "loop.fit" => self.loop_fit(p),
             "loop.list" => self.loop_list(p),
             "junctions.derive" => self.junctions_derive(p),
             "plan.save" => self.plan_save(p),
@@ -743,6 +744,7 @@ impl App {
             id: LoopId(0), // unsaved sentinel — never reaches the DB
             song_id: song.id,
             name: format!("riff {}–{}", fmt_ts(p.start), fmt_ts(end)),
+            name_override: None,
             start: p.start,
             end,
             kind: LoopKind::Manual,
@@ -792,12 +794,14 @@ impl App {
             self.active_plan = None;
             self.audio.send(EngineCmd::Pause);
         }
+        let name = self.auto_name_loop(region.song_id, region.start, region.end, None)?;
         let saved = self
             .store
             .insert_loop(
                 region.song_id,
                 NewLoop {
-                    name: &region.name,
+                    name: &name,
+                    name_override: None,
                     start: region.start,
                     end: region.end,
                     kind: region.kind,
@@ -1407,6 +1411,7 @@ impl App {
                     song_id,
                     NewLoop {
                         name: &l.name,
+                        name_override: l.name_override.as_deref(),
                         start: l.start,
                         end: l.end,
                         kind,
@@ -1495,6 +1500,7 @@ impl App {
             )
             .err_str()?;
         let junctions = self.refresh_junctions(p.song_id, 2.0, 2.0)?;
+        self.recompute_loop_names(p.song_id)?;
         self.write_sidecar_for(p.song_id);
         Ok(json!({ "sections": sections, "junctions": junctions }))
     }
@@ -1533,6 +1539,7 @@ impl App {
                         song_id,
                         NewLoop {
                             name: &j.name,
+                            name_override: None,
                             start: j.start,
                             end: j.end,
                             kind: j.kind,
@@ -1558,21 +1565,68 @@ impl App {
         serde_json::to_value(junctions).err_str()
     }
 
+    /// Effective dynamic name for a loop on this song, disambiguated against
+    /// every *other* loop's name. `exclude` is the loop being (re)named.
+    fn auto_name_loop(
+        &self,
+        song_id: SongId,
+        start: f64,
+        end: f64,
+        exclude: Option<LoopId>,
+    ) -> Result<String, String> {
+        let sections = self.store.list_sections(song_id).err_str()?;
+        let existing: Vec<String> = self
+            .store
+            .list_loops(song_id)
+            .err_str()?
+            .into_iter()
+            .filter(|l| Some(l.id) != exclude)
+            .map(|l| l.name)
+            .collect();
+        Ok(practice::naming::loop_name(start, end, &sections, &existing))
+    }
+
+    /// Recompute the dynamic name of every non-overridden manual loop on the
+    /// song (called when sections change). Overridden and junction loops are
+    /// left untouched.
+    fn recompute_loop_names(&mut self, song_id: SongId) -> Result<(), String> {
+        let loops = self.store.list_loops(song_id).err_str()?;
+        let sections = self.store.list_sections(song_id).err_str()?;
+        for l in &loops {
+            if l.name_override.is_some() || !matches!(l.kind, LoopKind::Manual) {
+                continue;
+            }
+            let existing: Vec<String> = loops
+                .iter()
+                .filter(|o| o.id != l.id)
+                .map(|o| o.name.clone())
+                .collect();
+            let name = practice::naming::loop_name(l.start, l.end, &sections, &existing);
+            if name != l.name {
+                self.store
+                    .update_loop(l.id, &name, None, l.start, l.end)
+                    .err_str()?;
+            }
+        }
+        Ok(())
+    }
+
     fn loop_create(&mut self, p: Value) -> Result<Value, String> {
         #[derive(Deserialize)]
         struct P {
             song_id: SongId,
-            name: String,
             start: f64,
             end: f64,
         }
         let p: P = from_params(p)?;
+        let name = self.auto_name_loop(p.song_id, p.start, p.end, None)?;
         let l = self
             .store
             .insert_loop(
                 p.song_id,
                 NewLoop {
-                    name: &p.name,
+                    name: &name,
+                    name_override: None,
                     start: p.start,
                     end: p.end,
                     kind: LoopKind::Manual,
@@ -1597,14 +1651,76 @@ impl App {
             .loop_by_id(p.loop_id)
             .err_str()?
             .ok_or_else(|| format!("loop not found: {}", p.loop_id.0))?;
+        let start = p.start.unwrap_or(old.start);
+        let end = p.end.unwrap_or(old.end);
+
+        // Decide the override after this update:
+        // - explicit non-empty name -> pin it
+        // - explicit empty name      -> clear (revert to dynamic)
+        // - no name field            -> keep whatever was pinned
+        let override_after: Option<String> = match p.name {
+            Some(ref n) if !n.trim().is_empty() => Some(n.trim().to_string()),
+            Some(_) => None,
+            None => old.name_override.clone(),
+        };
+
+        let name = match &override_after {
+            Some(n) => n.clone(),
+            None => self.auto_name_loop(old.song_id, start, end, Some(p.loop_id))?,
+        };
+
         let updated = self
             .store
-            .update_loop(
-                p.loop_id,
-                p.name.as_deref().unwrap_or(&old.name),
-                p.start.unwrap_or(old.start),
-                p.end.unwrap_or(old.end),
-            )
+            .update_loop(p.loop_id, &name, override_after.as_deref(), start, end)
+            .err_str()?;
+        self.write_sidecar_for(old.song_id);
+        serde_json::to_value(updated).err_str()
+    }
+
+    /// Snap each edge of a loop to the nearest section boundary, then recompute
+    /// its dynamic name (a no-op on its name if it carries an override).
+    fn loop_fit(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            loop_id: LoopId,
+        }
+        let p: P = from_params(p)?;
+        let old = self
+            .store
+            .loop_by_id(p.loop_id)
+            .err_str()?
+            .ok_or_else(|| format!("loop not found: {}", p.loop_id.0))?;
+        let sections = self.store.list_sections(old.song_id).err_str()?;
+        // gather every section boundary, snap each edge to the nearest one
+        let mut bounds: Vec<f64> = Vec::new();
+        for s in &sections {
+            bounds.push(s.start);
+            bounds.push(s.end);
+        }
+        let snap = |t: f64| -> f64 {
+            bounds
+                .iter()
+                .copied()
+                .min_by(|a, b| (a - t).abs().partial_cmp(&(b - t).abs()).unwrap())
+                .unwrap_or(t)
+        };
+        let (mut start, mut end) = if bounds.is_empty() {
+            (old.start, old.end)
+        } else {
+            (snap(old.start), snap(old.end))
+        };
+        if end <= start {
+            // degenerate snap (both edges to the same boundary) — leave as-was
+            start = old.start;
+            end = old.end;
+        }
+        let name = match &old.name_override {
+            Some(n) => n.clone(),
+            None => self.auto_name_loop(old.song_id, start, end, Some(p.loop_id))?,
+        };
+        let updated = self
+            .store
+            .update_loop(p.loop_id, &name, old.name_override.as_deref(), start, end)
             .err_str()?;
         self.write_sidecar_for(old.song_id);
         serde_json::to_value(updated).err_str()
