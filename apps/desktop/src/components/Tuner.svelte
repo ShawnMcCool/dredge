@@ -55,11 +55,18 @@
 
   async function openGear() {
     gearOpen = !gearOpen;
-    if (gearOpen) await actions.refreshTunerInputs();
+    if (!gearOpen) return;
+    error = null;
+    try {
+      await actions.refreshTunerInputs();
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
   }
 
   async function pick(node: CaptureNode) {
     gearOpen = false;
+    error = null;
     try {
       await actions.setTunerInput(node);
     } catch (e) {
