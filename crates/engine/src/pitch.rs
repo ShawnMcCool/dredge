@@ -10,6 +10,11 @@ use pitch_detection::detector::PitchDetector;
 /// guitar low E (82 Hz) reliably while staying responsive.
 pub const WINDOW: usize = 4096;
 
+/// Deliberately low (the crate's own examples use ~300 for f64): the tuner
+/// should attempt detection even on quiet input. `power_threshold` is compared
+/// against the window's sum-of-squares, so 5.0 over WINDOW samples is ~0.035 RMS
+/// per sample — inaudibly quiet. Near-silence is rejected by CLARITY_THRESHOLD,
+/// and true silence has sum-of-squares 0.0.
 const POWER_THRESHOLD: f32 = 5.0;
 const CLARITY_THRESHOLD: f32 = 0.6;
 
@@ -37,6 +42,7 @@ pub fn detect(mono: &[f32], sample_rate: u32) -> Option<PitchReading> {
         return None;
     }
     let window = &mono[mono.len() - WINDOW..];
+    // padding = WINDOW/2: internal FFT buffer headroom for the autocorrelation.
     let mut detector = McLeodDetector::new(WINDOW, WINDOW / 2);
     detector
         .get_pitch(
@@ -94,5 +100,15 @@ mod tests {
     fn downmix_averages_stereo() {
         // frames: (1.0, 3.0) -> 2.0 ; (0.0, 0.0) -> 0.0
         assert_eq!(downmix_mono(&[1.0, 3.0, 0.0, 0.0], 2), vec![2.0, 0.0]);
+    }
+
+    #[test]
+    fn detect_interleaved_matches_mono_path() {
+        // Duplicate a mono A440 into both stereo channels: downmix is identity,
+        // so detect_interleaved must agree with detect on the mono signal.
+        let mono = sine(440.0, WINDOW, SAMPLE_RATE);
+        let stereo: Vec<f32> = mono.iter().flat_map(|&s| [s, s]).collect();
+        let r = detect_interleaved(&stereo).expect("should detect A440 from stereo");
+        assert!((r.hz - 440.0).abs() < 1.0, "got {}", r.hz);
     }
 }
