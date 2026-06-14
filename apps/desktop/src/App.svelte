@@ -147,6 +147,9 @@
   </aside>
 </div>
 
+<button class="corner tl" onclick={() => actions.toggleLibrary()} title="toggle library (Ctrl+[)" aria-label="toggle library"></button>
+<button class="corner tr" onclick={() => actions.togglePanels()} title="toggle panels (Ctrl+])" aria-label="toggle panels"></button>
+
 <style>
   .shell {
     /* per-column widths as custom props so collapse + the responsive media
@@ -233,6 +236,33 @@
   }
   .edge.right {
     right: 4px;
+  }
+
+  /* Corner toggle hotspots. They BLEED 6px past the viewport edges so the very
+     corner pixel (0,0 etc.) lands in the button's interior — under fractional
+     HiDPI scaling (e.g. dpr 1.75) a box flush to top:0/left:0 snaps just inside
+     the edge, so a slam to the literal corner falls through to the column
+     underneath. The over-bleed guarantees the corner-slam always hits. */
+  .corner {
+    position: fixed;
+    top: -6px;
+    width: 34px;
+    height: 34px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    z-index: 100;
+    cursor: pointer;
+  }
+  .corner.tl {
+    left: -6px;
+  }
+  .corner.tr {
+    right: -6px;
+  }
+  .corner:hover {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
   }
 
   .stage {
