@@ -11,6 +11,8 @@
   --miss: #c4564f;
   --shaky: #e0a458;
   --solid: #6fae6f;
+  --cyan: #4fc3d4;
+  --meter: #aab0ba; /* neutral bright grey for data bars (colour = capacity) */
 
   --space: 8px;
   --radius: 2px;
@@ -27,6 +29,13 @@
   color: var(--fg);
   background: var(--bg);
   color-scheme: dark;
+}
+
+/* accent theme — swaps the single amber accent for cyan everywhere it's used */
+:root[data-accent="cyan"] {
+  --accent: #4fc3d4;
+  --accent-dim: #3a8a94;
+  --shaky: #4fc3d4;
 }
 
 * {

@@ -280,6 +280,8 @@ export const GRID_LINES = "grid_lines";
 export const GRID_SUBDIV = "grid_subdivision";
 /** Native window frame (title bar + min/max/close). Default on. */
 export const WINDOW_DECORATIONS = "window_decorations";
+/** Accent colour theme: "amber" (default) or "cyan". */
+export const COLOR_THEME = "color_theme";
 /** When true, the practice-routine tabs (plan, due) are shown; hidden by
  *  default to keep the UI to the song-shaping tools. */
 export const PRACTICE_TOOLS = "practice_tools_visible";

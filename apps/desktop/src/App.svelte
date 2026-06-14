@@ -16,6 +16,7 @@
   import Transport from "./components/Transport.svelte";
   import Waveform from "./components/Waveform.svelte";
   import { installKeys } from "./lib/keys";
+  import { initTheme } from "./lib/theme";
   import { initDecorations } from "./lib/window";
   import { initZoom } from "./lib/zoom";
   import {
@@ -88,6 +89,7 @@
     void actions.loadSettings().then(() => {
       void initZoom();
       void initDecorations();
+      initTheme();
     });
     const unlisten = initEvents();
     const uninstall = installKeys();
@@ -109,15 +111,19 @@
   </aside>
   <main class="stage">
     <Waveform />
-    <Transport />
-    <div class="results">
-      {#if anyResults}
-        <StemMixer />
-        <Analysis />
-      {:else}
-        <AnalyzePrompt />
-      {/if}
-    </div>
+    <!-- everything below the waveform is song-scoped: with no song open the
+         waveform's empty state is the whole stage -->
+    {#if $openSong}
+      <Transport />
+      <div class="results">
+        {#if anyResults}
+          <StemMixer />
+          <Analysis />
+        {:else}
+          <AnalyzePrompt />
+        {/if}
+      </div>
+    {/if}
   </main>
   <aside class="panels" class:collapsed={$panelsCollapsed}>
     {#if $panelsCollapsed}

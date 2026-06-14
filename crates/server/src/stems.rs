@@ -56,6 +56,9 @@ impl StemSeparator for DemucsSeparator {
         std::fs::create_dir_all(out_dir)
             .map_err(|e| format!("cannot create {}: {e}", out_dir.display()))?;
         let tmp = out_dir.join(".demucs-tmp");
+        // clear any staging left by a separation that was killed mid-run before
+        // re-creating it — partial output never accumulates or gets reused
+        let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).map_err(|e| format!("cannot create tmp dir: {e}"))?;
 
         let mut cmd = std::process::Command::new(&self.binary);
@@ -63,6 +66,7 @@ impl StemSeparator for DemucsSeparator {
         if force_cpu {
             cmd.env("CUDA_VISIBLE_DEVICES", "");
         }
+        die_with_parent(&mut cmd);
         let output = cmd
             .output()
             .map_err(|e| format!("failed to run {}: {e}", self.binary))?;
@@ -116,6 +120,29 @@ pub(crate) fn find_in_path(binary: &str, path_var: &std::ffi::OsStr) -> Option<P
         let meta = std::fs::metadata(&candidate).ok()?;
         (meta.is_file() && meta.permissions().mode() & 0o111 != 0).then_some(candidate)
     })
+}
+
+/// Make a spawned child die (SIGKILL) when this process does, so quitting
+/// mid-run never orphans the analyzer / Demucs process that's holding CPU, GPU
+/// and VRAM. PR_SET_PDEATHSIG is preserved across the analyze wrapper's `exec`
+/// into python, so it reaches the real worker, not just the shell.
+pub(crate) fn die_with_parent(cmd: &mut std::process::Command) {
+    use std::os::unix::process::CommandExt;
+    // SAFETY: only async-signal-safe calls (prctl/getppid) run in the child
+    // between fork and exec.
+    unsafe {
+        cmd.pre_exec(|| {
+            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL as libc::c_ulong) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            // race guard: if the parent already exited (reparented to init)
+            // before we armed the signal, bail before doing any work
+            if libc::getppid() == 1 {
+                return Err(std::io::Error::other("parent exited before child start"));
+            }
+            Ok(())
+        });
+    }
 }
 
 /// Replace a stem WAV with `interleaved` at the engine's 48 kHz —

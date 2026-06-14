@@ -6,6 +6,7 @@
     actions,
     ANALYSIS_DEVICE,
     CAPTURE_BUFFER_SECS,
+    COLOR_THEME,
     GRID_SNAP_DEFAULT,
     gridSnap,
     PRACTICE_TOOLS,
@@ -13,10 +14,13 @@
     UI_SCALE,
     WINDOW_DECORATIONS,
   } from "../lib/stores";
+  import { applyTheme, type Accent } from "../lib/theme";
   import Button from "../lib/ui/Button.svelte";
   import Fader from "../lib/ui/Fader.svelte";
   import { applyDecorations } from "../lib/window";
   import { getZoom, setZoom } from "../lib/zoom";
+
+  const ACCENTS: Accent[] = ["amber", "cyan"];
 
   const BUFFERS = [60, 120, 180, 300];
 
@@ -31,6 +35,12 @@
   let practiceOn = $derived($settings[PRACTICE_TOOLS] === true);
   // default on: only an explicit false hides the frame
   let decorations = $derived($settings[WINDOW_DECORATIONS] !== false);
+  let accent = $derived(($settings[COLOR_THEME] as Accent) === "cyan" ? "cyan" : "amber");
+
+  function pickAccent(a: Accent) {
+    applyTheme(a); // live swap
+    void actions.setSetting(COLOR_THEME, a);
+  }
 
   function toggleSnap() {
     const next = !snapDefault;
@@ -62,6 +72,16 @@
     format={(v) => `ui scale ${Math.round(v * 100)}%`}
   />
   <span class="readout mono">{Math.round(shownScale * 100)}%</span>
+</div>
+<div class="row">
+  <span class="label">color theme</span>
+  <div class="chips">
+    {#each ACCENTS as a (a)}
+      <Button variant="chip" active={accent === a} onclick={() => pickAccent(a)}>
+        <span class="swatch {a}"></span>{a}
+      </Button>
+    {/each}
+  </div>
 </div>
 <div class="row">
   <span class="label">native window frame</span>
@@ -160,5 +180,20 @@
     font-size: 10px;
     color: var(--muted);
     margin-top: calc(var(--space) * -0.5);
+  }
+
+  .swatch {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 5px;
+    vertical-align: middle;
+  }
+  .swatch.amber {
+    background: #e0a458;
+  }
+  .swatch.cyan {
+    background: #4fc3d4;
   }
 </style>

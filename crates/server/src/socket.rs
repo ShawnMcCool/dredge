@@ -47,6 +47,7 @@ pub fn serve(
     on_events: impl Fn(&[Event]) + Send + 'static,
 ) -> std::io::Result<ServerHandle> {
     let _ = std::fs::remove_file(path); // stale socket from a dead process
+    app.lock().unwrap().sweep_stem_staging(); // clear staging from any killed run
     let listener = UnixListener::bind(path)?;
     listener.set_nonblocking(true)?;
 

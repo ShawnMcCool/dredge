@@ -73,6 +73,7 @@ impl Analyzer for ScriptAnalyzer {
         if force_cpu {
             cmd.env("CUDA_VISIBLE_DEVICES", "");
         }
+        crate::stems::die_with_parent(&mut cmd);
         let output = cmd
             .output()
             .map_err(|e| format!("failed to run {}: {e}", script.display()))?;

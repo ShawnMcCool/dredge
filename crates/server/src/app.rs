@@ -352,6 +352,21 @@ impl App {
         self.stems_dir = dir;
     }
 
+    /// Remove any Demucs staging dirs left by a separation that was killed
+    /// mid-run (e.g. the app quit). The committed stem cache uses atomic rename,
+    /// so only the hidden `.demucs-tmp` staging can survive — sweep it at start.
+    pub fn sweep_stem_staging(&self) {
+        let Ok(entries) = std::fs::read_dir(&self.stems_dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let tmp = entry.path().join(".demucs-tmp");
+            if tmp.is_dir() {
+                let _ = std::fs::remove_dir_all(&tmp);
+            }
+        }
+    }
+
     pub fn dispatch(&mut self, req: Request) -> Response {
         let id = req.id;
         match self.dispatch_inner(&req.cmd, req.params) {
