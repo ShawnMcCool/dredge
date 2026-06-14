@@ -27,12 +27,6 @@ function isTyping(target: EventTarget | null): boolean {
   );
 }
 
-function autoLoopName(): string {
-  const open = get(openSong);
-  const n = (open?.loops.filter((l) => l.kind.kind === "manual").length ?? 0) + 1;
-  return `loop ${n}`;
-}
-
 async function handle(e: KeyboardEvent): Promise<void> {
   // UI zoom works everywhere, even while typing
   if (e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -81,10 +75,12 @@ async function handle(e: KeyboardEvent): Promise<void> {
       await actions.setRate(get(position).rate + 0.05);
       break;
     case "l": {
+      // mirror the waveform's loop glyph: loop the selection now, transient
       const sel = get(selection);
       if (sel && get(openSong)) {
-        const l = await actions.createLoop(autoLoopName(), sel.start, sel.end);
-        await actions.selectLoop(l);
+        await actions.setTransportLoop(sel.start, sel.end);
+        await actions.seek(sel.start);
+        await actions.play();
         selection.set(null);
       }
       break;

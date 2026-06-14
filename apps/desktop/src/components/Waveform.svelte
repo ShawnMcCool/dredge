@@ -520,21 +520,8 @@
     }
   }
 
-  function autoLoopName(): string {
-    const open = get(openSong);
-    const n = (open?.loops.filter((l) => l.kind.kind === "manual").length ?? 0) + 1;
-    return `loop ${n}`;
-  }
-
+  /** Primary glyph: loop the selection now — transient, nothing saved. */
   async function loopSelection() {
-    const sel = get(selection);
-    if (!sel) return;
-    const l = await actions.createLoop(autoLoopName(), sel.start, sel.end);
-    await actions.selectLoop(l);
-    selection.set(null);
-  }
-
-  async function playSelection() {
     const sel = get(selection);
     if (!sel) return;
     await actions.setTransportLoop(sel.start, sel.end);
@@ -542,7 +529,43 @@
     await actions.play();
   }
 
-  let chipLeft = $derived($selection ? Math.min(secToX(view, $selection.end) + 8, view.width - 180) : 0);
+  /** Secondary glyph: save the selection to the loops list (server names it),
+   *  then surface the loops tab. Does not change playback. */
+  async function saveSelection() {
+    const sel = get(selection);
+    if (!sel) return;
+    await actions.saveLoop(sel.start, sel.end);
+    selection.set(null);
+  }
+
+  // Loop/save glyph buttons for the current selection. Placement is dynamic:
+  // tucked inside the loop's bottom-right when it's wide enough to hold them,
+  // otherwise just outside the right edge — or the left edge if the right would
+  // spill past the viewport.
+  const SA_BTN = 24; // glyph button size (px)
+  const SA_GAP = 4; // gap between the two buttons
+  const SA_PAD = 6; // breathing room from the loop edge / bottom
+  const SA_GROUP_W = SA_BTN * 2 + SA_GAP;
+
+  let selActions = $derived.by(() => {
+    const sel = $selection;
+    if (!sel) return null;
+    const x0 = secToX(view, sel.start);
+    const x1 = secToX(view, sel.end);
+    const top = LANE_H + WAVE_H - SA_BTN - SA_PAD; // bottom of the loop, padded
+    let left: number;
+    if (x1 - x0 >= SA_GROUP_W + SA_PAD * 2) {
+      // fits inside — right-aligned against the loop's right edge
+      left = x1 - SA_PAD - SA_GROUP_W;
+    } else if (x1 + SA_PAD + SA_GROUP_W <= view.width) {
+      // too narrow — sit just outside the right edge
+      left = x1 + SA_PAD;
+    } else {
+      // no room on the right either — fall to just outside the left edge
+      left = x0 - SA_PAD - SA_GROUP_W;
+    }
+    return { left, top };
+  });
 
   let dur = $derived($openSong?.song.duration_secs ?? 0);
   const MIN_WIN = 1; // seconds — min visible window
@@ -669,10 +692,10 @@
     <!-- song switch in flight: keep the old waveform, show progress on top -->
     <div class="loading-bar"></div>
   {/if}
-  {#if $selection}
-    <div class="chip fade-in" style="left: {chipLeft}px">
-      <button onclick={loopSelection}>Loop selection</button>
-      <button onclick={playSelection}>Play selection</button>
+  {#if $selection && selActions}
+    <div class="sel-actions fade-in" style="left: {selActions.left}px; top: {selActions.top}px">
+      <button class="sa-btn" onclick={loopSelection} title="loop selection" aria-label="loop selection">⟳</button>
+      <button class="sa-btn" onclick={saveSelection} title="save loop" aria-label="save loop">🖫</button>
     </div>
   {/if}
 </div>
@@ -758,16 +781,31 @@
     }
   }
 
-  .chip {
+  /* loop/play glyph buttons over the selection — see selActions for placement */
+  .sel-actions {
     position: absolute;
-    top: 32px;
     display: flex;
-    gap: calc(var(--space) / 2);
+    gap: 4px;
   }
 
-  .chip button {
-    font-size: 12px;
-    padding: 2px 6px;
+  .sa-btn {
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    line-height: 1;
+    color: var(--fg);
+    background: color-mix(in srgb, var(--bg) 80%, transparent);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    cursor: pointer;
+    padding: 0;
+  }
+  .sa-btn:hover {
+    color: var(--accent);
+    border-color: var(--accent-dim);
   }
 
   .scrollbar {

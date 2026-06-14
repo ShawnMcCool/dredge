@@ -7,19 +7,17 @@
   let renamingId = $state<number | null>(null);
   let renameValue = $state("");
 
-  // clearing a name reverts to the positional auto label
-  const autoName = (i: number) => `loop ${i + 1}`;
-
   function startRename(id: number) {
     renamingId = id;
-    renameValue = ""; // starts empty — type to set, leave blank for the auto label
+    renameValue = ""; // empty + submit reverts to the dynamic name
   }
 
-  async function commitRename(i: number) {
+  async function commitRename() {
     if (renamingId === null) return;
     const id = renamingId;
     renamingId = null;
-    await actions.updateLoop(id, { name: renameValue.trim() || autoName(i) });
+    // empty string clears the override server-side (back to the dynamic name)
+    await actions.updateLoop(id, { name: renameValue.trim() });
   }
 
   function focusNode(node: HTMLInputElement) {
@@ -39,7 +37,7 @@
   <p class="empty">open a song first</p>
 {:else}
   <ul>
-    {#each $openSong.loops as l, i (l.id)}
+    {#each $openSong.loops as l (l.id)}
       <li class="row" class:current={$currentLoop?.id === l.id}>
         {#if renamingId === l.id}
           <input
@@ -47,9 +45,9 @@
             use:focusNode
             bind:value={renameValue}
             placeholder={l.name}
-            onblur={() => commitRename(i)}
+            onblur={() => commitRename()}
             onkeydown={(e) => {
-              if (e.key === "Enter") commitRename(i);
+              if (e.key === "Enter") commitRename();
               else if (e.key === "Escape") renamingId = null;
             }}
           />
@@ -63,6 +61,9 @@
             {l.name}
             {#if l.kind.kind === "junction"}<span class="badge">T</span>{/if}
           </button>
+        {/if}
+        {#if $openSong.sections.length > 0}
+          <Button variant="chip" onclick={() => actions.fitLoop(l.id)} title="snap edges to sections">fit</Button>
         {/if}
         <input
           class="mono t"

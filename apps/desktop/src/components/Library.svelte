@@ -109,8 +109,8 @@
 </Modal>
 
 <Modal open={renaming !== null} title="rename track" closable onclose={() => (renaming = null)}>
-  <label class="field">title <input bind:value={renameTitle} /></label>
-  <label class="field">artist <input bind:value={renameArtist} /></label>
+  <label class="field">title <input bind:value={renameTitle} onkeydown={(e) => e.key === "Enter" && saveRename()} /></label>
+  <label class="field">artist <input bind:value={renameArtist} onkeydown={(e) => e.key === "Enter" && saveRename()} /></label>
   <div class="modal-actions">
     <Button onclick={() => (renaming = null)}>cancel</Button>
     <Button accent onclick={saveRename}>save</Button>

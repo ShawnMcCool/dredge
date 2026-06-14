@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import Analysis from "./components/Analysis.svelte";
+  import AnalyzePrompt from "./components/AnalyzePrompt.svelte";
   import Capture from "./components/Capture.svelte";
   import DuePanel from "./components/DuePanel.svelte";
   import Guide from "./components/Guide.svelte";
@@ -20,6 +21,8 @@
     actions,
     initEvents,
     libraryCollapsed,
+    loopsOpen,
+    openSong,
     panelsCollapsed,
     pendingRatings,
     planStatus,
@@ -64,6 +67,11 @@
       $quickSavedName !== null,
   );
 
+  // The stems + structure boxes are both products of one analyze action. Until a
+  // track has either, show a single analyze call-to-action instead of two empty
+  // boxes; once any data lands, swap in the detail boxes.
+  let anyResults = $derived(!!($openSong?.analysis || $openSong?.stems));
+
   $effect(() => {
     if ($settingsOpen) {
       tab = "settings";
@@ -75,6 +83,13 @@
     if ($sectionsOpen) {
       tab = "sections";
       sectionsOpen.set(false);
+    }
+  });
+
+  $effect(() => {
+    if ($loopsOpen) {
+      tab = "loops";
+      loopsOpen.set(false);
     }
   });
 
@@ -103,8 +118,12 @@
     <Waveform />
     <Transport />
     <div class="results">
-      <StemMixer />
-      <Analysis />
+      {#if anyResults}
+        <StemMixer />
+        <Analysis />
+      {:else}
+        <AnalyzePrompt />
+      {/if}
     </div>
   </main>
   <aside class="panels" class:collapsed={$panelsCollapsed}>

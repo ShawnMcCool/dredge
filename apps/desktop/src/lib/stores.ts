@@ -33,6 +33,8 @@ export interface LoopRegion {
   id: number;
   song_id: number;
   name: string;
+  /** Manual name pinned by the user; null when `name` is algorithm-derived. */
+  name_override: string | null;
   start: number;
   end: number;
   kind: LoopKind;
@@ -290,6 +292,8 @@ export const settings = writable<Record<string, unknown>>({});
 export const settingsOpen = writable(false);
 /** Request: jump to the sections tab (e.g. from the structure summary). */
 export const sectionsOpen = writable(false);
+/** Request: jump to the loops tab (e.g. after saving a loop). */
+export const loopsOpen = writable(false);
 
 // --- prepare flow -----------------------------------------------------------
 
@@ -558,17 +562,31 @@ export const actions = {
 
   // --- annotations ---
 
-  async createLoop(name: string, start: number, end: number): Promise<LoopRegion> {
+  /** Persist a loop for the current span; the server names it dynamically. */
+  async createLoop(start: number, end: number): Promise<LoopRegion> {
     const open = get(openSong);
     if (!open) throw new Error("no song open");
     const l = await cmd<LoopRegion>("loop.create", {
       song_id: open.song.id,
-      name,
       start,
       end,
     });
     await this.refreshLoops();
     return l;
+  },
+
+  /** Deliberate save from the waveform: persist + surface the loops tab.
+   *  Does not change what's currently playing. */
+  async saveLoop(start: number, end: number): Promise<LoopRegion> {
+    const l = await this.createLoop(start, end);
+    loopsOpen.set(true);
+    return l;
+  },
+
+  /** Snap a loop's edges to the nearest section boundaries (renames it). */
+  async fitLoop(loopId: number): Promise<void> {
+    await cmd("loop.fit", { loop_id: loopId });
+    await this.refreshLoops();
   },
 
   async updateLoop(
