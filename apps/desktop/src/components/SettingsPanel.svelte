@@ -11,9 +11,11 @@
     PRACTICE_TOOLS,
     settings,
     UI_SCALE,
+    WINDOW_DECORATIONS,
   } from "../lib/stores";
   import Button from "../lib/ui/Button.svelte";
   import Fader from "../lib/ui/Fader.svelte";
+  import { applyDecorations } from "../lib/window";
   import { getZoom, setZoom } from "../lib/zoom";
 
   const BUFFERS = [60, 120, 180, 300];
@@ -27,11 +29,19 @@
   let bufferSecs = $derived(Number($settings[CAPTURE_BUFFER_SECS] ?? 180));
   let device = $derived(($settings[ANALYSIS_DEVICE] as string) ?? "auto");
   let practiceOn = $derived($settings[PRACTICE_TOOLS] === true);
+  // default on: only an explicit false hides the frame
+  let decorations = $derived($settings[WINDOW_DECORATIONS] !== false);
 
   function toggleSnap() {
     const next = !snapDefault;
     void actions.setSetting(GRID_SNAP_DEFAULT, next);
     gridSnap.set(next); // apply to the running session too
+  }
+
+  function toggleDecorations() {
+    const next = !decorations;
+    void applyDecorations(next); // apply to the live window immediately
+    void actions.setSetting(WINDOW_DECORATIONS, next);
   }
 </script>
 
@@ -53,6 +63,13 @@
   />
   <span class="readout mono">{Math.round(shownScale * 100)}%</span>
 </div>
+<div class="row">
+  <span class="label">native window frame</span>
+  <Button variant="toggle" active={decorations} onclick={toggleDecorations}>
+    {decorations ? "on" : "off"}
+  </Button>
+</div>
+<p class="hint mono">the OS title bar + min/max/close · off = borderless (use your WM)</p>
 <div class="row">
   <span class="label">grid snap by default</span>
   <Button variant="toggle" active={snapDefault} onclick={toggleSnap}>

@@ -16,6 +16,7 @@
   import Transport from "./components/Transport.svelte";
   import Waveform from "./components/Waveform.svelte";
   import { installKeys } from "./lib/keys";
+  import { initDecorations } from "./lib/window";
   import { initZoom } from "./lib/zoom";
   import {
     actions,
@@ -83,8 +84,11 @@
   });
 
   onMount(() => {
-    // settings drive zoom (ui_scale) and session defaults — load first
-    void actions.loadSettings().then(() => initZoom());
+    // settings drive zoom (ui_scale), the window frame, and session defaults
+    void actions.loadSettings().then(() => {
+      void initZoom();
+      void initDecorations();
+    });
     const unlisten = initEvents();
     const uninstall = installKeys();
     return () => {
@@ -317,6 +321,9 @@
     min-width: 0;
   }
 
+  /* generous, solid hit area — the whole padded chip is clickable, not just the
+     glyphs. Small targets got unreliable when the panel wrapped to more rows at
+     narrow (tiled) widths under fractional webview zoom. */
   .tab {
     background: none;
     border: none;
@@ -324,7 +331,15 @@
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--muted);
-    padding: 2px 6px;
+    padding: 6px 10px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    line-height: 1;
+  }
+
+  .tab:hover {
+    color: var(--fg);
+    background: var(--bg-raised);
   }
 
   .tab.active {
