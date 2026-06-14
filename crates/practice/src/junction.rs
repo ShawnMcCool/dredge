@@ -16,6 +16,7 @@ pub fn derive_junctions(sections: &[Section], tail: f64, head: f64) -> Vec<LoopR
                 id: LoopId(0),
                 song_id: a.song_id,
                 name: format!("{}→{}", a.name, b.name),
+                name_override: None,
                 start: (a.end - tail).max(a.start),
                 end: (b.start + head).min(b.end),
                 kind: LoopKind::Junction {
@@ -76,6 +77,7 @@ pub fn derive_junctions_snapped(sections: &[Section], downbeats: &[f64]) -> Vec<
                 id: LoopId(0),
                 song_id: a.song_id,
                 name: format!("{}→{}", a.name, b.name),
+                name_override: None,
                 start: start.max(a.start),
                 end: end.min(b.end),
                 kind: LoopKind::Junction {

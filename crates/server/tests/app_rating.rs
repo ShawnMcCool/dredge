@@ -36,6 +36,7 @@ fn seeded_store() -> (Store, i64, LoopId) {
         .insert_loop(
             song.id,
             NewLoop {
+                name_override: None,
                 name: "riff",
                 start: 1.0,
                 end: 2.0,

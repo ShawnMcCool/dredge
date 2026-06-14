@@ -45,6 +45,10 @@ pub struct LoopRegion {
     pub id: LoopId,
     pub song_id: SongId,
     pub name: String,
+    /// Manual name pinned by the user; when `Some`, the dynamic namer leaves
+    /// this loop alone. `None` means `name` is algorithm-derived.
+    #[serde(default)]
+    pub name_override: Option<String>,
     pub start: f64,
     pub end: f64,
     pub kind: LoopKind,

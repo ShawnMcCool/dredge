@@ -72,6 +72,7 @@ fn loops_roundtrip_with_kind() {
         .insert_loop(
             song.id,
             NewLoop {
+                name_override: None,
                 name: "Verse→Chorus",
                 start: 28.0,
                 end: 32.0,
@@ -95,6 +96,7 @@ fn loop_by_id_finds_one_or_none() {
         .insert_loop(
             song.id,
             NewLoop {
+                name_override: None,
                 name: "riff",
                 start: 1.0,
                 end: 2.0,
@@ -107,12 +109,37 @@ fn loop_by_id_finds_one_or_none() {
 }
 
 #[test]
+fn loop_override_roundtrips() {
+    let (store, song) = store_with_song();
+    let l = store
+        .insert_loop(
+            song.id,
+            NewLoop {
+                name: "verse 1",
+                name_override: None,
+                start: 0.0,
+                end: 10.0,
+                kind: LoopKind::Manual,
+            },
+        )
+        .unwrap();
+    assert_eq!(l.name_override, None);
+    let pinned = store
+        .update_loop(l.id, "my name", Some("my name"), 0.0, 10.0)
+        .unwrap();
+    assert_eq!(pinned.name_override.as_deref(), Some("my name"));
+    let back = store.list_loops(song.id).unwrap();
+    assert_eq!(back[0].name_override.as_deref(), Some("my name"));
+}
+
+#[test]
 fn plans_roundtrip_steps_json() {
     let (store, song) = store_with_song();
     let l = store
         .insert_loop(
             song.id,
             NewLoop {
+                name_override: None,
                 name: "A",
                 start: 0.0,
                 end: 4.0,
@@ -137,6 +164,7 @@ fn retention_reports_latest_retest_per_loop() {
         .insert_loop(
             song.id,
             NewLoop {
+                name_override: None,
                 name: "A",
                 start: 0.0,
                 end: 4.0,
@@ -188,6 +216,7 @@ fn resurfacing_upserts() {
         .insert_loop(
             song.id,
             NewLoop {
+                name_override: None,
                 name: "A",
                 start: 0.0,
                 end: 4.0,
@@ -268,6 +297,14 @@ fn open_migrates_v1_db_to_v2() {
                 duration_secs REAL NOT NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
+            CREATE TABLE loops (
+                id INTEGER PRIMARY KEY,
+                song_id INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                start_secs REAL NOT NULL,
+                end_secs REAL NOT NULL,
+                kind_json TEXT NOT NULL
+            );
             INSERT INTO songs (title, path, file_hash, duration_secs)
             VALUES ('Old', '/tmp/old.wav', 'hash-v1', 60.0);",
         )
@@ -295,6 +332,7 @@ fn deleting_song_cascades() {
         .insert_loop(
             song.id,
             NewLoop {
+                name_override: None,
                 name: "A",
                 start: 0.0,
                 end: 4.0,

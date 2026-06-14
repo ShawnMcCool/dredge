@@ -100,6 +100,11 @@ ALTER TABLE profiles ADD COLUMN max_vram_used_mb INTEGER;
 ALTER TABLE profiles ADD COLUMN vram_total_mb INTEGER;
 ";
 
+/// v6: optional manual name override on loops (NULL = dynamic name).
+const SCHEMA_V6: &str = "
+ALTER TABLE loops ADD COLUMN name_override TEXT;
+";
+
 pub struct Store {
     conn: rusqlite::Connection,
 }
@@ -121,6 +126,7 @@ pub struct NewSection<'a> {
 
 pub struct NewLoop<'a> {
     pub name: &'a str,
+    pub name_override: Option<&'a str>,
     pub start: f64,
     pub end: f64,
     pub kind: LoopKind,
@@ -206,6 +212,10 @@ impl Store {
         if version < 5 {
             self.conn.execute_batch(SCHEMA_V5)?;
             self.conn.pragma_update(None, "user_version", 5)?;
+        }
+        if version < 6 {
+            self.conn.execute_batch(SCHEMA_V6)?;
+            self.conn.pragma_update(None, "user_version", 6)?;
         }
         Ok(())
     }
@@ -340,14 +350,15 @@ impl Store {
     pub fn insert_loop(&self, song_id: SongId, l: NewLoop) -> Result<LoopRegion> {
         let kind_json = serde_json::to_string(&l.kind)?;
         self.conn.execute(
-            "INSERT INTO loops (song_id, name, start_secs, end_secs, kind_json)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![song_id.0, l.name, l.start, l.end, kind_json],
+            "INSERT INTO loops (song_id, name, name_override, start_secs, end_secs, kind_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![song_id.0, l.name, l.name_override, l.start, l.end, kind_json],
         )?;
         Ok(LoopRegion {
             id: LoopId(self.conn.last_insert_rowid()),
             song_id,
             name: l.name.to_owned(),
+            name_override: l.name_override.map(str::to_owned),
             start: l.start,
             end: l.end,
             kind: l.kind,
@@ -356,28 +367,39 @@ impl Store {
 
     pub fn loop_by_id(&self, id: LoopId) -> Result<Option<LoopRegion>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, song_id, name, start_secs, end_secs, kind_json
+            "SELECT id, song_id, name, name_override, start_secs, end_secs, kind_json
              FROM loops WHERE id = ?1",
         )?;
         let mut rows = stmt.query_map(params![id.0], |row| {
-            let kind_json: String = row.get(5)?;
+            let kind_json: String = row.get(6)?;
             Ok(LoopRegion {
                 id: LoopId(row.get(0)?),
                 song_id: SongId(row.get(1)?),
                 name: row.get(2)?,
-                start: row.get(3)?,
-                end: row.get(4)?,
+                name_override: row.get(3)?,
+                start: row.get(4)?,
+                end: row.get(5)?,
                 kind: serde_json::from_str(&kind_json).map_err(json_err)?,
             })
         })?;
         rows.next().transpose().map_err(Into::into)
     }
 
-    /// Rename and/or move a loop in place; kind is untouched.
-    pub fn update_loop(&self, id: LoopId, name: &str, start: f64, end: f64) -> Result<LoopRegion> {
+    /// Rename and/or move a loop in place; kind is untouched. `name` is the
+    /// effective display name; `name_override` is the pinned manual name (NULL
+    /// reverts to dynamic).
+    pub fn update_loop(
+        &self,
+        id: LoopId,
+        name: &str,
+        name_override: Option<&str>,
+        start: f64,
+        end: f64,
+    ) -> Result<LoopRegion> {
         self.conn.execute(
-            "UPDATE loops SET name = ?2, start_secs = ?3, end_secs = ?4 WHERE id = ?1",
-            params![id.0, name, start, end],
+            "UPDATE loops SET name = ?2, name_override = ?3, start_secs = ?4, end_secs = ?5
+             WHERE id = ?1",
+            params![id.0, name, name_override, start, end],
         )?;
         self.loop_by_id(id)?.ok_or(crate::error::Error::NotFound)
     }
@@ -390,18 +412,19 @@ impl Store {
 
     pub fn list_loops(&self, song_id: SongId) -> Result<Vec<LoopRegion>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, song_id, name, start_secs, end_secs, kind_json
+            "SELECT id, song_id, name, name_override, start_secs, end_secs, kind_json
              FROM loops WHERE song_id = ?1 ORDER BY id",
         )?;
         let loops = stmt
             .query_map(params![song_id.0], |row| {
-                let kind_json: String = row.get(5)?;
+                let kind_json: String = row.get(6)?;
                 Ok(LoopRegion {
                     id: LoopId(row.get(0)?),
                     song_id: SongId(row.get(1)?),
                     name: row.get(2)?,
-                    start: row.get(3)?,
-                    end: row.get(4)?,
+                    name_override: row.get(3)?,
+                    start: row.get(4)?,
+                    end: row.get(5)?,
                     kind: serde_json::from_str(&kind_json).map_err(json_err)?,
                 })
             })?

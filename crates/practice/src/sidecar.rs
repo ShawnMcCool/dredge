@@ -69,6 +69,7 @@ mod tests {
                 id: LoopId(1),
                 song_id: SongId(1),
                 name: "riff".into(),
+                name_override: None,
                 start: 1.0,
                 end: 2.0,
                 kind: LoopKind::Manual,
