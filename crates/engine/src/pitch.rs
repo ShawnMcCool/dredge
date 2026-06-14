@@ -10,16 +10,18 @@ use pitch_detection::detector::PitchDetector;
 /// guitar low E (82 Hz) reliably while staying responsive.
 pub const WINDOW: usize = 4096;
 
-/// Deliberately low (the crate's own examples use ~300 for f64): the tuner
-/// should attempt detection even on quiet input. `power_threshold` is compared
-/// against the window's sum-of-squares, so 5.0 over WINDOW samples is ~0.035 RMS
-/// per sample — inaudibly quiet. Near-silence is rejected by CLARITY_THRESHOLD,
-/// and true silence has sum-of-squares 0.0.
-const POWER_THRESHOLD: f32 = 5.0;
-/// How periodic the signal must be to count as a pitch (McLeod NSDF peak).
-/// Kept moderate: thinner/higher strings lose clarity quickly as they decay and
-/// their harmonics shift, so too high a bar makes them flicker out. The sampler's
-/// release-hold smooths the remaining brief dropouts.
+/// Energy gate: minimum window sum-of-squares to attempt detection. Set low so
+/// weak / decaying higher strings still register — characterization showed clean
+/// tones detect with clarity 0.86–0.96 right down to the gate, and detection cut
+/// off *exactly* at the old 5.0 (≈amp 0.05), which is why softly-plucked high
+/// strings vanished. Noise rejection is the *clarity* gate's job, not this one
+/// (verified: white noise at power 13.5 — far above a quiet tone — is rejected),
+/// so we can drop this to ~0.5 (≈amp 0.016) to track quieter strings. Low enough
+/// to follow a decaying note, high enough to ignore near-silence / faint hum.
+const POWER_THRESHOLD: f32 = 0.5;
+/// How periodic the signal must be to count as a pitch (McLeod NSDF peak). This
+/// is the real noise gate: non-periodic signal scores low here regardless of how
+/// loud it is. 0.5 admits real (harmonic-rich) strings while rejecting noise.
 const CLARITY_THRESHOLD: f32 = 0.5;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -97,6 +99,32 @@ mod tests {
     #[test]
     fn silence_returns_none() {
         let signal = vec![0.0_f32; WINDOW];
+        assert!(detect(&signal, SAMPLE_RATE).is_none());
+    }
+
+    #[test]
+    fn detects_weak_high_string() {
+        // A softly-plucked / decaying high string (amp 0.02, window power ~0.8).
+        // The old power gate (5.0) rejected this — the bug. It must detect now.
+        let signal: Vec<f32> = sine(329.6, WINDOW, SAMPLE_RATE)
+            .iter()
+            .map(|s| s * 0.02)
+            .collect();
+        let r = detect(&signal, SAMPLE_RATE).expect("weak high E should detect");
+        assert!((r.hz - 329.6).abs() < 2.0, "got {}", r.hz);
+    }
+
+    #[test]
+    fn rejects_loud_noise() {
+        // White noise louder than a detectable quiet tone must still be rejected
+        // — the clarity gate, not the power gate, is what guards against noise.
+        let mut rng: u32 = 12345;
+        let signal: Vec<f32> = (0..WINDOW)
+            .map(|_| {
+                rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                ((rng >> 8) as f32 / (1u32 << 24) as f32 * 2.0 - 1.0) * 0.1
+            })
+            .collect();
         assert!(detect(&signal, SAMPLE_RATE).is_none());
     }
 

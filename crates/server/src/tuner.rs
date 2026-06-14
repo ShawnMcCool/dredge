@@ -132,7 +132,10 @@ fn tuner_loop(ring: Arc<Mutex<RollingRing>>, tx: Sender<TunerReading>, stop: Arc
             let n = snap.len().max(1) as f32;
             let rms = (snap.iter().map(|s| s * s).sum::<f32>() / n).sqrt();
             match detected {
-                Some(p) => eprintln!("tuner: rms={rms:.4} hz={:.1} clarity={:.2}", p.hz, p.clarity),
+                Some(p) => eprintln!(
+                    "tuner: rms={rms:.4} hz={:.1} clarity={:.2}",
+                    p.hz, p.clarity
+                ),
                 None => eprintln!("tuner: rms={rms:.4} no-pitch (miss {})", misses + 1),
             }
         }
