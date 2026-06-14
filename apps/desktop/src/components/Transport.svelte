@@ -115,6 +115,17 @@
         <span class="readout pitchval">{pitchLabel}</span>
         <Button variant="chip" onclick={() => stepPitch(1)}>+</Button>
       </span>
+
+      <span class="vsep"></span>
+
+      <button
+        class="reset"
+        onclick={() => actions.resetWorkspace()}
+        title="reset workspace — fit zoom, clear selection, loop & playhead"
+        aria-label="reset workspace"
+      >
+        ⟲
+      </button>
     </div>
   </div>
 </div>
@@ -221,6 +232,24 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
+  }
+
+  /* subtle, low-contrast until hover — it's a recovery affordance, not a
+     primary control, so it sits quietly at the end of the tools row */
+  .reset {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+    padding: 0 2px;
+    opacity: 0.6;
+    flex: 0 0 auto;
+  }
+  .reset:hover {
+    color: var(--fg);
+    opacity: 1;
   }
 
   .pitchval {

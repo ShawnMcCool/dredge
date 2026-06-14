@@ -13,6 +13,7 @@
     openSong,
     position,
     selection,
+    workspaceReset,
     type LoopRegion,
     type OpenSong,
   } from "../lib/stores";
@@ -77,13 +78,31 @@
   // to the old bounds for the frames between release and refresh.
   let pendingResize: { id: number; start: number; end: number } | null = null;
 
+  /** Zoom out to frame the whole song (keeps the current canvas width). */
+  function fitToSong(open: OpenSong) {
+    view = { startSec: 0, endSec: Math.max(open.song.duration_secs, 2), width: view.width };
+  }
+
   // reset the view when a different song opens
   $effect(() => {
     const open = $openSong;
     if (open && open.song.id !== lastSongId) {
       lastSongId = open.song.id;
       activeSpan = null;
-      view = { startSec: 0, endSec: Math.max(open.song.duration_secs, 2), width: view.width };
+      fitToSong(open);
+    }
+  });
+
+  // workspace reset (controls box) — refit zoom + drop the clicked active span;
+  // the selection/loop/playhead are cleared store-side by resetWorkspace().
+  let lastReset = 0;
+  $effect(() => {
+    const n = $workspaceReset;
+    if (n !== lastReset) {
+      lastReset = n;
+      activeSpan = null;
+      const open = get(openSong);
+      if (open) fitToSong(open);
     }
   });
 

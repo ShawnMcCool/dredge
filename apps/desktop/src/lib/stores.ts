@@ -222,6 +222,9 @@ export const planStatus = writable<PlanStatus | null>(null);
 export const selection = writable<{ start: number; end: number } | null>(null);
 /** Loop currently driving the transport (clicked or plan-applied). */
 export const currentLoop = writable<LoopRegion | null>(null);
+/** Bumped by `resetWorkspace()` — the waveform watches this to refit zoom and
+ *  drop its local view/active-span state (which no store mirrors). */
+export const workspaceReset = writable(0);
 export const pitch = writable({ semitones: 0, cents: 0, octaveUp: false });
 /** Bass focus on/off — low-pass + octave-up transcription trick. */
 export const bassFocus = writable(false);
@@ -558,6 +561,17 @@ export const actions = {
   async clearTransportLoop(): Promise<void> {
     currentLoop.set(null);
     await cmd("loop.clear");
+  },
+
+  /** Reset the stage to a clean slate: refit the waveform zoom, drop the
+   *  selection, the clicked active span, the playhead, and the active loop —
+   *  without touching play/pause, speed, pitch or volume. The zoom + active
+   *  span live as local state in Waveform, so we signal it via workspaceReset. */
+  async resetWorkspace(): Promise<void> {
+    selection.set(null);
+    await this.clearTransportLoop();
+    await this.seek(0);
+    workspaceReset.update((n) => n + 1);
   },
 
   // --- annotations ---
