@@ -147,9 +147,6 @@
   </aside>
 </div>
 
-<button class="corner tl" onclick={() => actions.toggleLibrary()} title="toggle library (Ctrl+[)" aria-label="toggle library"></button>
-<button class="corner tr" onclick={() => actions.togglePanels()} title="toggle panels (Ctrl+])" aria-label="toggle panels"></button>
-
 <style>
   .shell {
     /* per-column widths as custom props so collapse + the responsive media
@@ -190,38 +187,55 @@
     overflow-y: auto;
   }
 
+  /* overflow visible (not hidden) so the rail can bleed past the corner below */
   .library.collapsed,
   .panels.collapsed {
     padding: 0;
-    overflow: hidden;
+    overflow: visible;
   }
 
-  /* thin expand rail shown when a side column is collapsed */
+  /* thin expand rail shown when a side column is collapsed. Absolutely placed so
+     it can BLEED 6px past the top + outer edges (same fractional-HiDPI fix as
+     .edge) — a slam to the literal corner/edge then lands inside the rail. */
   .rail {
-    width: 100%;
-    height: 100%;
+    position: absolute;
+    top: -6px;
+    bottom: 0;
+    width: auto;
+    height: auto;
     background: none;
     border: none;
     color: var(--muted);
     cursor: pointer;
     font-size: 14px;
   }
+  .library.collapsed .rail {
+    left: -6px;
+    right: 0;
+  }
+  .panels.collapsed .rail {
+    left: 0;
+    right: 0;
+  }
   .rail:hover {
     background: var(--bg-raised);
     color: var(--fg);
   }
 
-  /* small collapse handle pinned to a column's outer edge */
+  /* Collapse handle tucked into the window's top outer corner. It BLEEDS 6px
+     past the top + outer edges (negative offsets) so the very corner pixel
+     (0,0 etc.) lands in the handle's interior — under fractional HiDPI scaling
+     (e.g. dpr 1.75) a box flush to the edge snaps just inside it, so a slam to
+     the literal corner falls through to the column. The off-screen bleed makes
+     the corner-slam reliable; padding pushes the chevron into the visible part. */
   .edge {
     position: absolute;
-    top: 4px;
+    top: -6px;
     z-index: 2;
-    width: 18px;
-    height: 22px;
-    padding: 0;
+    width: 28px;
+    height: 28px;
     background: var(--bg);
     border: 1px solid var(--line);
-    border-radius: var(--radius);
     color: var(--muted);
     font-size: 11px;
     cursor: pointer;
@@ -230,39 +244,20 @@
     color: var(--fg);
     border-color: var(--muted);
   }
-  /* handles live on each column's outer edge (far left / far right) */
+  /* square the off-screen (outer) corner; pad the chevron into the on-screen part */
   .edge.left {
-    left: 4px;
-  }
-  .edge.right {
-    right: 4px;
-  }
-
-  /* Corner toggle hotspots. They BLEED 6px past the viewport edges so the very
-     corner pixel (0,0 etc.) lands in the button's interior — under fractional
-     HiDPI scaling (e.g. dpr 1.75) a box flush to top:0/left:0 snaps just inside
-     the edge, so a slam to the literal corner falls through to the column
-     underneath. The over-bleed guarantees the corner-slam always hits. */
-  .corner {
-    position: fixed;
-    top: -6px;
-    width: 34px;
-    height: 34px;
-    margin: 0;
-    padding: 0;
-    border: none;
-    background: transparent;
-    z-index: 100;
-    cursor: pointer;
-  }
-  .corner.tl {
     left: -6px;
+    padding: 6px 0 0 6px;
+    border-top-left-radius: 0;
+    border-bottom-right-radius: var(--radius);
   }
-  .corner.tr {
-    right: -6px;
-  }
-  .corner:hover {
-    background: color-mix(in srgb, var(--accent) 18%, transparent);
+  /* right side: the slam lands at (W-1, 0) — already 1px inside horizontally, so
+     only the top edge needs the bleed (no rightward bleed → no panel overflow) */
+  .edge.right {
+    right: 0;
+    padding: 6px 6px 0 0;
+    border-top-right-radius: 0;
+    border-bottom-left-radius: var(--radius);
   }
 
   .stage {
