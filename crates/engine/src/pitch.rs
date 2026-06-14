@@ -3,7 +3,7 @@
 //! using the engine's capture format.
 
 use crate::buffer::{CHANNELS, SAMPLE_RATE};
-use pitch_detection::detector::mcleod::McLeodDetector;
+use pitch_detection::detector::yin::YINDetector;
 use pitch_detection::detector::PitchDetector;
 
 /// Detection window in samples. ~85 ms at 48 kHz — enough periods to resolve the
@@ -19,15 +19,18 @@ pub const WINDOW: usize = 4096;
 /// so we can drop this to ~0.5 (≈amp 0.016) to track quieter strings. Low enough
 /// to follow a decaying note, high enough to ignore near-silence / faint hum.
 const POWER_THRESHOLD: f32 = 0.5;
-/// How periodic the signal must be to count as a pitch (McLeod NSDF peak). This
-/// is the real noise gate: non-periodic signal scores low here regardless of how
-/// loud it is. 0.5 admits real (harmonic-rich) strings while rejecting noise.
-const CLARITY_THRESHOLD: f32 = 0.5;
+/// Periodicity gate, the real noise rejecter: non-periodic signal is rejected
+/// however loud it is. The crate maps this to YIN's absolute threshold as
+/// `yin_threshold = 1 - CLARITY_THRESHOLD`, so 0.8 → 0.2, the value TarsosDSP
+/// uses for real instruments (the YIN paper's 0.1 is stricter; 0.2 tolerates the
+/// inharmonicity of real strings while still rejecting noise/aperiodic frames —
+/// the latter are what made the readout jump). The sampler's median + octave
+/// fold cleans up any remaining stray frames.
+const CLARITY_THRESHOLD: f32 = 0.8;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PitchReading {
     pub hz: f32,
-    pub clarity: f32,
 }
 
 /// Average channels down to mono. `channels <= 1` returns a copy.
@@ -48,8 +51,10 @@ pub fn detect(mono: &[f32], sample_rate: u32) -> Option<PitchReading> {
         return None;
     }
     let window = &mono[mono.len() - WINDOW..];
-    // padding = WINDOW/2: internal FFT buffer headroom for the autocorrelation.
-    let mut detector = McLeodDetector::new(WINDOW, WINDOW / 2);
+    // YIN over McLeod: McLeod is documented to be inaccurate at low pitches (the
+    // bass range); YIN has no low-frequency cutoff. padding = WINDOW/2 is FFT
+    // headroom for the difference function.
+    let mut detector = YINDetector::new(WINDOW, WINDOW / 2);
     detector
         .get_pitch(
             window,
@@ -57,10 +62,7 @@ pub fn detect(mono: &[f32], sample_rate: u32) -> Option<PitchReading> {
             POWER_THRESHOLD,
             CLARITY_THRESHOLD,
         )
-        .map(|p| PitchReading {
-            hz: p.frequency,
-            clarity: p.clarity,
-        })
+        .map(|p| PitchReading { hz: p.frequency })
 }
 
 /// Detect from an interleaved capture snapshot, downmixing with the engine's
@@ -85,8 +87,8 @@ mod tests {
     fn detects_a440_within_a_hertz() {
         let signal = sine(440.0, WINDOW, SAMPLE_RATE);
         let r = detect(&signal, SAMPLE_RATE).expect("should detect a clean sine");
-        assert!((r.hz - 440.0).abs() < 1.0, "got {}", r.hz);
-        assert!(r.clarity > 0.9, "clarity {}", r.clarity);
+        // YIN is exact on clean tones; keep a tight bound to catch regressions.
+        assert!((r.hz - 440.0).abs() < 0.5, "got {}", r.hz);
     }
 
     #[test]
