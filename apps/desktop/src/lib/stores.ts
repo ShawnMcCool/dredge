@@ -211,6 +211,12 @@ export interface CaptureStatus {
   media?: string;
 }
 
+export interface TunerReading {
+  hz: number;
+  /** McLeod clarity 0..1; < 0.5 means no steady pitch. */
+  confidence: number;
+}
+
 // --- stores ---------------------------------------------------------------
 
 export const songs = writable<Song[]>([]);
@@ -246,6 +252,14 @@ export const quickPromptVisible = writable(false);
 export const quickSavedName = writable<string | null>(null);
 export const captureNodes = writable<CaptureNode[]>([]);
 export const captureStatus = writable<CaptureStatus>({ running: false });
+/** Input devices (mics / interfaces) for the tuner; CaptureNode shape. */
+export const tunerInputs = writable<CaptureNode[]>([]);
+/** Latest pitch reading while the tuner is on; null when off. */
+export const tunerReading = writable<TunerReading | null>(null);
+/** Whether the tuner box is powered on (listening). */
+export const tunerOn = writable(false);
+/** Sticky chosen input device name; restored from settings at launch. */
+export const tunerInputName = writable<string | null>(null);
 /** Mixer state for the open song's stems (sliders × mute × solo). */
 export const stemMix = writable<StemMix>(defaultStemMix());
 export const stemsError = writable<string | null>(null);
@@ -286,6 +300,7 @@ export const COLOR_THEME = "color_theme";
 /** When true, the practice-routine tabs (plan, due) are shown; hidden by
  *  default to keep the UI to the song-shaping tools. */
 export const PRACTICE_TOOLS = "practice_tools_visible";
+export const TUNER_INPUT_NAME = "tuner_input_name";
 
 /** Side-column collapse state — persisted to settings, restored at launch. */
 export const libraryCollapsed = writable(false);
@@ -381,6 +396,7 @@ export const actions = {
     const vol = typeof all[PLAYBACK_VOLUME] === "number" ? all[PLAYBACK_VOLUME] : 1.0;
     playbackVolume.set(vol);
     await cmd("volume", { value: vol });
+    if (typeof all[TUNER_INPUT_NAME] === "string") tunerInputName.set(all[TUNER_INPUT_NAME]);
     void actions.loadProfiles();
   },
 
@@ -766,6 +782,39 @@ export const actions = {
     return song;
   },
 
+  // --- tuner ---
+
+  async refreshTunerInputs(): Promise<void> {
+    tunerInputs.set(await cmd<CaptureNode[]>("tuner.inputs"));
+  },
+
+  /** Power on: resolve the sticky device (or first available) and start. */
+  async tunerPowerOn(): Promise<void> {
+    await this.refreshTunerInputs();
+    const inputs = get(tunerInputs);
+    if (inputs.length === 0) throw new Error("no audio input devices found");
+    const savedName = get(tunerInputName);
+    const node = inputs.find((n) => n.app === savedName) ?? inputs[0];
+    tunerInputName.set(node.app);
+    await cmd("tuner.start", { node_id: node.id });
+    tunerOn.set(true);
+  },
+
+  async tunerPowerOff(): Promise<void> {
+    await cmd("tuner.stop");
+    tunerOn.set(false);
+    tunerReading.set(null);
+  },
+
+  /** Pick a specific input; persist it and restart capture if already on. */
+  async setTunerInput(node: CaptureNode): Promise<void> {
+    tunerInputName.set(node.app);
+    await cmd("settings.set", { key: TUNER_INPUT_NAME, value: node.app });
+    if (get(tunerOn)) {
+      await cmd("tuner.start", { node_id: node.id });
+    }
+  },
+
   // --- stems ---
 
   /** The 4-vector sent to the engine: sliders × mute × solo. */
@@ -993,6 +1042,9 @@ export async function initEvents(): Promise<() => void> {
       }
       case "work_sample":
         actions.recordWorkSample(ev.data as WorkSample);
+        break;
+      case "tuner_pitch":
+        tunerReading.set(ev.data as TunerReading);
         break;
       case "profile_run":
         actions.recordProfile(ev.data as ProfileRun);
