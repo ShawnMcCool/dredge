@@ -103,6 +103,78 @@ fn scan_output_streams() -> Result<Vec<CaptureNode>, pw::Error> {
     Ok(found.take())
 }
 
+/// One-shot registry scan for capture sources (mics, audio interfaces:
+/// media.class == "Audio/Source"). Mirrors `list_output_streams`.
+pub fn list_input_sources() -> crate::error::Result<Vec<CaptureNode>> {
+    let handle = std::thread::Builder::new()
+        .name("earworm-pw-scan-in".into())
+        .spawn(scan_input_sources)?;
+    handle
+        .join()
+        .map_err(|_| std::io::Error::other("pipewire scan thread panicked"))?
+        .map_err(pw_err)
+}
+
+fn scan_input_sources() -> Result<Vec<CaptureNode>, pw::Error> {
+    pw::init();
+    let mainloop = pw::main_loop::MainLoopRc::new(None)?;
+    let context = pw::context::ContextRc::new(&mainloop, None)?;
+    let core = context.connect_rc(None)?;
+    let registry = core.get_registry_rc()?;
+
+    let found: Rc<RefCell<Vec<CaptureNode>>> = Rc::new(RefCell::new(Vec::new()));
+    let _listener = registry
+        .add_listener_local()
+        .global({
+            let found = found.clone();
+            move |global| {
+                let Some(props) = global.props.as_ref() else {
+                    return;
+                };
+                if props.get("media.class") != Some("Audio/Source") {
+                    return;
+                }
+                // For physical sources application.name is usually empty, so
+                // node.description (a friendly device name) is preferred.
+                let app = props
+                    .get("node.description")
+                    .or_else(|| props.get("application.name"))
+                    .or_else(|| props.get("node.name"))
+                    .unwrap_or("")
+                    .to_owned();
+                let media = props.get("media.name").unwrap_or("").to_owned();
+                let serial = props
+                    .get("object.serial")
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(u64::from(global.id));
+                found.borrow_mut().push(CaptureNode {
+                    id: global.id,
+                    serial,
+                    app,
+                    media,
+                });
+            }
+        })
+        .register();
+
+    let timer = mainloop.loop_().add_timer({
+        let weak = mainloop.downgrade();
+        move |_| {
+            if let Some(ml) = weak.upgrade() {
+                ml.quit();
+            }
+        }
+    });
+    timer
+        .update_timer(Some(Duration::from_millis(300)), None)
+        .into_result()
+        .map_err(pw::Error::SpaError)?;
+
+    mainloop.run();
+    drop(timer);
+    Ok(found.take())
+}
+
 /// A live capture of one application node into a rolling ring buffer.
 pub struct CaptureSession {
     pub ring: Arc<Mutex<RollingRing>>,
