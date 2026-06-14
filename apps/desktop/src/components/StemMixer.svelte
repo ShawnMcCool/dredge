@@ -9,7 +9,19 @@
 
 {#if $openSong}
   <section class="box">
-    <div class="head"><span class="lbl">stems</span></div>
+    <div class="head">
+      <span class="lbl">stems</span>
+      {#if $openSong.stems}
+        <Button
+          variant="icon"
+          onclick={() => void actions.resetStemMix()}
+          title="reset stems — all faders to 100%, clear mute/solo"
+          aria-label="reset stems"
+        >
+          ⟲
+        </Button>
+      {/if}
+    </div>
     <div class="body">
       {#if $openSong.stems}
         <div class="channels">
@@ -73,6 +85,10 @@
   .head {
     padding: 6px 10px;
     border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
   }
 
   .lbl {

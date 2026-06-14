@@ -845,6 +845,12 @@ export const actions = {
     await this.applyStemMix();
   },
 
+  /** Restore all faders to 100% and clear every mute/solo, in one engine call. */
+  async resetStemMix(): Promise<void> {
+    stemMix.set(defaultStemMix());
+    await this.applyStemMix();
+  },
+
   // --- prepare (analysis → stems) ---
 
   /** One button: structure/beat analysis, then stem separation —
