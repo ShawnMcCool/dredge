@@ -14,6 +14,7 @@
   import SettingsPanel from "./components/SettingsPanel.svelte";
   import StemMixer from "./components/StemMixer.svelte";
   import Transport from "./components/Transport.svelte";
+  import Tuner from "./components/Tuner.svelte";
   import Waveform from "./components/Waveform.svelte";
   import { installKeys } from "./lib/keys";
   import { initTheme } from "./lib/theme";
@@ -126,6 +127,7 @@
         {/if}
       </div>
     {/if}
+    <Tuner />
   </main>
   <aside class="panels" class:collapsed={$panelsCollapsed}>
     {#if $panelsCollapsed}
