@@ -16,7 +16,11 @@ pub const WINDOW: usize = 4096;
 /// per sample — inaudibly quiet. Near-silence is rejected by CLARITY_THRESHOLD,
 /// and true silence has sum-of-squares 0.0.
 const POWER_THRESHOLD: f32 = 5.0;
-const CLARITY_THRESHOLD: f32 = 0.6;
+/// How periodic the signal must be to count as a pitch (McLeod NSDF peak).
+/// Kept moderate: thinner/higher strings lose clarity quickly as they decay and
+/// their harmonics shift, so too high a bar makes them flicker out. The sampler's
+/// release-hold smooths the remaining brief dropouts.
+const CLARITY_THRESHOLD: f32 = 0.5;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PitchReading {

@@ -27,6 +27,9 @@ const SNAPSHOT_SECS: f64 = 0.15;
 const SAMPLE_INTERVAL: Duration = Duration::from_millis(50);
 /// Exponential smoothing weight on the newest reading.
 const SMOOTH_ALPHA: f32 = 0.4;
+/// Ticks to keep showing the last reading through a detection dropout before
+/// blanking to "listening" (~50 ms each → ~300 ms grace).
+const HOLD_TICKS: u32 = 6;
 
 /// Everything App needs from the tuner side — real PipeWire or test mock.
 pub trait TunerControl: Send {
@@ -108,28 +111,56 @@ impl Drop for RealTuner {
 
 /// Sampler loop: snapshot the ring, downmix+detect, smooth, send. Sends a
 /// zero-confidence reading when no pitch is found so the UI shows "listening".
+///
+/// Brief detection dropouts (common as thinner/higher strings decay and their
+/// clarity dips below threshold) are bridged by a release-hold: the last good
+/// reading is re-sent for up to `HOLD_TICKS` ticks before the display blanks, so
+/// the gauge doesn't flicker out mid-note the way a raw gate would.
 fn tuner_loop(ring: Arc<Mutex<RollingRing>>, tx: Sender<TunerReading>, stop: Arc<AtomicBool>) {
+    let debug = std::env::var("EARWORM_DEBUG").is_ok();
     let mut smoothed: Option<f32> = None;
+    let mut last: Option<TunerReading> = None;
+    let mut misses: u32 = 0;
     while !stop.load(Ordering::Relaxed) {
         std::thread::sleep(SAMPLE_INTERVAL);
         let snap = match ring.lock() {
             Ok(r) => r.snapshot_last(SNAPSHOT_SECS),
             Err(_) => break,
         };
-        match engine::pitch::detect_interleaved(&snap) {
+        let detected = engine::pitch::detect_interleaved(&snap);
+        if debug {
+            let n = snap.len().max(1) as f32;
+            let rms = (snap.iter().map(|s| s * s).sum::<f32>() / n).sqrt();
+            match detected {
+                Some(p) => eprintln!("tuner: rms={rms:.4} hz={:.1} clarity={:.2}", p.hz, p.clarity),
+                None => eprintln!("tuner: rms={rms:.4} no-pitch (miss {})", misses + 1),
+            }
+        }
+        match detected {
             Some(p) => {
                 let hz = match smoothed {
                     Some(prev) => SMOOTH_ALPHA * p.hz + (1.0 - SMOOTH_ALPHA) * prev,
                     None => p.hz,
                 };
                 smoothed = Some(hz);
-                let _ = tx.send(TunerReading {
+                let reading = TunerReading {
                     hz,
                     confidence: p.clarity,
-                });
+                };
+                last = Some(reading);
+                misses = 0;
+                let _ = tx.send(reading);
             }
             None => {
+                misses += 1;
+                if misses <= HOLD_TICKS {
+                    if let Some(reading) = last {
+                        let _ = tx.send(reading);
+                        continue;
+                    }
+                }
                 smoothed = None;
+                last = None;
                 let _ = tx.send(TunerReading {
                     hz: 0.0,
                     confidence: 0.0,
