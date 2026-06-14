@@ -147,13 +147,6 @@
   </aside>
 </div>
 
-<!-- Fixed corner hotspots: viewport-anchored, above scrollbars + content, and
-     present in every collapse state, so the far corners are always a valid
-     "park the cursor and toggle" target (especially the fullscreen corner-slam).
-     The visible chevron handles inside each column stay as the affordance. -->
-<button class="corner tl" onclick={() => actions.toggleLibrary()} title="toggle library (Ctrl+[)" aria-label="toggle library"></button>
-<button class="corner tr" onclick={() => actions.togglePanels()} title="toggle panels (Ctrl+])" aria-label="toggle panels"></button>
-
 <style>
   .shell {
     /* per-column widths as custom props so collapse + the responsive media
@@ -215,18 +208,17 @@
     color: var(--fg);
   }
 
-  /* collapse handle pinned to the window's top outer corner — anchored flush to
-     0,0 (left) / top-right so the far corner is a valid click target, including
-     the fullscreen "slam the cursor into the corner" move */
+  /* small collapse handle pinned to a column's outer edge */
   .edge {
     position: absolute;
-    top: 0;
+    top: 4px;
     z-index: 2;
-    width: 22px;
-    height: 24px;
+    width: 18px;
+    height: 22px;
     padding: 0;
     background: var(--bg);
     border: 1px solid var(--line);
+    border-radius: var(--radius);
     color: var(--muted);
     font-size: 11px;
     cursor: pointer;
@@ -235,41 +227,12 @@
     color: var(--fg);
     border-color: var(--muted);
   }
-  /* outer corner squared (flush to the window edge); inner corner rounded */
+  /* handles live on each column's outer edge (far left / far right) */
   .edge.left {
-    left: 0;
-    border-top-left-radius: 0;
-    border-bottom-right-radius: var(--radius);
+    left: 4px;
   }
   .edge.right {
-    right: 0;
-    border-top-right-radius: 0;
-    border-bottom-left-radius: var(--radius);
-  }
-
-  /* always-present viewport-corner toggle zones (see template comment) */
-  .corner {
-    position: fixed;
-    top: 0;
-    width: 28px;
-    height: 28px;
-    margin: 0;
-    padding: 0;
-    border: none;
-    background: transparent;
-    z-index: 100;
-    cursor: pointer;
-  }
-  .corner.tl {
-    left: 0;
-  }
-  .corner.tr {
-    right: 0;
-  }
-  /* faint tint on hover so the live zone is discoverable; the chevron handle
-     underneath still shows through */
-  .corner:hover {
-    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    right: 4px;
   }
 
   .stage {

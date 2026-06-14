@@ -39,7 +39,6 @@
       keys: [
         ["ctrl + / − / 0", "zoom in / out / reset"],
         ["ctrl [  /  ]", "collapse library / panels"],
-        ["corner click", "far top-left / top-right toggles the library / panels column"],
         [",", "open settings"],
         ["esc", "clear selection / dismiss"],
       ],
