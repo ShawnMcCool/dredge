@@ -3,6 +3,7 @@
 pub mod error;
 pub mod junction;
 pub mod model;
+pub mod naming;
 pub mod runner;
 pub mod schedule;
 pub mod sidecar;
