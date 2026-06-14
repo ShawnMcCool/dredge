@@ -4,6 +4,7 @@ use crate::control::AudioControl;
 use crate::protocol::{Event, Request, Response};
 use crate::sampler::{SharedWork, WorkReporter, WorkSample};
 use crate::stems::{StemSeparator, STEM_NAMES};
+use crate::tuner::{RealTuner, TunerControl, TunerReading};
 use engine::pipeline::{EngineCmd, EngineEvent};
 use practice::model::{
     Analysis, AnalysisSection, LoopId, LoopKind, LoopRegion, Plan, PlanId, PlanStep, ProfileRun,
@@ -275,6 +276,10 @@ pub struct App {
     /// Live work samples from the sampler thread; drained by `tick()`.
     work_sample_tx: mpsc::Sender<WorkSample>,
     work_sample_rx: mpsc::Receiver<WorkSample>,
+    /// Live pitch readings from the tuner sampler thread; drained by `tick()`.
+    tuner: Box<dyn TunerControl>,
+    tuner_tx: mpsc::Sender<TunerReading>,
+    tuner_rx: mpsc::Receiver<TunerReading>,
 }
 
 struct OpenSong {
@@ -300,6 +305,7 @@ impl App {
         let (analysis_tx, analysis_rx) = mpsc::channel();
         let (profile_tx, profile_rx) = mpsc::channel();
         let (work_sample_tx, work_sample_rx) = mpsc::channel();
+        let (tuner_tx, tuner_rx) = mpsc::channel();
         Self {
             store,
             audio,
@@ -323,6 +329,9 @@ impl App {
             work_state: std::sync::Arc::new(std::sync::Mutex::new(None)),
             work_sample_tx,
             work_sample_rx,
+            tuner: Box::new(RealTuner::default()),
+            tuner_tx,
+            tuner_rx,
         }
     }
 
@@ -334,6 +343,11 @@ impl App {
     /// Swap the analyzer (tests use `FakeAnalyzer`).
     pub fn set_analyzer(&mut self, analyzer: Arc<dyn Analyzer>) {
         self.analyzer = analyzer;
+    }
+
+    /// Swap the tuner (tests use `MockTuner`).
+    pub fn set_tuner(&mut self, tuner: Box<dyn TunerControl>) {
+        self.tuner = tuner;
     }
 
     /// Handles the sampler thread needs (work-state slot + sample sender).
@@ -418,6 +432,12 @@ impl App {
             }
             "capture.status" => self.capture_status(),
             "capture.grab" => self.capture_grab(p),
+            "tuner.inputs" => serde_json::to_value(self.tuner.list_inputs()?).err_str(),
+            "tuner.start" => self.tuner_start(p),
+            "tuner.stop" => {
+                self.tuner.stop();
+                Ok(Value::Null)
+            }
             "stems.separate" => self.stems_separate(p),
             "stems.status" => self.stems_status(p),
             "stems.gains" => self.stems_gains(p),
@@ -911,6 +931,15 @@ impl App {
                 });
             }
         }
+        // live tuner readings from the sampler thread
+        while let Ok(reading) = self.tuner_rx.try_recv() {
+            if let Ok(data) = serde_json::to_value(reading) {
+                events.push(Event {
+                    event: "tuner_pitch".into(),
+                    data,
+                });
+            }
+        }
         let mut last_pos = None;
         for ev in self.audio.poll_events() {
             match ev {
@@ -1257,6 +1286,16 @@ impl App {
         }
         let prep = import_decode(path.to_string_lossy().into_owned(), Some(title), hash)?;
         self.import_prepared(prep)
+    }
+
+    fn tuner_start(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            node_id: u32,
+        }
+        let p: P = from_params(p)?;
+        self.tuner.start(p.node_id, self.tuner_tx.clone())?;
+        Ok(Value::Null)
     }
 
     /// `capture.grab` phase 1 (needs the lock): snapshot the rolling buffer.
