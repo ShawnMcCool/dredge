@@ -11,6 +11,11 @@ and a practice engine.
 
 - **Sample-accurate looping** with a click-free crossfaded seam, 0.25–2.0×
   pitch-preserving speed (Rubber Band R3), ±12 semitones + cents pitch.
+- **Loop by selecting** — drag a span and hit ⟳ to loop it instantly
+  (transient, nothing saved) or 🖫 to save it to the Loops tab. Saved loops are
+  named automatically from the sections they cover (`verse 2`,
+  `verse 2 → chorus 1`); double-click to pin your own name, or *fit* to snap a
+  loop's edges to the nearest section boundaries.
 - **Evidence-based practice plans** — the novel part. Plans are built from
   steps the literature supports over folklore:
   - *Listen-first* passes (audiation before playing)
@@ -180,7 +185,7 @@ field):
 |-----|--------|-----|--------|
 | `space` | play / pause | `p` | quick practice on selection |
 | `a` | PREPARE (analyze + stems) | `b` | bass focus (octave-up + low-pass) |
-| `l` | loop the selection | `m` | mute the recorded bass stem |
+| `l` | loop selection (transient) | `m` | mute the recorded bass stem |
 | `r` | restart loop | `g` | toggle grid (downbeat) snap |
 | `[` `]` | rate ∓5% | `1` `2` `3` | rate rep miss / shaky / solid |
 | `ctrl ±` / `ctrl 0` | zoom in/out / reset | `,` | settings |

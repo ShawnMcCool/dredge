@@ -14,7 +14,7 @@
     {
       title: "loops & practice",
       keys: [
-        ["l", "make a loop from the selection"],
+        ["l", "loop the selection (transient — nothing saved)"],
         ["p", "quick-practice the selection"],
         ["del", "delete the current loop"],
         ["1 / 2 / 3", "rate a rep: miss / shaky / solid"],
@@ -70,12 +70,39 @@
       "Loop and selection edges snap to analyzed downbeats, for clean musical boundaries.",
     ],
     [
+      "looping & saving",
+      "Drag a selection, then ⟳ loops it instantly (transient — nothing saved) and 🖫 saves it to the Loops tab without changing playback. Saved loops are named automatically from the sections they cover (“verse 2”, “verse 2 → chorus 1”); double-click a name to pin your own, and “fit” snaps a loop's edges to the nearest section boundaries.",
+    ],
+    [
       "sections & transitions",
       "Sections are the song's structure (verse / chorus). Transition loops are auto-derived at section boundaries so you can drill the changes between them.",
     ],
     [
       "ratings",
       "miss / shaky / solid describe how a rep felt — they drive when each loop resurfaces in the due queue.",
+    ],
+  ];
+
+  // The build — what every part of the app is made of. Kept honest against the
+  // workspace manifests; update when the stack actually changes.
+  const STACK: [string, string][] = [
+    ["interface", "Svelte 5 + TypeScript, bundled by Vite, running inside a Tauri 2 webview."],
+    ["desktop host", "Rust + Tauri 2. The UI is just another client of one JSON command dispatcher."],
+    [
+      "audio engine",
+      "Rust real-time core: Symphonia decode · Rubber Band R3 pitch-preserving time-stretch · PipeWire output & capture · lock-free rtrb ring buffers between the audio and control threads.",
+    ],
+    [
+      "practice core",
+      "Rust domain + spaced-repetition scheduling, persisted to a single bundled SQLite database via rusqlite.",
+    ],
+    [
+      "analysis",
+      "Out-of-process Python in uv-managed venvs: librosa + PyTorch for beats & downbeats, SongFormer (ASLP-lab) for song structure.",
+    ],
+    [
+      "stems",
+      "Demucs (htdemucs) splits each track into vocals / drums / bass / other for the mixer and bass focus.",
     ],
   ];
 </script>
@@ -98,6 +125,19 @@
     <dd>{desc}</dd>
   {/each}
 </dl>
+
+<h3 class="grp mono">colophon</h3>
+<dl class="concepts">
+  {#each STACK as [area, desc] (area)}
+    <dt>{area}</dt>
+    <dd>{desc}</dd>
+  {/each}
+</dl>
+<p class="sig">
+  One Rust core, two front ends — this Tauri desktop app and a headless daemon
+  (<span class="mono">earwormd</span>) — over a single command surface. Ear-first practice,
+  built for Linux.
+</p>
 
 <style>
   .grp {
@@ -154,5 +194,15 @@
     font-size: 11px;
     line-height: 1.5;
     color: var(--muted);
+  }
+
+  .sig {
+    margin: var(--space) 0 0;
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--muted);
+    border-top: 1px solid var(--line);
+    padding-top: var(--space);
+    max-width: 64ch;
   }
 </style>
