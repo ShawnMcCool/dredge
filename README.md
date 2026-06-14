@@ -39,6 +39,11 @@ and a practice engine.
   it yourself. No cloud, ever.
 - **Bass focus** (`b`): octave-up + low-pass — the transcriber's trick for
   hearing buried bass lines.
+- **Instrument tuner** (v6): a chromatic tuner box in the stage — power it on
+  (⏻), pick your audio input once (remembered across sessions, behind the gear),
+  and tune by note + cents with a hold-to-lock "in tune" confirm. Always
+  available, even with no song open. Listens to a mic or interface via the same
+  PipeWire capture path; detection is pure-Rust (YIN), no cloud.
 - **Analyze** (v4): one **PREPARE** button (`a`) runs analysis then stem
   separation with a progress modal — beats/downbeats/BPM (beat_this) plus
   suggested sections (SongFormer, novelty fallback). Beat ticks on the
@@ -246,6 +251,50 @@ pinned `>=0.3, <0.3.48` (a later regression breaks `tauri-utils`), and errors
 crossing the protocol boundary collapse to a single `error: String` channel via
 the `ErrStr`/`err_str` helper in `app.rs`. See `CLAUDE.md` for the full
 architecture notes.
+
+**Dev builds decode audio ~100× slower than release.** Unoptimized
+symphonia/rubato make `song.open` take *minutes* for a song with cached stems —
+the main mix is re-decoded and resampled to 48 kHz on every open (sections,
+analysis, and waveform peaks are already cached to SQLite/disk; the decoded mix
+is not). `[profile.dev.package."*"] opt-level = 2` in the workspace `Cargo.toml`
+optimizes dependencies (including the audio `engine`) while keeping our own
+crates at `opt-level 0` for fast incremental rebuilds — that one line is what
+makes `just dev` usable. Don't remove it.
+
+### Tuner pitch detection — lessons
+
+The tuner is split between `crates/engine/src/pitch.rs` (detection, pure +
+unit-tested) and `crates/server/src/tuner.rs` (input capture + the ~50 ms
+sampler thread). What it took to make it behave like a real tuning pedal rather
+than a twitchy frequency meter:
+
+- **YIN, not McLeod/MPM.** The `pitch-detection` crate ships both. McLeod is
+  documented to be inaccurate at low pitches (the bass range) and measured 2–4
+  cents off there in our characterization, while YIN was exact on
+  41/82/98/196/330 Hz — and a few cents *is* the whole game for a tuner. The
+  crate maps `clarity_threshold` to YIN's absolute threshold as
+  `1 − clarity_threshold`; we pass 0.8 → **0.2**, the value TarsosDSP uses for
+  real instruments (the YIN paper's 0.1 is stricter and rejects the
+  inharmonicity of real strings). YIN's returned `clarity` is unreliable in this
+  crate, so it is *not* used as a confidence signal.
+- **The periodicity threshold rejects noise; the power gate is only an energy
+  floor.** `POWER_THRESHOLD` is deliberately low (≈ amp 0.016) so weak/decaying
+  high strings keep registering — non-periodic noise is rejected by YIN's
+  threshold, not by loudness. (Verified: white noise louder than a detectable
+  quiet tone is still rejected.) Setting the power gate too high is what made
+  soft high strings vanish; too low alone made them jump.
+- **Stabilization is a median + octave-fold, never an average.** A 5-frame
+  (~250 ms) **median** discards the single-frame outliers an EMA would smear in;
+  each new estimate is **octave-folded** toward the running median to kill the
+  2×/½× harmonic jumps that make a readout leap octaves. A short **release-hold**
+  re-sends the last reading through brief dropouts so the gauge doesn't flicker
+  out mid-note. This trio (median + fold + hold) is the difference between
+  "jumps around erratically" and "locks steady."
+- **Note/cents is computed frontend-side** (`apps/desktop/src/lib/tuner-math.ts`,
+  pure + unit-tested); the wire event `tuner_pitch` carries just
+  `{ hz, confidence }`. `EARWORM_DEBUG=1` makes the sampler log the raw
+  per-frame Hz before stabilization — the fastest way to tell octave errors
+  (raw bouncing 98↔196) from lag (raw solid, display trailing).
 
 ## Socket quick taste
 
