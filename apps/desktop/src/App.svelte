@@ -17,6 +17,7 @@
   import Waveform from "./components/Waveform.svelte";
   import { installKeys } from "./lib/keys";
   import { initTheme } from "./lib/theme";
+  import { initTrace } from "./lib/trace";
   import { initDecorations } from "./lib/window";
   import { initZoom } from "./lib/zoom";
   import {
@@ -85,6 +86,7 @@
   });
 
   onMount(() => {
+    void initTrace();
     // settings drive zoom (ui_scale), the window frame, and session defaults
     void actions.loadSettings().then(() => {
       void initZoom();
@@ -331,6 +333,11 @@
      glyphs. Small targets got unreliable when the panel wrapped to more rows at
      narrow (tiled) widths under fractional webview zoom. */
   .tab {
+    /* grow to fill the row so every pixel of each wrapped line is a button —
+       a sparse last row (e.g. settings/guide) left wide dead strips of bare
+       container where the finger cursor flickered off. */
+    flex: 1 1 auto;
+    text-align: center;
     background: none;
     border: none;
     font-size: 11px;

@@ -17,8 +17,22 @@ fn db_path() -> std::path::PathBuf {
         .join("earworm/earworm.db")
 }
 
+/// Capture every panic (any thread) with a backtrace to stderr — which the
+/// logging redirect sends to `earworm.log`. A pump-thread panic only kills that
+/// thread (and silently wedges the app); this makes such a death loud and
+/// diagnosable instead of leaving a frozen window with no trace.
+fn install_panic_logger() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let bt = std::backtrace::Backtrace::force_capture();
+        eprintln!("=== earworm PANIC ===\n{info}\n--- backtrace ---\n{bt}\n=====================");
+        default(info);
+    }));
+}
+
 fn main() {
     server::logging::redirect_if_headless("earworm-desktop");
+    install_panic_logger();
     // webkit2gtk's DMA-BUF renderer crashes the Wayland connection on this
     // stack (Hyprland + NVIDIA): "Error 71 (Protocol error) dispatching to
     // Wayland display". Disable it before the webview initializes unless the
@@ -49,7 +63,9 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             host::dispatch,
             host::initial_song,
-            host::quit
+            host::quit,
+            host::ui_log,
+            host::debug_flag
         ])
         .setup(move |tauri_app| {
             let server = host::start_server(tauri_app.handle().clone(), app.clone())?;

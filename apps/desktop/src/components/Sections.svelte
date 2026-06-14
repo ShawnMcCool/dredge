@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import {
     actions,
     analysisError,
@@ -22,30 +23,36 @@
   let editing = $state(false);
   let lastSongId: number | null = null;
 
-  // mirror the store unless there are unsaved edits
+  // Mirror the store into `rows` unless there are unsaved edits. The only
+  // external trigger is `$openSong`; everything else (rows/dirty/editing/
+  // lastSongId) is read AND written here, so it must be untracked — otherwise
+  // writing `dirty` re-fires the effect on its own output, an infinite loop
+  // (Svelte's effect_update_depth_exceeded) that wedges the UI on song load.
   $effect(() => {
     const open = $openSong;
-    if (!open) {
-      rows = [];
-      dirty = false;
-      lastSongId = null;
-      return;
-    }
-    const switching = open.song.id !== lastSongId;
-    if (switching || !dirty) {
-      lastSongId = open.song.id;
-      if (switching) editing = false;
-      if (open.sections.length > 0) {
-        rows = open.sections.map((s) => ({ name: s.name, start: s.start, end: s.end }));
-        if (switching) dirty = false;
-      } else {
-        // no saved sections yet (e.g. a song analyzed before auto-save landed) —
-        // seed the editor from cached analysis so the structure is editable
-        // without re-running the model (provisional rows until saved)
-        rows = (open.analysis?.sections ?? []).map(toRow);
-        dirty = rows.length > 0;
+    untrack(() => {
+      if (!open) {
+        rows = [];
+        dirty = false;
+        lastSongId = null;
+        return;
       }
-    }
+      const switching = open.song.id !== lastSongId;
+      if (switching || !dirty) {
+        lastSongId = open.song.id;
+        if (switching) editing = false;
+        if (open.sections.length > 0) {
+          rows = open.sections.map((s) => ({ name: s.name, start: s.start, end: s.end }));
+          if (switching) dirty = false;
+        } else {
+          // no saved sections yet (e.g. a song analyzed before auto-save landed) —
+          // seed the editor from cached analysis so the structure is editable
+          // without re-running the model (provisional rows until saved)
+          rows = (open.analysis?.sections ?? []).map(toRow);
+          dirty = rows.length > 0;
+        }
+      }
+    });
   });
 
   function toRow(s: AnalysisSection): Row {

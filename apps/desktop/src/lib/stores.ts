@@ -3,6 +3,7 @@
 
 import { get, writable } from "svelte/store";
 import { cmd, initialSong, onEvent } from "./ipc";
+import { trace } from "./trace";
 import type { GridSubdivision } from "./waveform-math";
 
 // --- wire types ----------------------------------------------------------
@@ -474,19 +475,28 @@ export const actions = {
   },
 
   async openSong(id: number): Promise<void> {
+    // Phase tracing: a stuck spinner means this flow never reached `finally`.
+    // Each milestone is forwarded to earworm.log, so the LAST line logged tells
+    // us exactly which step the open froze on (network/backend, the reactive
+    // waveform render after `openSong.set`, or retention).
+    trace("open", `#${id} begin`);
     openingSong.set(id);
     try {
       const data = await cmd<OpenSong>("song.open", { song_id: id });
+      trace("open", `#${id} song.open ok — ${data.peaks?.buckets?.length ?? "?"} buckets`);
       localStorage.setItem(LAST_SONG_KEY, String(id));
       openSong.set(data);
+      trace("open", `#${id} openSong store set (waveform render scheduled)`);
       selection.set(null);
       currentLoop.set(null);
       stemMix.set(defaultStemMix());
       stemsError.set(null);
       analysisError.set(null);
       await this.refreshRetention();
+      trace("open", `#${id} retention ok — open complete`);
     } finally {
       openingSong.set(null);
+      trace("open", `#${id} spinner cleared`);
     }
   },
 

@@ -25,6 +25,22 @@ impl SocketState {
     }
 }
 
+/// Opt-in diagnostics gate. `EARWORM_DEBUG=1` turns on the dispatch/UI
+/// telemetry below; off by default so a normal run is quiet. Read once. The
+/// crash/panic hook in `main.rs` is deliberately NOT gated on this — a crash
+/// must always leave a trace.
+pub fn debug_enabled() -> bool {
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("EARWORM_DEBUG").is_some())
+}
+
+/// Exposed to the webview so the frontend can match this gate (`trace.ts`).
+#[tauri::command]
+pub fn debug_flag() -> bool {
+    debug_enabled()
+}
+
 /// Async + phased: the command runs off the GTK main thread (the window
 /// keeps painting while it waits) and heavy commands decode outside the app
 /// lock via `dispatch_shared`. `spawn_blocking` keeps the multi-second
@@ -32,9 +48,38 @@ impl SocketState {
 #[tauri::command]
 pub async fn dispatch(state: tauri::State<'_, AppState>, req: Request) -> Result<Response, String> {
     let app = state.0.clone();
-    tauri::async_runtime::spawn_blocking(move || server::app::dispatch_shared(&app, req))
-        .await
-        .map_err(|e| e.to_string())
+    // Telemetry (EARWORM_DEBUG): time every command and surface slow/failed/
+    // panicked ones, so a wedged backend (the spinner-hang suspect) is visible
+    // from earworm.log and can be told apart from a frozen webview that never
+    // got the response. Off → none of this runs.
+    let probe = debug_enabled().then(|| (req.id, req.cmd.clone(), std::time::Instant::now()));
+    let res =
+        tauri::async_runtime::spawn_blocking(move || server::app::dispatch_shared(&app, req)).await;
+    if let Some((id, name, t0)) = probe {
+        let dt = t0.elapsed().as_millis();
+        match &res {
+            Ok(resp) if dt > 800 || !resp.ok => {
+                eprintln!("[disp] #{id} {name} -> ok={} {dt}ms", resp.ok)
+            }
+            Ok(_) => {}
+            // a join error here means the command thread PANICKED — the panic
+            // hook logs the backtrace; this ties it to the specific command.
+            Err(e) => eprintln!("[disp] #{id} {name} -> JOIN ERROR after {dt}ms: {e}"),
+        }
+    }
+    res.map_err(|e| e.to_string())
+}
+
+/// Telemetry bridge (EARWORM_DEBUG): the WebKitGTK webview's console isn't
+/// reachable from outside, so the UI forwards its traces here and we print them
+/// to stderr — they land in earworm.log interleaved with the backend's own
+/// traces, giving one timeline. Deliberately does NOT touch the App mutex, so it
+/// still works even if the dispatcher is wedged.
+#[tauri::command]
+pub fn ui_log(line: String) {
+    if debug_enabled() {
+        eprintln!("{line}");
+    }
 }
 
 /// Dev affordance: `EARWORM_OPEN=<song id>` opens that song at launch,
