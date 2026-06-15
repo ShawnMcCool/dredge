@@ -1576,11 +1576,15 @@ impl App {
         sections: &[NewSection],
     ) -> Result<Vec<Section>, String> {
         let saved = self.store.replace_sections(song_id, sections).err_str()?;
-        for l in self.store.list_loops(song_id).err_str()? {
-            if matches!(l.kind, LoopKind::Junction { .. }) {
-                self.store.delete_loop(l.id).err_str()?;
-            }
-        }
+        let stale_junctions: Vec<LoopId> = self
+            .store
+            .list_loops(song_id)
+            .err_str()?
+            .into_iter()
+            .filter(|l| matches!(l.kind, LoopKind::Junction { .. }))
+            .map(|l| l.id)
+            .collect();
+        self.store.delete_loops(&stale_junctions).err_str()?;
         self.recompute_loop_names(song_id)?;
         self.write_sidecar_for(song_id);
         Ok(saved)
@@ -1669,6 +1673,9 @@ impl App {
     fn recompute_loop_names(&mut self, song_id: SongId) -> Result<(), String> {
         let loops = self.store.list_loops(song_id).err_str()?;
         let sections = self.naming_sections(song_id)?;
+        // Compute every rename against the original snapshot (whose names don't
+        // change as we go), then apply them in one transaction.
+        let mut renames = Vec::new();
         for l in &loops {
             if l.name_override.is_some() || !matches!(l.kind, LoopKind::Manual) {
                 continue;
@@ -1680,11 +1687,15 @@ impl App {
                 .collect();
             let name = practice::naming::loop_name(l.start, l.end, &sections, &existing);
             if name != l.name {
-                self.store
-                    .update_loop(l.id, &name, None, l.start, l.end)
-                    .err_str()?;
+                renames.push(practice::store::LoopRename {
+                    id: l.id,
+                    name,
+                    start: l.start,
+                    end: l.end,
+                });
             }
         }
+        self.store.rename_loops(&renames).err_str()?;
         Ok(())
     }
 

@@ -153,6 +153,15 @@ pub struct NewRep {
     pub is_retest: bool,
 }
 
+/// A recomputed dynamic-loop name (override is reset to NULL). Used by the
+/// batched `rename_loops`.
+pub struct LoopRename {
+    pub id: LoopId,
+    pub name: String,
+    pub start: f64,
+    pub end: f64,
+}
+
 fn rating_to_str(r: Rating) -> &'static str {
     match r {
         Rating::Miss => "miss",
@@ -464,6 +473,37 @@ impl Store {
     pub fn delete_loop(&self, id: LoopId) -> Result<()> {
         self.conn
             .execute("DELETE FROM loops WHERE id = ?1", params![id.0])?;
+        Ok(())
+    }
+
+    /// Delete many loops in one transaction (one fsync instead of N).
+    pub fn delete_loops(&mut self, ids: &[LoopId]) -> Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let tx = self.conn.transaction()?;
+        for id in ids {
+            tx.execute("DELETE FROM loops WHERE id = ?1", params![id.0])?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Apply recomputed dynamic names in one transaction (resets name_override
+    /// to NULL). Batches what was previously a write-per-loop.
+    pub fn rename_loops(&mut self, renames: &[LoopRename]) -> Result<()> {
+        if renames.is_empty() {
+            return Ok(());
+        }
+        let tx = self.conn.transaction()?;
+        for r in renames {
+            tx.execute(
+                "UPDATE loops SET name = ?2, name_override = NULL, start_secs = ?3, end_secs = ?4
+                 WHERE id = ?1",
+                params![r.id.0, r.name, r.start, r.end],
+            )?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
