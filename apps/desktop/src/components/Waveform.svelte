@@ -208,6 +208,7 @@
       accent: v("--accent"),
       accentDim: v("--accent-dim"),
       fg: v("--fg"),
+      playhead: v("--playhead"),
       mono: v("--mono"),
     };
 
@@ -406,10 +407,11 @@
       ctx.setLineDash([]);
     }
 
-    // playhead — 1 px accent line, full height. Drawn before the structure lane
-    // so the section headings paint over it in the lane.
+    // playhead — 1 px white line (its own colour, not the accent, so it reads
+    // apart from the loop/selection), full height. Drawn before the structure
+    // lane so the section headings paint over it in the lane.
     if (playheadX >= 0 && playheadX <= w) {
-      ctx.fillStyle = accent;
+      ctx.fillStyle = c.playhead;
       ctx.fillRect(Math.round(playheadX), 0, 1, LANE_H + WAVE_H);
     }
 
