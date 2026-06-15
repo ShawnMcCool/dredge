@@ -127,7 +127,20 @@
     const w = view.width;
     const open = get(openSong);
 
-    ctx.fillStyle = css("--bg");
+    // theme colors, read once per frame: draw runs ~60fps and some css() uses
+    // sit inside per-beat / per-section loops (getComputedStyle is not free).
+    const c = {
+      bg: css("--bg"),
+      wave: css("--wave"),
+      muted: css("--muted"),
+      line: css("--line"),
+      accent: css("--accent"),
+      accentDim: css("--accent-dim"),
+      fg: css("--fg"),
+      mono: css("--mono"),
+    };
+
+    ctx.fillStyle = c.bg;
     ctx.fillRect(0, 0, w, LANE_H + WAVE_H);
 
     if (!open) return; // empty state is the .wave-empty HTML overlay
@@ -145,7 +158,7 @@
     );
 
     // waveform: per px column aggregate the buckets it covers
-    const wave = css("--wave");
+    const wave = c.wave;
     for (let x = 0; x < w; x++) {
       const b0 = Math.max(Math.floor(xToSec(view, x) / perBucket), first);
       const b1 = Math.min(Math.max(Math.floor(xToSec(view, x + 1) / perBucket), b0), last);
@@ -182,7 +195,7 @@
           const x = Math.round(secToX(view, t));
           if (x < 0 || x > w) continue;
           const strong = downs.has(t);
-          ctx.fillStyle = strong ? css("--muted") : css("--line");
+          ctx.fillStyle = strong ? c.muted : c.line;
           if (lines) {
             ctx.globalAlpha = strong ? 0.5 : 0.28;
             ctx.fillRect(x, top, 1, WAVE_H);
@@ -198,8 +211,8 @@
     // loop regions — the selected loop (the Delete target) reads boldly: bright
     // 2px edges, a solid top cap, taller grab handles, denser fill. Unselected
     // loops sit faint in the background. junction edges stay dashed.
-    const accent = css("--accent");
-    const accentDim = css("--accent-dim");
+    const accent = c.accent;
+    const accentDim = c.accentDim;
     for (const l of open.loops) {
       const { start, end } = loopBounds(l);
       const x0 = secToX(view, start);
@@ -239,7 +252,7 @@
       ctx.fillStyle = accent;
       ctx.fillRect(x0, LANE_H, x1 - x0, WAVE_H);
       ctx.globalAlpha = 1;
-      ctx.strokeStyle = css("--fg");
+      ctx.strokeStyle = c.fg;
       ctx.strokeRect(x0 + 0.5, LANE_H + 0.5, x1 - x0 - 1, WAVE_H - 1);
     }
 
@@ -260,7 +273,7 @@
     // structure lane — label-colored spans: saved sections solid, analysis
     // suggestions dashed/dimmer/italic; clicked span gets a second fill pass.
     // Hues are derived from the live accent so the lane re-tints with the theme.
-    const baseHue = hexToHue(css("--accent"));
+    const baseHue = hexToHue(c.accent);
     for (const s of laneSpans(open)) {
       const x0 = secToX(view, s.start);
       const x1 = secToX(view, s.end);
@@ -277,8 +290,8 @@
       ctx.strokeRect(x0 + 0.5, 2.5, x1 - x0 - 2, LANE_H - 5);
       ctx.setLineDash([]);
       ctx.globalAlpha = 1;
-      ctx.fillStyle = css("--fg");
-      ctx.font = (s.suggested ? "italic " : "") + "11px " + css("--mono");
+      ctx.fillStyle = c.fg;
+      ctx.font = (s.suggested ? "italic " : "") + "11px " + c.mono;
       // sticky label: pin to the visible left edge while any of the span is on
       // screen (but never past its right edge), and truncate against what's left
       const lpad = 4;
@@ -500,11 +513,11 @@
     if (!get(openSong)) return;
     e.preventDefault();
     if (e.shiftKey) {
-      // pan
+      // pan — same clamp as the scrollbar, via the shared window helper
       const span = view.endSec - view.startSec;
       const shift = (e.deltaY / view.width) * span;
-      let startSec = Math.min(Math.max(view.startSec + shift, 0), duration() - span);
-      view = { ...view, startSec, endSec: startSec + span };
+      const win = adjustWindow("pan", view.startSec + shift, view.endSec + shift, duration(), MIN_WIN);
+      view = { ...view, ...win };
     } else {
       const factor = e.deltaY > 0 ? 1.25 : 0.8;
       view = zoom(view, xToSec(view, canvasX(e)), factor, duration());
