@@ -5,6 +5,7 @@
   import { canvasSize } from "../lib/actions/canvasSize";
   import {
     actions,
+    allLoopsVisible,
     currentLoop,
     drillSpan,
     gridLines,
@@ -16,6 +17,7 @@
     openSong,
     position,
     selection,
+    workingLoop,
     workspaceReset,
     type LoopRegion,
     type OpenSong,
@@ -174,6 +176,8 @@
     void $position;
     void $selection;
     void $currentLoop;
+    void $workingLoop;
+    void $allLoopsVisible;
     void $drillSpan;
     void $gridVisible;
     void $gridLines;
@@ -296,9 +300,13 @@
     const accent = c.accent;
     const accentDim = c.accentDim;
     const drill = get(drillSpan);
+    // only the active loop shows by default; the toggle brings the rest back as
+    // a dim overlay (the loops tab always lists them all regardless).
+    const showAll = get(allLoopsVisible);
     for (const l of open.loops) {
       const saved = loopBounds(l);
       const isSel = get(currentLoop)?.id === l.id;
+      if (!isSel && !showAll) continue;
       // while a loop is active the bold highlight tracks the scratch span (so
       // isolate / run-up are visible); the saved bounds show as a faint ghost
       // when the two diverge, marking where "reset span" returns to.
@@ -338,6 +346,39 @@
         ctx.setLineDash([2, 4]);
         ctx.strokeRect(gx0 + 0.5, LANE_H + 0.5, gx1 - gx0 - 1, WAVE_H - 1);
         ctx.setLineDash([]);
+      }
+    }
+
+    // working loop — a live, unsaved loop. The same bold treatment as a selected
+    // loop, but a dashed border marks it provisional. Its scratch span drives the
+    // highlight; the home bounds ghost when the two diverge (where "reset" goes).
+    const wl = get(workingLoop);
+    if (wl) {
+      const { start, end } = drill ?? wl;
+      const x0 = secToX(view, start);
+      const x1 = secToX(view, end);
+      if (x1 >= 0 && x0 <= w) {
+        ctx.globalAlpha = 0.2;
+        ctx.fillStyle = accent;
+        ctx.fillRect(x0, LANE_H, x1 - x0, WAVE_H);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]); // dashed = unsaved
+        ctx.strokeRect(x0 + 1, LANE_H + 1, x1 - x0 - 2, WAVE_H - 2);
+        ctx.setLineDash([]);
+        ctx.lineWidth = 1;
+        ctx.fillStyle = accent;
+        ctx.fillRect(x0 - 1, LANE_H, 3, 14); // grab handles
+        ctx.fillRect(x1 - 2, LANE_H, 3, 14);
+        if (drill && (drill.start !== wl.start || drill.end !== wl.end)) {
+          const gx0 = secToX(view, wl.start);
+          const gx1 = secToX(view, wl.end);
+          ctx.strokeStyle = accentDim;
+          ctx.setLineDash([2, 4]);
+          ctx.strokeRect(gx0 + 0.5, LANE_H + 0.5, gx1 - gx0 - 1, WAVE_H - 1);
+          ctx.setLineDash([]);
+        }
       }
     }
 
@@ -607,6 +648,8 @@
       // deselects, so it's always clear which loop Delete would remove. either
       // way the click still seeks — a plain click never engages the transport loop
       const loop = hitLoopBody(cx, canvasY(e));
+      // a plain click also dismisses any working loop (clicking away = discard)
+      workingLoop.set(null);
       currentLoop.set(loop);
       void actions.seek(Math.min(Math.max(xToSec(view, cx), 0), duration()));
     }
@@ -632,13 +675,33 @@
     }
   }
 
-  /** Loop the selection: save it as a loop (or reuse a matching one), make it the
-   *  active loop, and play — which opens the drill box on it. */
+  /** Loop the selection: spin up a working (unsaved) loop over it and play —
+   *  which opens the drill box. Nothing is persisted until the save glyph. */
   async function loopSelection() {
     const sel = get(selection);
     if (!sel) return;
     selection.set(null);
-    await actions.saveAndSelectLoop(sel.start, sel.end);
+    await actions.loopSpan(sel.start, sel.end);
+  }
+
+  /** Save glyph on a working loop: persist it (or adopt a matching saved loop). */
+  function saveWorkingLoop() {
+    void actions.saveWorkingLoop();
+  }
+
+  /** Loop glyph on a working loop: re-point the transport at it and play. */
+  async function playWorkingLoop() {
+    const w = get(workingLoop);
+    if (!w) return;
+    const b = get(drillSpan) ?? w;
+    await actions.setTransportLoop(b.start, b.end);
+    await actions.seek(b.start);
+    await actions.play();
+  }
+
+  /** ✕ glyph on a working loop: dismiss it without saving. */
+  function discardWorkingLoop() {
+    void actions.clearTransportLoop();
   }
 
   /** Loop glyph on the selected loop: point the transport at it and play. */
@@ -858,7 +921,28 @@
       pointer={hoverPt}
       count={1}
     >
-      <button class="sa-btn" onclick={loopSelection} title="loop — saves it & opens the drill" aria-label="loop selection">⟳</button>
+      <button class="sa-btn" onclick={loopSelection} title="loop — opens the drill (not saved until you save it)" aria-label="loop selection">⟳</button>
+    </HoverActions>
+  {/if}
+  {#if $workingLoop}
+    <HoverActions
+      left={secToX(view, ($drillSpan ?? $workingLoop).start)}
+      right={secToX(view, ($drillSpan ?? $workingLoop).end)}
+      bandTop={LANE_H}
+      bandHeight={WAVE_H}
+      viewWidth={view.width}
+      pointer={hoverPt}
+      count={3}
+    >
+      <button class="sa-btn" onclick={saveWorkingLoop} title="save loop" aria-label="save working loop">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M5 4h11l3 3v13H5z" />
+          <path d="M8 4v5h7" />
+          <path d="M8 20v-6h8v6" />
+        </svg>
+      </button>
+      <button class="sa-btn" onclick={playWorkingLoop} title="play loop" aria-label="play working loop">⟳</button>
+      <button class="sa-btn danger" onclick={discardWorkingLoop} title="discard — don't save" aria-label="discard working loop">✕</button>
     </HoverActions>
   {/if}
   {#if $currentLoop}
@@ -999,6 +1083,10 @@
     border-radius: var(--radius);
     cursor: pointer;
     padding: 0;
+  }
+  .sa-btn svg {
+    width: 14px;
+    height: 14px;
   }
   .sa-btn:hover {
     color: var(--accent);

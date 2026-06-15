@@ -16,21 +16,14 @@ and a practice engine.
   named automatically from the sections they cover (`verse 2`,
   `verse 2 → chorus 1`); double-click to pin your own name, or *fit* to snap a
   loop's edges to the nearest section boundaries.
-- **Evidence-based practice plans** — the novel part. Plans are built from
-  steps the literature supports over folklore:
-  - *Listen-first* passes (audiation before playing)
-  - *Oscillating tempo* (touch full speed early; dwell ~85–95%) instead of
-    only the classic +5%-per-rep ladder (also available)
-  - *Junction loops* auto-derived across section boundaries — transitions are
-    where songs fall apart
-  - *Rotation* steps that interleave sections (better next-day retention than
-    grinding one loop)
-  - *Recall tests* — alternating audible / silent passes, play from memory
-  - *Spaced resurfacing* of loops across days; progress is measured by
-    **next-day retests**, not in-session smoothness
-- **Ephemeral practice** (`p`): select a span on the waveform, press `p` —
-  an instant micro-session runs on it (listen ×2 → oscillating play reps).
-  Rate it at the end to keep the auto-named loop; discard leaves no trace.
+- **Drill box** — a live workbench for the active loop, minimal by default
+  (a fresh loop just plays); each tool is opt-in:
+  - *Tempo trainer* (`d`): ramp the speed across loop passes — a +per-pass
+    ladder, an oscillation that touches full speed early, or a constant dwell
+  - *Region shaping*: nudge an edge, isolate a half, or add a bar of run-up to
+    rehearse the entrance — all on a scratch span, your saved loop is untouched
+  - *Recall*: mute the recording for a pass (or every Nth pass) so you play it
+    from memory while the loop stays in time
 - **Capture anything** (v2): tap any app's PipeWire node — Spotify, Firefox,
   whatever — into a rolling 3-minute buffer and *grab what just played* as a
   loopable song.
@@ -70,14 +63,14 @@ and a practice engine.
 ## Layout
 
 ```
-crates/practice   pure practice logic: plans, runner, scheduler, store, sidecar
+crates/practice   pure domain logic: model, loop naming, store, sidecar
 crates/engine     audio: decode, loop, stretch, filter, PipeWire out + capture
 crates/server     App dispatcher, control socket, earwormd headless binary
 apps/desktop      Tauri 2 + Svelte 5 UI
 docs/superpowers  design spec + the six implementation plans
 ```
 
-Annotations (sections/loops/plans) mirror to plain JSON sidecars
+Annotations (sections/loops) mirror to plain JSON sidecars
 (`<song>.earworm.json`) next to your audio files — git-able, grep-able,
 not locked in.
 
@@ -303,17 +296,17 @@ printf '%s\n' '{"id":1,"cmd":"song.import","params":{"path":"/path/song.flac"}}'
   python3 -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect("'"$XDG_RUNTIME_DIR"'/earworm.sock"); s.sendall(sys.stdin.buffer.read()); print(s.recv(65536).decode())'
 ```
 
-Commands: `song.*`, `section.replace`, `loop.*`, `junctions.derive`, `plan.*`,
-`practice.quick*`, `rep.rate`, `due.list`, `retention`, `capture.*`, `stems.*`,
+Commands: `song.*`, `section.replace`, `loop.*`, `capture.*`, `stems.*`,
 `analysis.*`, `settings.*`, transport
 (`play/pause/seek/rate/volume/pitch/loop.set/bass_focus/mute`), `subscribe`
 for the event stream.
 
 ## Why these mechanics (short version)
 
-What feels productive — slow monotone repetition, massing one loop, constant
-feedback — is systematically not what produces durable skill (Bjork's
-"desirable difficulties"). The spec (`docs/superpowers/specs/`) cites the
-research behind each mechanic: Furuya 2014 (slow≠fast motor control),
-Stambaugh 2011 (interleaving), Walker 2002 (sleep consolidation), Keller 2013
-(auditory-before-motor), Driskell 1994 (mental practice).
+What feels productive — slow monotone repetition, constant feedback — is
+systematically not what produces durable skill (Bjork's "desirable
+difficulties"). The drill box leans on that: a tempo trainer that varies speed
+across passes rather than grinding one rate, and a recall mode that makes you
+play from memory. The spec (`docs/superpowers/specs/`) cites the research —
+Furuya 2014 (slow≠fast motor control), Keller 2013 (auditory-before-motor),
+Driskell 1994 (mental practice).

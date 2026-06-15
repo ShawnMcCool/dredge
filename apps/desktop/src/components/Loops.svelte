@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { actions, currentLoop, openSong } from "../lib/stores";
+  import { actions, allLoopsVisible, currentLoop, openSong } from "../lib/stores";
   import Button from "../lib/ui/Button.svelte";
   import EmptyState from "../lib/ui/EmptyState.svelte";
 
@@ -31,7 +31,20 @@
   }
 </script>
 
-<h2>loops</h2>
+<div class="hdr">
+  <h2>loops</h2>
+  {#if $openSong}
+    <button
+      class="show-all"
+      class:on={$allLoopsVisible}
+      onclick={() => void actions.setAllLoopsVisible(!$allLoopsVisible)}
+      title="show every loop on the waveform (otherwise only the active one)"
+      aria-pressed={$allLoopsVisible}
+    >
+      show on wave
+    </button>
+  {/if}
+</div>
 {#if !$openSong}
   <EmptyState>open a song first</EmptyState>
 {:else}
@@ -86,6 +99,30 @@
 {/if}
 
 <style>
+  .hdr {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space);
+  }
+  .show-all {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    color: var(--muted);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 1px 6px;
+    cursor: pointer;
+  }
+  .show-all:hover {
+    color: var(--fg);
+  }
+  .show-all.on {
+    color: var(--accent);
+    border-color: var(--accent-dim);
+  }
 
   .row {
     display: flex;

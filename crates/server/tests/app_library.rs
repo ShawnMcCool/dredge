@@ -88,35 +88,20 @@ fn sections_replace_creates_no_junction_loops() {
 }
 
 #[test]
-fn loops_and_plans_roundtrip() {
+fn loops_roundtrip_to_sidecar() {
     let (mut app, _dir, wav) = test_app();
     let song = req(&mut app, "song.import", json!({"path": wav}));
     let id = song["id"].as_i64().unwrap();
 
-    let l = req(
+    req(
         &mut app,
         "loop.create",
         json!({"song_id": id, "name": "intro", "start": 0.0, "end": 1.0}),
     );
-    let loop_id = l["id"].as_i64().unwrap();
-
-    let p = req(
-        &mut app,
-        "plan.save",
-        json!({"song_id": id, "name": "daily", "steps": [
-            {"step": "play_reps", "loop_id": loop_id, "reps": 3,
-             "curve": {"curve": "dwell", "rate": 0.9}},
-        ]}),
-    );
-    assert_eq!(p["name"], "daily");
-
-    let plans = req(&mut app, "plan.list", json!({"song_id": id}));
-    assert_eq!(plans.as_array().unwrap().len(), 1);
 
     // sidecar written next to the audio file and parses
     let sc = practice::sidecar::read_sidecar(&wav).unwrap().unwrap();
     assert_eq!(sc.loops.len(), 1);
-    assert_eq!(sc.plans.len(), 1);
 }
 
 #[test]
@@ -317,35 +302,6 @@ fn delete_removes_song_clears_open_and_sweeps_sidecar() {
     assert!(
         events.iter().any(|e| e.event == "library_changed"),
         "expected library_changed in {events:?}"
-    );
-}
-
-#[test]
-fn delete_while_quick_session_clears_active_plan() {
-    let (mut app, _dir, wav) = test_app();
-    let song = req(&mut app, "song.import", json!({"path": wav}));
-    let id = song["id"].as_i64().unwrap();
-    req(&mut app, "song.open", json!({"song_id": id}));
-
-    // start an ephemeral quick session — sets active_plan + ephemeral
-    req(
-        &mut app,
-        "practice.quick",
-        json!({"start": 0.0, "end": 1.0}),
-    );
-    // sanity: a plan is now active
-    let status = req(&mut app, "status", Value::Null);
-    assert!(!status["plan"].is_null());
-
-    req(&mut app, "song.delete", json!({"song_id": id}));
-
-    // deleting the open song mid-session tears down the active session so the
-    // tick pump can't drive engine commands against the now-unloaded engine
-    let status = req(&mut app, "status", Value::Null);
-    assert!(status["song_id"].is_null());
-    assert!(
-        status["plan"].is_null(),
-        "active plan should be torn down on delete"
     );
 }
 

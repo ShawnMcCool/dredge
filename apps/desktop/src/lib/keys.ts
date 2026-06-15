@@ -5,17 +5,17 @@ import { quit } from "./ipc";
 import { zoomIn, zoomOut, zoomReset } from "./zoom";
 import {
   actions,
+  activeLoop,
   BASS_STEM,
   bassFocus,
   currentLoop,
   drillSpan,
   gridSnap,
   openSong,
-  pendingRatings,
   position,
-  quickPromptVisible,
   selection,
   settingsOpen,
+  workingLoop,
 } from "./stores";
 
 function isTyping(target: EventTarget | null): boolean {
@@ -59,7 +59,7 @@ async function handle(e: KeyboardEvent): Promise<void> {
       break;
     }
     case "r": {
-      const l = get(currentLoop);
+      const l = get(activeLoop);
       if (l) {
         // re-sending the loop bounds jumps the engine to the loop start
         await actions.setTransportLoop(l.start, l.end);
@@ -76,25 +76,18 @@ async function handle(e: KeyboardEvent): Promise<void> {
       await actions.setRate(get(position).rate + 0.05);
       break;
     case "l": {
-      // mirror the waveform's loop glyph: save the selection as a loop + drill it
+      // mirror the waveform's loop glyph: spin up a working loop and drill it
       const sel = get(selection);
       if (sel && get(openSong)) {
         selection.set(null);
-        await actions.saveAndSelectLoop(sel.start, sel.end);
+        await actions.loopSpan(sel.start, sel.end);
       }
-      break;
-    }
-    case "p": {
-      // zero-ceremony practice: selection → instant micro-session
-      const sel = get(selection);
-      if (sel && get(openSong)) await actions.quickPractice(sel.start, sel.end);
       break;
     }
     case "Escape":
       // a closable Modal may have consumed this Escape already
       if (e.defaultPrevented) break;
-      if (get(quickPromptVisible)) await actions.quickDiscard();
-      else if (get(selection)) selection.set(null);
+      if (get(selection)) selection.set(null);
       break;
     case "q":
       // immediate quit — state is saved as we go, no exit ceremony
@@ -127,16 +120,10 @@ async function handle(e: KeyboardEvent): Promise<void> {
       break;
     case "Delete":
     case "Backspace": {
+      // delete the saved loop, or discard a working one (it was never saved)
       const l = get(currentLoop);
       if (l) await actions.deleteLoop(l.id);
-      break;
-    }
-    case "1":
-    case "2":
-    case "3": {
-      const rating = (["miss", "shaky", "solid"] as const)[Number(e.key) - 1];
-      if (get(quickPromptVisible)) await actions.quickRate(rating);
-      else if (get(pendingRatings).length > 0) await actions.resolveRating(rating);
+      else if (get(workingLoop)) await actions.clearTransportLoop();
       break;
     }
   }

@@ -1,7 +1,5 @@
 use practice::model::*;
-use practice::schedule::Resurfacing;
 use practice::store::*;
-use time::macros::date;
 
 fn store_with_song() -> (Store, Song) {
     let store = Store::open_in_memory().unwrap();
@@ -141,45 +139,6 @@ fn loops_by_ids_batch_fetch() {
 }
 
 #[test]
-fn plan_by_id_point_lookup() {
-    let (store, song) = store_with_song();
-    let steps = vec![PlanStep::PlayReps {
-        loop_id: LoopId(1),
-        reps: 3,
-        curve: TempoCurve::Dwell { rate: 1.0 },
-    }];
-    let plan = store.save_plan(song.id, "p", &steps).unwrap();
-    assert_eq!(store.plan_by_id(plan.id).unwrap(), Some(plan));
-    assert!(store.plan_by_id(PlanId(999)).unwrap().is_none());
-}
-
-#[test]
-fn resurfacing_by_loop_point_lookup() {
-    let (store, song) = store_with_song();
-    let l = store
-        .insert_loop(
-            song.id,
-            NewLoop {
-                name: "r",
-                name_override: None,
-                start: 0.0,
-                end: 1.0,
-                kind: LoopKind::Manual,
-            },
-        )
-        .unwrap();
-    assert!(store.resurfacing_by_loop(l.id).unwrap().is_none());
-    let r = Resurfacing {
-        loop_id: l.id,
-        interval_idx: 2,
-        due_on: date!(2026 - 06 - 15),
-    };
-    store.upsert_resurfacing(r).unwrap();
-    assert_eq!(store.resurfacing_by_loop(l.id).unwrap(), Some(r));
-    assert!(store.resurfacing_by_loop(LoopId(999)).unwrap().is_none());
-}
-
-#[test]
 fn loop_override_roundtrips() {
     let (store, song) = store_with_song();
     let l = store
@@ -201,113 +160,6 @@ fn loop_override_roundtrips() {
     assert_eq!(pinned.name_override.as_deref(), Some("my name"));
     let back = store.list_loops(song.id).unwrap();
     assert_eq!(back[0].name_override.as_deref(), Some("my name"));
-}
-
-#[test]
-fn plans_roundtrip_steps_json() {
-    let (store, song) = store_with_song();
-    let l = store
-        .insert_loop(
-            song.id,
-            NewLoop {
-                name_override: None,
-                name: "A",
-                start: 0.0,
-                end: 4.0,
-                kind: LoopKind::Manual,
-            },
-        )
-        .unwrap();
-    let steps = vec![PlanStep::PlayReps {
-        loop_id: l.id,
-        reps: 5,
-        curve: TempoCurve::Dwell { rate: 0.9 },
-    }];
-    let plan = store.save_plan(song.id, "warmup", &steps).unwrap();
-    assert_eq!(store.list_plans(song.id).unwrap(), vec![plan.clone()]);
-    assert_eq!(plan.steps, steps);
-}
-
-#[test]
-fn retention_reports_latest_retest_per_loop() {
-    let (store, song) = store_with_song();
-    let l = store
-        .insert_loop(
-            song.id,
-            NewLoop {
-                name_override: None,
-                name: "A",
-                start: 0.0,
-                end: 4.0,
-                kind: LoopKind::Manual,
-            },
-        )
-        .unwrap();
-    store
-        .record_rep(NewRep {
-            loop_id: l.id,
-            plan_id: None,
-            mode: "play".into(),
-            rate: 0.9,
-            rating: Some(Rating::Shaky),
-            is_retest: true,
-        })
-        .unwrap();
-    store
-        .record_rep(NewRep {
-            loop_id: l.id,
-            plan_id: None,
-            mode: "play".into(),
-            rate: 1.0,
-            rating: Some(Rating::Solid),
-            is_retest: true,
-        })
-        .unwrap();
-    // non-retest reps don't count
-    store
-        .record_rep(NewRep {
-            loop_id: l.id,
-            plan_id: None,
-            mode: "play".into(),
-            rate: 1.0,
-            rating: Some(Rating::Miss),
-            is_retest: false,
-        })
-        .unwrap();
-    let retention = store.retention(song.id).unwrap();
-    assert_eq!(retention.len(), 1);
-    assert_eq!(retention[0].0, l.id);
-    assert_eq!(retention[0].1, Rating::Solid);
-}
-
-#[test]
-fn resurfacing_upserts() {
-    let (store, song) = store_with_song();
-    let l = store
-        .insert_loop(
-            song.id,
-            NewLoop {
-                name_override: None,
-                name: "A",
-                start: 0.0,
-                end: 4.0,
-                kind: LoopKind::Manual,
-            },
-        )
-        .unwrap();
-    let r1 = Resurfacing {
-        loop_id: l.id,
-        interval_idx: 0,
-        due_on: date!(2026 - 06 - 13),
-    };
-    let r2 = Resurfacing {
-        loop_id: l.id,
-        interval_idx: 1,
-        due_on: date!(2026 - 06 - 15),
-    };
-    store.upsert_resurfacing(r1).unwrap();
-    store.upsert_resurfacing(r2).unwrap();
-    assert_eq!(store.all_resurfacing().unwrap(), vec![r2]);
 }
 
 fn sample_analysis() -> Analysis {
@@ -354,8 +206,10 @@ fn deleting_song_cascades_analysis() {
 }
 
 #[test]
-fn open_migrates_v1_db_to_v2() {
-    // Build a pre-analysis (v1) database by hand, then open it through Store.
+fn open_migrates_legacy_v1_db() {
+    // Build a pre-analysis (v1) database by hand — including the retired
+    // plans/reps/resurfacing tables — then open it through Store. Migration
+    // adds the analysis table (v2) and drops the practice-plan tables (v8).
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("v1.db");
     {
@@ -421,7 +275,7 @@ fn open_migrates_v1_db_to_v2() {
     store.save_analysis(song.id, &a).unwrap();
     assert_eq!(store.get_analysis(song.id).unwrap(), Some(a));
 
-    // reopening a v2 db is a no-op migration
+    // reopening is a no-op migration
     drop(store);
     let store = Store::open(&path).unwrap();
     assert!(store.get_analysis(song.id).unwrap().is_some());

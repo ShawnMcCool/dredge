@@ -3,12 +3,9 @@
   import AnalyzePrompt from "./components/AnalyzePrompt.svelte";
   import Capture from "./components/Capture.svelte";
   import Drill from "./components/Drill.svelte";
-  import DuePanel from "./components/DuePanel.svelte";
   import Guide from "./components/Guide.svelte";
   import Library from "./components/Library.svelte";
   import Loops from "./components/Loops.svelte";
-  import PlanBuilder from "./components/PlanBuilder.svelte";
-  import PlanRunner from "./components/PlanRunner.svelte";
   import ProfilingPanel from "./components/ProfilingPanel.svelte";
   import Sections from "./components/Sections.svelte";
   import SettingsPanel from "./components/SettingsPanel.svelte";
@@ -29,48 +26,23 @@
     loopsOpen,
     openSong,
     panelsCollapsed,
-    pendingRatings,
-    planStatus,
-    PRACTICE_TOOLS,
-    quickPromptVisible,
-    quickSavedName,
     sectionsOpen,
-    sessionSummary,
-    settings,
     settingsOpen,
   } from "./lib/stores";
 
-  const ALL_TABS = ["structure", "loops", "plan", "capture", "due", "profile", "settings", "guide"] as const;
+  const ALL_TABS = ["structure", "loops", "capture", "profile", "settings", "guide"] as const;
   type Tab = (typeof ALL_TABS)[number];
-  // the practice-routine tabs — concealed unless "practice tools" is on in settings
-  const PRACTICE_TABS: Tab[] = ["plan", "due"];
   // one panel view per tab — the nav and the body both drive off this map
   const TAB_VIEWS: Record<Tab, Component> = {
     structure: Sections,
     loops: Loops,
-    plan: PlanBuilder,
     capture: Capture,
-    due: DuePanel,
     profile: ProfilingPanel,
     settings: SettingsPanel,
     guide: Guide,
   };
-  // practice tools are off by default; the routine tabs only appear once enabled
-  let practiceOn = $derived($settings[PRACTICE_TOOLS] === true);
-  let tabs = $derived(ALL_TABS.filter((t) => practiceOn || !PRACTICE_TABS.includes(t)));
+  const tabs = ALL_TABS;
   let tab = $state<Tab>("structure");
-
-  // if practice tools get switched off while viewing one of their tabs, fall back
-  $effect(() => {
-    if (!practiceOn && PRACTICE_TABS.includes(tab)) tab = "structure";
-  });
-  let running = $derived(
-    $planStatus !== null ||
-      $pendingRatings.length > 0 ||
-      $sessionSummary !== null ||
-      $quickPromptVisible ||
-      $quickSavedName !== null,
-  );
 
   // The stems + structure boxes are both products of one analyze action. Until a
   // track has either, show a single analyze call-to-action instead of two empty
@@ -152,9 +124,6 @@
       <button class="rail" onclick={() => actions.togglePanels()} title="show panels (Ctrl+])" aria-label="show panels">‹</button>
     {:else}
       <button class="edge right" onclick={() => actions.togglePanels()} title="hide panels (Ctrl+])" aria-label="hide panels">›</button>
-      {#if running}
-        <PlanRunner />
-    {:else}
       <nav class="tabs">
         {#each tabs as t (t)}
           <button class="tab" class:active={tab === t} onclick={() => (tab = t)}>{t}</button>
@@ -166,7 +135,6 @@
           <View />
         </div>
       {/key}
-      {/if}
     {/if}
   </aside>
 </div>

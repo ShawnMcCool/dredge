@@ -1,7 +1,7 @@
 // All UI state derives from dispatch responses + events — no second source
 // of truth. Stores mirror the wire shapes of `server::app::App`.
 
-import { get, writable } from "svelte/store";
+import { derived, get, writable } from "svelte/store";
 import { cmd, initialSong, onEvent } from "./ipc";
 import { trace } from "./trace";
 import { subdivisionTimes, type GridSubdivision } from "./waveform-math";
@@ -47,40 +47,9 @@ export type TempoCurve =
   | { curve: "ladder"; start: number; step: number; target: number }
   | { curve: "oscillate"; low: number; high: number; period: number };
 
-export type PlanStep =
-  | { step: "listen_first"; loop_id: number; reps: number }
-  | { step: "play_reps"; loop_id: number; reps: number; curve: TempoCurve }
-  | {
-      step: "rotation";
-      loop_ids: number[];
-      rounds: number;
-      reps_per_visit: number;
-      curve: TempoCurve;
-    }
-  | { step: "recall_test"; loop_id: number; alternations: number; rate: number };
-
-export interface Plan {
-  id: number;
-  song_id: number;
-  name: string;
-  steps: PlanStep[];
-}
-
 export interface Peaks {
   frames_per_bucket: number;
   buckets: [number, number][];
-}
-
-export type Rating = "miss" | "shaky" | "solid";
-export type RepModeWire = "listen" | "play" | "recall_silent";
-
-/** RepSpec as serialized by the plan runner. */
-export interface RepStatus {
-  loop_id: number;
-  rate: number;
-  mode: RepModeWire;
-  step_idx: number;
-  rep_idx: number;
 }
 
 /** One suggested section from analysis — not user truth until saved. */
@@ -137,7 +106,6 @@ export interface OpenSong {
   song: Song;
   sections: Section[];
   loops: LoopRegion[];
-  plans: Plan[];
   peaks: Peaks;
   /** True when the engine was loaded with the song's 4 cached stems. */
   stems: boolean;
@@ -170,32 +138,6 @@ export interface Position {
   at: number;
 }
 
-export interface PlanStatus extends RepStatus {
-  plan_id: number;
-}
-
-export interface DueItem {
-  loop_id: number;
-  name: string;
-  song_id: number;
-}
-
-export interface RetentionRow {
-  loop_id: number;
-  rating: Rating;
-  at: string;
-}
-
-export interface PendingRating {
-  loop_id: number;
-  is_retest: boolean;
-}
-
-export interface SessionSummary {
-  reps: number;
-  steps: number;
-}
-
 export interface CaptureNode {
   id: number;
   /** object.serial — what the engine targets; registry ids don't link on modern PipeWire. */
@@ -226,10 +168,26 @@ export const openSong = writable<OpenSong | null>(null);
  *  the stage loading state; null once the open settles (also on error). */
 export const openingSong = writable<number | null>(null);
 export const position = writable<Position>({ secs: 0, rate: 1, playing: false, at: 0 });
-export const planStatus = writable<PlanStatus | null>(null);
 export const selection = writable<{ start: number; end: number } | null>(null);
 /** Loop currently driving the transport (clicked or plan-applied). */
 export const currentLoop = writable<LoopRegion | null>(null);
+/** A live, unsaved loop: drag a selection, hit "loop", and it plays + drills
+ *  exactly like a saved loop — but nothing is persisted until you save it. At
+ *  most one exists; a fresh "loop" silently replaces it, clicking away dismisses
+ *  it. Stays null while a saved loop is active (the two are mutually exclusive). */
+export const workingLoop = writable<Span | null>(null);
+/** The loop currently driving the stage — a working loop if one is up, else the
+ *  selected saved loop — normalized so the drill box, waveform and transport all
+ *  read one shape. `id === null` marks a working (unsaved) loop. */
+export const activeLoop = derived(
+  [workingLoop, currentLoop],
+  ([$working, $current]): { id: number | null; start: number; end: number; name: string } | null =>
+    $working
+      ? { id: null, start: $working.start, end: $working.end, name: "working loop" }
+      : $current
+        ? { id: $current.id, start: $current.start, end: $current.end, name: $current.name }
+        : null,
+);
 /** Ephemeral scratch loop bounds for the drill box — what actually plays while
  *  a loop is active. Mirrors the active loop's bounds, then the drill region
  *  toys (nudge / isolate / run-up) edit *this* only; the saved LoopRegion is
@@ -241,9 +199,9 @@ export const drillSpan = writable<Span | null>(null);
  *  (and drillSpan) is non-null. */
 export const drillHome = writable<Span | null>(null);
 // The seeding/teardown is centralized in `actions.seedDrill`, driven by the
-// active loop: selecting a (saved) loop seeds it, clearing/reset tears it down.
-// The currentLoop lifecycle hook is set up after `actions` is defined (see
-// "drill box lifecycle" near the bottom).
+// active loop (working or saved): engaging a loop seeds it, clearing/reset tears
+// it down. The activeLoop lifecycle hook is set up after `actions` is defined
+// (see "drill box lifecycle" near the bottom).
 
 /** Step-up tempo trainer for the drill box: a ramp recipe (a `TempoCurve`) that
  *  autopilots the *global* playback rate across loop cycles. No second tempo —
@@ -282,18 +240,6 @@ export const bassFocus = writable(false);
 export const muted = writable(false);
 /** User playback volume 0..1.5 — engine multiplier, persisted as a setting. */
 export const playbackVolume = writable(1.0);
-export const due = writable<DueItem[]>([]);
-export const retention = writable<RetentionRow[]>([]);
-/** Rating prompts queued by step_finished — drained by the runner UI. */
-export const pendingRatings = writable<PendingRating[]>([]);
-/** Set when plan_finished fires; cleared when the summary is dismissed. */
-export const sessionSummary = writable<SessionSummary | null>(null);
-/** An ephemeral quick session is running (select → p). */
-export const quickActive = writable(false);
-/** plan_finished fired during a quick session — show the keep/discard prompt. */
-export const quickPromptVisible = writable(false);
-/** Name of the loop a quick rating just saved — brief confirmation. */
-export const quickSavedName = writable<string | null>(null);
 export const captureNodes = writable<CaptureNode[]>([]);
 export const captureStatus = writable<CaptureStatus>({ running: false });
 /** Input devices (mics / interfaces) for the tuner; CaptureNode shape. */
@@ -315,6 +261,10 @@ export const gridSnap = writable(true);
 export const gridVisible = writable(true);
 export const gridLines = writable(false);
 export const gridSubdivision = writable<GridSubdivision>("bar");
+/** Show every saved loop on the waveform (persisted). Off by default — the
+ *  waveform draws only the active loop; this brings the rest back as a dim
+ *  overlay. The full list is always available in the loops tab regardless. */
+export const allLoopsVisible = writable(false);
 /** Recent profiling runs, most-recent-first. Mirrors `profile_run` events
  *  plus a `profiles.list` fetch at launch. */
 export const profiles = writable<ProfileRun[]>([]);
@@ -337,13 +287,11 @@ export const PANELS_COLLAPSED = "panels_collapsed";
 export const GRID_VISIBLE = "grid_visible";
 export const GRID_LINES = "grid_lines";
 export const GRID_SUBDIV = "grid_subdivision";
+export const ALL_LOOPS_VISIBLE = "all_loops_visible";
 /** Native window frame (title bar + min/max/close). Default on. */
 export const WINDOW_DECORATIONS = "window_decorations";
 /** Accent colour theme: "amber" (default) or "cyan". */
 export const COLOR_THEME = "color_theme";
-/** When true, the practice-routine tabs (plan, due) are shown; hidden by
- *  default to keep the UI to the song-shaping tools. */
-export const PRACTICE_TOOLS = "practice_tools_visible";
 export const TUNER_INPUT_NAME = "tuner_input_name";
 
 /** Side-column collapse state — persisted to settings, restored at launch. */
@@ -405,11 +353,6 @@ function takePrepareWaiter(
   return waiter;
 }
 
-/** Loops that due.list contained when the plan started: their first
- *  end-of-step rating is the retention probe (`is_retest: true`). */
-let dueAtPlanStart = new Set<number>();
-let repsThisPlan = 0;
-let stepsThisPlan = 0;
 /** Drill-box recall bookkeeping: loop-wrap counter and whether the *recall*
  *  feature (not the user's speaker toggle) currently owns the engine mute. */
 let drillPass = 0;
@@ -441,6 +384,7 @@ export const actions = {
     if (typeof all[GRID_LINES] === "boolean") gridLines.set(all[GRID_LINES]);
     if (all[GRID_SUBDIV] === "bar" || all[GRID_SUBDIV] === "beat" || all[GRID_SUBDIV] === "eighth")
       gridSubdivision.set(all[GRID_SUBDIV]);
+    if (typeof all[ALL_LOOPS_VISIBLE] === "boolean") allLoopsVisible.set(all[ALL_LOOPS_VISIBLE]);
     const vol = typeof all[PLAYBACK_VOLUME] === "number" ? all[PLAYBACK_VOLUME] : 1.0;
     playbackVolume.set(vol);
     await cmd("volume", { value: vol });
@@ -507,6 +451,10 @@ export const actions = {
     gridSubdivision.set(sub);
     await this.setSetting(GRID_SUBDIV, sub);
   },
+  async setAllLoopsVisible(on: boolean): Promise<void> {
+    allLoopsVisible.set(on);
+    await this.setSetting(ALL_LOOPS_VISIBLE, on);
+  },
 
   async refreshSongs(): Promise<void> {
     songs.set(await cmd<Song[]>("song.list"));
@@ -541,8 +489,8 @@ export const actions = {
   async openSong(id: number): Promise<void> {
     // Phase tracing: a stuck spinner means this flow never reached `finally`.
     // Each milestone is forwarded to earworm.log, so the LAST line logged tells
-    // us exactly which step the open froze on (network/backend, the reactive
-    // waveform render after `openSong.set`, or retention).
+    // us exactly which step the open froze on (network/backend, or the reactive
+    // waveform render after `openSong.set`).
     trace("open", `#${id} begin`);
     openingSong.set(id);
     try {
@@ -550,14 +498,13 @@ export const actions = {
       trace("open", `#${id} song.open ok — ${data.peaks?.buckets?.length ?? "?"} buckets`);
       localStorage.setItem(LAST_SONG_KEY, String(id));
       openSong.set(data);
-      trace("open", `#${id} openSong store set (waveform render scheduled)`);
+      trace("open", `#${id} openSong store set (waveform render scheduled) — open complete`);
       selection.set(null);
       currentLoop.set(null);
+      workingLoop.set(null);
       stemMix.set(defaultStemMix());
       stemsError.set(null);
       analysisError.set(null);
-      await this.refreshRetention();
-      trace("open", `#${id} retention ok — open complete`);
     } finally {
       openingSong.set(null);
       trace("open", `#${id} spinner cleared`);
@@ -569,13 +516,6 @@ export const actions = {
     if (!open) return;
     const loops = await cmd<LoopRegion[]>("loop.list", { song_id: open.song.id });
     openSong.update((o) => (o ? { ...o, loops } : o));
-  },
-
-  async refreshPlans(): Promise<void> {
-    const open = get(openSong);
-    if (!open) return;
-    const plans = await cmd<Plan[]>("plan.list", { song_id: open.song.id });
-    openSong.update((o) => (o ? { ...o, plans } : o));
   },
 
   // --- transport ---
@@ -630,25 +570,44 @@ export const actions = {
   },
 
   async selectLoop(l: LoopRegion): Promise<void> {
+    // set the saved loop, then drop any working loop — they're mutually
+    // exclusive and currentLoop is what drives the drill once working is gone.
     currentLoop.set(l);
+    workingLoop.set(null);
     await cmd("loop.set", { start: l.start, end: l.end });
   },
 
-  /** The "loop" gesture: turn a span into a saved loop (or reuse a matching one),
-   *  make it the active loop, and play — which opens the drill box on it. This is
-   *  the single selection action (the old transient-loop / save split is gone). */
-  async saveAndSelectLoop(start: number, end: number): Promise<void> {
-    const open = get(openSong);
-    const existing = open?.loops.find(
-      (l) => Math.abs(l.start - start) < 0.01 && Math.abs(l.end - end) < 0.01,
-    );
-    const l = existing ?? (await this.createLoop(start, end));
-    await this.selectLoop(l);
-    await this.seek(l.start);
+  /** The "loop" gesture: spin up a *working* loop over a span — it plays and
+   *  drills exactly like a saved loop, but persists nothing until saved. Clears
+   *  any selected saved loop and silently replaces a prior working loop. */
+  async loopSpan(start: number, end: number): Promise<void> {
+    currentLoop.set(null);
+    workingLoop.set({ start, end });
+    await cmd("loop.set", { start, end });
+    await this.seek(start);
     await this.play();
   },
 
+  /** Persist the working loop as a real LoopRegion (adopting an existing loop
+   *  with matching bounds rather than duplicating it). Promotes it to the active
+   *  saved loop *without* disturbing the live drill: the bounds don't change, so
+   *  the bounds-keyed seeder won't reseed and an armed trainer / recall survive.
+   *  Set the saved loop FIRST, then clear the working one, so `activeLoop`'s
+   *  bounds never momentarily go null between the two writes. */
+  async saveWorkingLoop(): Promise<void> {
+    const w = get(workingLoop);
+    if (!w) return;
+    const open = get(openSong);
+    const existing = open?.loops.find(
+      (l) => Math.abs(l.start - w.start) < 0.01 && Math.abs(l.end - w.end) < 0.01,
+    );
+    const l = existing ?? (await this.createLoop(w.start, w.end));
+    currentLoop.set(l);
+    workingLoop.set(null);
+  },
+
   async clearTransportLoop(): Promise<void> {
+    workingLoop.set(null);
     currentLoop.set(null);
     await cmd("loop.clear");
   },
@@ -852,100 +811,6 @@ export const actions = {
     await this.refreshLoops();
   },
 
-  // --- plans ---
-
-  async savePlan(name: string, steps: PlanStep[]): Promise<Plan> {
-    const open = get(openSong);
-    if (!open) throw new Error("no song open");
-    const plan = await cmd<Plan>("plan.save", { song_id: open.song.id, name, steps });
-    await this.refreshPlans();
-    return plan;
-  },
-
-  async startPlan(planId: number): Promise<void> {
-    // Retest rule: loops due *today at plan start* get their end-of-step
-    // rating flagged is_retest — the retention probe.
-    const dueNow = await cmd<DueItem[]>("due.list");
-    dueAtPlanStart = new Set(dueNow.map((d) => d.loop_id));
-    repsThisPlan = 0;
-    stepsThisPlan = 0;
-    pendingRatings.set([]);
-    sessionSummary.set(null);
-    const spec = await cmd<RepStatus>("plan.start", { plan_id: planId });
-    planStatus.set({ ...spec, plan_id: planId });
-  },
-
-  async stopPlan(): Promise<void> {
-    await cmd("plan.stop");
-    planStatus.set(null);
-    pendingRatings.set([]);
-    quickActive.set(false);
-    quickPromptVisible.set(false);
-  },
-
-  async skipStep(): Promise<void> {
-    const spec = await cmd<RepStatus | null>("plan.skip_step");
-    const prev = get(planStatus);
-    if (spec && prev) planStatus.set({ ...spec, plan_id: prev.plan_id });
-    else planStatus.set(null);
-  },
-
-  // --- ephemeral practice (select → p) ---
-
-  /** Instant micro-session on a raw span: listen ×2 → 6 oscillating reps.
-   *  Nothing persists unless quickRate is called at the end. */
-  async quickPractice(start: number, end: number): Promise<void> {
-    const spec = await cmd<RepStatus>("practice.quick", { start, end });
-    quickActive.set(true);
-    quickPromptVisible.set(false);
-    pendingRatings.set([]);
-    sessionSummary.set(null);
-    selection.set(null);
-    planStatus.set({ ...spec, plan_id: 0 });
-  },
-
-  /** Keep: the loop is auto-named and saved, the rated rep recorded, and
-   *  the resurfacing scheduler picks it up. */
-  async quickRate(rating: Rating): Promise<void> {
-    const out = await cmd<{ loop: LoopRegion }>("practice.quick_rate", { rating });
-    quickActive.set(false);
-    quickPromptVisible.set(false);
-    planStatus.set(null);
-    quickSavedName.set(out.loop.name);
-    setTimeout(() => quickSavedName.set(null), 2500);
-    await this.refreshLoops();
-    await this.refreshDue();
-  },
-
-  /** Discard leaves no trace. */
-  async quickDiscard(): Promise<void> {
-    await cmd("practice.quick_discard");
-    quickActive.set(false);
-    quickPromptVisible.set(false);
-    planStatus.set(null);
-  },
-
-  /** Self-rating; consumes the retest flag for loops due at plan start. */
-  async rate(loopId: number, rating: Rating, isRetest: boolean): Promise<void> {
-    await cmd("rep.rate", { loop_id: loopId, rating, is_retest: isRetest });
-    if (isRetest) dueAtPlanStart.delete(loopId);
-    await this.refreshDue();
-    await this.refreshRetention();
-  },
-
-  /** Answer the head of the rating queue (UI prompt or 1/2/3 keys). */
-  async resolveRating(rating: Rating): Promise<void> {
-    const q = get(pendingRatings);
-    const head = q[0];
-    if (!head) return;
-    pendingRatings.set(q.slice(1));
-    await this.rate(head.loop_id, rating, head.is_retest);
-  },
-
-  async refreshDue(): Promise<void> {
-    due.set(await cmd<DueItem[]>("due.list"));
-  },
-
   // --- capture ---
 
   async refreshCaptureNodes(): Promise<void> {
@@ -1130,26 +995,24 @@ export const actions = {
     if (get(openSong)?.song.id !== songId) return;
     openSong.update((o) => (o ? { ...o, analysis } : o));
   },
-
-  async refreshRetention(): Promise<void> {
-    const open = get(openSong);
-    if (!open) {
-      retention.set([]);
-      return;
-    }
-    retention.set(await cmd<RetentionRow[]>("retention", { song_id: open.song.id }));
-  },
 };
 
 // --- drill box lifecycle ----------------------------------------------------
-// Whenever the active loop changes — switched, or cleared (incl. via
-// resetWorkspace / song open) — reseed the scratch span and tear down live
-// drill state so nothing leaks across loops: disarm the trainer, zero its
-// cycle, and clear recall (which hands the engine mute back if recall held it).
-currentLoop.subscribe((l) => {
-  // Selecting a loop (loops tab, a waveform loop-click, or "loop" on a
-  // selection) seeds the drill; deselecting / clearing / reset tears it down.
-  actions.seedDrill(l ? { start: l.start, end: l.end } : null);
+// Whenever the ACTIVE loop's bounds change — a different loop engaged (working
+// or saved), or all loops cleared (incl. via resetWorkspace / song open) —
+// reseed the scratch span and tear down live drill state so nothing leaks
+// across loops: disarm the trainer, zero its cycle, and clear recall (which
+// hands the engine mute back if recall held it).
+//
+// Keyed on bounds, NOT identity: promoting a working loop to a saved one keeps
+// the same bounds (it only gains an id + name), so the seeder skips it and an
+// armed trainer / recall survive the save.
+let lastDrillBounds: string | null = null;
+activeLoop.subscribe((al) => {
+  const key = al ? `${al.start},${al.end}` : null;
+  if (key === lastDrillBounds) return;
+  lastDrillBounds = key;
+  actions.seedDrill(al ? { start: al.start, end: al.end } : null);
 });
 
 // --- launch restore ---------------------------------------------------------
@@ -1180,12 +1043,8 @@ export async function initEvents(): Promise<() => void> {
         position.set({ ...(ev.data as Omit<Position, "at">), at: performance.now() });
         break;
       case "loop_wrapped": {
-        if (get(planStatus)) {
-          repsThisPlan += 1;
-          break;
-        }
         // drill trainer: advance the cycle and let the global rate follow the
-        // recipe. Gated off while a plan runs (the plan drives rate itself).
+        // recipe.
         const t = get(drillTrainer);
         if (t.armed) {
           const cycle = t.cycle + 1;
@@ -1205,35 +1064,6 @@ export async function initEvents(): Promise<() => void> {
         }
         break;
       }
-      case "rep_changed": {
-        const prev = get(planStatus);
-        if (prev) planStatus.set({ ...(ev.data as RepStatus), plan_id: prev.plan_id });
-        break;
-      }
-      case "step_finished": {
-        // quick sessions rate once at the end, never per step
-        if (get(quickActive)) break;
-        // Server reports step_idx only; the finished step's loop is the one
-        // the runner was on before the following rep_changed lands.
-        const prev = get(planStatus);
-        stepsThisPlan += 1;
-        if (prev) {
-          const is_retest = dueAtPlanStart.has(prev.loop_id);
-          pendingRatings.update((q) => [...q, { loop_id: prev.loop_id, is_retest }]);
-        }
-        break;
-      }
-      case "plan_finished":
-        planStatus.set(null);
-        if (get(quickActive)) {
-          // keep/discard is the whole prompt — no session summary
-          quickPromptVisible.set(true);
-          break;
-        }
-        sessionSummary.set({ reps: repsThisPlan, steps: stepsThisPlan });
-        void actions.refreshDue();
-        void actions.refreshRetention();
-        break;
       case "stems_progress": {
         const data = ev.data as { song_id: number; state: string; error?: string };
         const waiter = takePrepareWaiter("stems", data);

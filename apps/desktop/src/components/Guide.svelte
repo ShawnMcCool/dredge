@@ -12,13 +12,11 @@
       ],
     },
     {
-      title: "loops & practice",
+      title: "loops & drill",
       keys: [
         ["l", "loop the selection — saves it as a loop & opens the drill"],
-        ["p", "quick-practice the selection"],
         ["d", "arm / disarm the drill tempo trainer"],
         ["del", "delete the current loop"],
-        ["1 / 2 / 3", "rate a rep: miss / shaky / solid"],
       ],
     },
     {
@@ -59,10 +57,6 @@
 
   const CONCEPTS: [string, string][] = [
     [
-      "quick practice",
-      "Select a span on the waveform and press p — a zero-ceremony micro-session: it plays, you rate it 1/2/3, and the loop enters the spaced-repetition schedule.",
-    ],
-    [
       "drill box",
       "Select a loop to open the drill box — a live workbench for that one passage. The tempo trainer (d) ramps the speed up across loop passes (ladder / oscillate / dwell); region toys isolate, nudge, or add a run-up to drill the entrance; and recall mutes the recording so you play a pass from memory. It works a scratch span — your saved loop is never changed; ⟲ snaps back.",
     ],
@@ -82,10 +76,6 @@
       "sections",
       "Sections are the song's structure (verse / chorus / inst). Click a section header to play from there; double-click to loop it. Saved loops are named from the sections they cover.",
     ],
-    [
-      "ratings",
-      "miss / shaky / solid describe how a rep felt — they drive when each loop resurfaces in the due queue.",
-    ],
   ];
 
   // The build — what every part of the app is made of. Kept honest against the
@@ -99,7 +89,7 @@
     ],
     [
       "practice core",
-      "Rust domain + spaced-repetition scheduling, persisted to a single bundled SQLite database via rusqlite.",
+      "Rust domain — songs, sections, loops, and analysis — persisted to a single bundled SQLite database via rusqlite.",
     ],
     [
       "analysis",

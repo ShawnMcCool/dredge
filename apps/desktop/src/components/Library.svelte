@@ -94,7 +94,7 @@
 </ul>
 
 <Modal open={confirmDelete !== null} title="delete track" closable onclose={() => (confirmDelete = null)}>
-  <p>Remove this track and its loops, plans, ratings, and analysis? The source audio file is kept.</p>
+  <p>Remove this track and its loops, sections, and analysis? The source audio file is kept.</p>
   <div class="modal-actions">
     <Button onclick={() => (confirmDelete = null)}>cancel</Button>
     <Button accent onclick={() => confirmDelete !== null && doDelete(confirmDelete)}>delete</Button>

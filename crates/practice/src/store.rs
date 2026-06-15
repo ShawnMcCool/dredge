@@ -1,11 +1,6 @@
 use crate::error::Result;
-use crate::model::{
-    Analysis, LoopId, LoopKind, LoopRegion, Plan, PlanId, PlanStep, Rating, Section, SectionId,
-    Song, SongId,
-};
-use crate::schedule::Resurfacing;
+use crate::model::{Analysis, LoopId, LoopKind, LoopRegion, Section, SectionId, Song, SongId};
 use rusqlite::params;
-use time::macros::format_description;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE songs (
@@ -32,27 +27,6 @@ CREATE TABLE loops (
     start_secs REAL NOT NULL,
     end_secs REAL NOT NULL,
     kind_json TEXT NOT NULL
-);
-CREATE TABLE plans (
-    id INTEGER PRIMARY KEY,
-    song_id INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    steps_json TEXT NOT NULL
-);
-CREATE TABLE reps (
-    id INTEGER PRIMARY KEY,
-    loop_id INTEGER NOT NULL REFERENCES loops(id) ON DELETE CASCADE,
-    plan_id INTEGER REFERENCES plans(id) ON DELETE SET NULL,
-    mode TEXT NOT NULL,
-    rate REAL NOT NULL,
-    rating TEXT,
-    is_retest INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-CREATE TABLE resurfacing (
-    loop_id INTEGER PRIMARY KEY REFERENCES loops(id) ON DELETE CASCADE,
-    interval_idx INTEGER NOT NULL,
-    due_on TEXT NOT NULL
 );
 ";
 
@@ -106,15 +80,21 @@ ALTER TABLE loops ADD COLUMN name_override TEXT;
 ";
 
 /// v7: indexes on the foreign-key / lookup columns used by hot queries. Without
-/// these, every `WHERE song_id = ?` / `WHERE loop_id = ?` is a full-table scan;
-/// `retention`'s correlated subquery over `reps` was O(n²). `idx_reps_loop` is
-/// the priority — reps grows fastest (one row per practice rep).
+/// these, every `WHERE song_id = ?` is a full-table scan.
 const SCHEMA_V7: &str = "
-CREATE INDEX IF NOT EXISTS idx_reps_loop ON reps(loop_id);
 CREATE INDEX IF NOT EXISTS idx_sections_song ON sections(song_id);
 CREATE INDEX IF NOT EXISTS idx_loops_song ON loops(song_id);
-CREATE INDEX IF NOT EXISTS idx_plans_song ON plans(song_id);
 CREATE INDEX IF NOT EXISTS idx_profiles_song ON profiles(song_id);
+";
+
+/// v8: drop the retired practice-plan / spaced-repetition tables. Fresh DBs
+/// never create them (the v1 schema above no longer does); legacy DBs that ran
+/// the old v1 still have them, so clear them here. Child tables first so no
+/// foreign-key reference dangles mid-drop.
+const SCHEMA_V8: &str = "
+DROP TABLE IF EXISTS reps;
+DROP TABLE IF EXISTS resurfacing;
+DROP TABLE IF EXISTS plans;
 ";
 
 pub struct Store {
@@ -144,15 +124,6 @@ pub struct NewLoop<'a> {
     pub kind: LoopKind,
 }
 
-pub struct NewRep {
-    pub loop_id: LoopId,
-    pub plan_id: Option<PlanId>,
-    pub mode: String,
-    pub rate: f64,
-    pub rating: Option<Rating>,
-    pub is_retest: bool,
-}
-
 /// A recomputed dynamic-loop name (override is reset to NULL). Used by the
 /// batched `rename_loops`.
 pub struct LoopRename {
@@ -162,37 +133,9 @@ pub struct LoopRename {
     pub end: f64,
 }
 
-fn rating_to_str(r: Rating) -> &'static str {
-    match r {
-        Rating::Miss => "miss",
-        Rating::Shaky => "shaky",
-        Rating::Solid => "solid",
-    }
-}
-
-fn rating_from_str(s: &str) -> rusqlite::Result<Rating> {
-    match s {
-        "miss" => Ok(Rating::Miss),
-        "shaky" => Ok(Rating::Shaky),
-        "solid" => Ok(Rating::Solid),
-        other => Err(rusqlite::Error::FromSqlConversionFailure(
-            0,
-            rusqlite::types::Type::Text,
-            format!("unknown rating: {other}").into(),
-        )),
-    }
-}
-
 fn json_err(e: serde_json::Error) -> rusqlite::Error {
     rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
 }
-
-fn date_err(e: time::error::Parse) -> rusqlite::Error {
-    rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
-}
-
-const DATE_FMT: &[time::format_description::FormatItem<'static>] =
-    format_description!("[year]-[month]-[day]");
 
 impl Store {
     pub fn open(path: &std::path::Path) -> Result<Self> {
@@ -249,6 +192,10 @@ impl Store {
         if version < 7 {
             self.conn.execute_batch(SCHEMA_V7)?;
             self.conn.pragma_update(None, "user_version", 7)?;
+        }
+        if version < 8 {
+            self.conn.execute_batch(SCHEMA_V8)?;
+            self.conn.pragma_update(None, "user_version", 8)?;
         }
         Ok(())
     }
@@ -518,119 +465,6 @@ impl Store {
         Ok(loops)
     }
 
-    pub fn save_plan(&self, song_id: SongId, name: &str, steps: &[PlanStep]) -> Result<Plan> {
-        let steps_json = serde_json::to_string(steps)?;
-        self.conn.execute(
-            "INSERT INTO plans (song_id, name, steps_json) VALUES (?1, ?2, ?3)",
-            params![song_id.0, name, steps_json],
-        )?;
-        Ok(Plan {
-            id: PlanId(self.conn.last_insert_rowid()),
-            song_id,
-            name: name.to_owned(),
-            steps: steps.to_vec(),
-        })
-    }
-
-    pub fn list_plans(&self, song_id: SongId) -> Result<Vec<Plan>> {
-        let mut stmt = self.conn.prepare_cached(
-            "SELECT id, song_id, name, steps_json FROM plans WHERE song_id = ?1 ORDER BY id",
-        )?;
-        let plans = stmt
-            .query_map(params![song_id.0], |row| {
-                let steps_json: String = row.get(3)?;
-                Ok(Plan {
-                    id: PlanId(row.get(0)?),
-                    song_id: SongId(row.get(1)?),
-                    name: row.get(2)?,
-                    steps: serde_json::from_str(&steps_json).map_err(json_err)?,
-                })
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(plans)
-    }
-
-    /// Resolve a single plan by id (PK probe) — avoids scanning every song's
-    /// plans (and parsing every steps_json) just to find one.
-    pub fn plan_by_id(&self, id: PlanId) -> Result<Option<Plan>> {
-        let mut stmt = self
-            .conn
-            .prepare_cached("SELECT id, song_id, name, steps_json FROM plans WHERE id = ?1")?;
-        let mut rows = stmt.query_map(params![id.0], |row| {
-            let steps_json: String = row.get(3)?;
-            Ok(Plan {
-                id: PlanId(row.get(0)?),
-                song_id: SongId(row.get(1)?),
-                name: row.get(2)?,
-                steps: serde_json::from_str(&steps_json).map_err(json_err)?,
-            })
-        })?;
-        rows.next().transpose().map_err(Into::into)
-    }
-
-    pub fn record_rep(&self, r: NewRep) -> Result<()> {
-        self.conn.execute(
-            "INSERT INTO reps (loop_id, plan_id, mode, rate, rating, is_retest)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![
-                r.loop_id.0,
-                r.plan_id.map(|p| p.0),
-                r.mode,
-                r.rate,
-                r.rating.map(rating_to_str),
-                r.is_retest,
-            ],
-        )?;
-        Ok(())
-    }
-
-    pub fn upsert_resurfacing(&self, r: Resurfacing) -> Result<()> {
-        let due_on = r
-            .due_on
-            .format(DATE_FMT)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        self.conn.execute(
-            "INSERT INTO resurfacing (loop_id, interval_idx, due_on) VALUES (?1, ?2, ?3)
-             ON CONFLICT(loop_id) DO UPDATE SET interval_idx = ?2, due_on = ?3",
-            params![r.loop_id.0, r.interval_idx as i64, due_on],
-        )?;
-        Ok(())
-    }
-
-    pub fn all_resurfacing(&self) -> Result<Vec<Resurfacing>> {
-        let mut stmt = self.conn.prepare_cached(
-            "SELECT loop_id, interval_idx, due_on FROM resurfacing ORDER BY loop_id",
-        )?;
-        let items = stmt
-            .query_map([], |row| {
-                let due_on: String = row.get(2)?;
-                Ok(Resurfacing {
-                    loop_id: LoopId(row.get(0)?),
-                    interval_idx: row.get::<_, i64>(1)? as usize,
-                    due_on: time::Date::parse(&due_on, DATE_FMT).map_err(date_err)?,
-                })
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(items)
-    }
-
-    /// One resurfacing row by loop id (PK probe) — avoids loading the whole
-    /// table to read a single ladder state.
-    pub fn resurfacing_by_loop(&self, loop_id: LoopId) -> Result<Option<Resurfacing>> {
-        let mut stmt = self.conn.prepare_cached(
-            "SELECT loop_id, interval_idx, due_on FROM resurfacing WHERE loop_id = ?1",
-        )?;
-        let mut rows = stmt.query_map(params![loop_id.0], |row| {
-            let due_on: String = row.get(2)?;
-            Ok(Resurfacing {
-                loop_id: LoopId(row.get(0)?),
-                interval_idx: row.get::<_, i64>(1)? as usize,
-                due_on: time::Date::parse(&due_on, DATE_FMT).map_err(date_err)?,
-            })
-        })?;
-        rows.next().transpose().map_err(Into::into)
-    }
-
     /// Upsert the cached analysis for a song (re-analysis overwrites).
     pub fn save_analysis(&self, song_id: SongId, a: &Analysis) -> Result<()> {
         self.conn.execute(
@@ -782,27 +616,6 @@ impl Store {
                     vram_total_mb: row.get::<_, Option<i64>>(12)?.map(|v| v as u32),
                     stages: serde_json::from_str(&stages).map_err(json_err)?,
                 })
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(rows)
-    }
-
-    /// Latest retest rating per loop — the retention metric.
-    pub fn retention(&self, song_id: SongId) -> Result<Vec<(LoopId, Rating, String)>> {
-        let mut stmt = self.conn.prepare_cached(
-            "SELECT r.loop_id, r.rating, r.created_at FROM reps r
-             JOIN loops l ON l.id = r.loop_id
-             WHERE l.song_id = ?1 AND r.is_retest = 1 AND r.rating IS NOT NULL
-               AND r.id = (SELECT MAX(id) FROM reps r2 WHERE r2.loop_id = r.loop_id AND r2.is_retest = 1 AND r2.rating IS NOT NULL)",
-        )?;
-        let rows = stmt
-            .query_map(params![song_id.0], |row| {
-                let rating: String = row.get(1)?;
-                Ok((
-                    LoopId(row.get(0)?),
-                    rating_from_str(&rating)?,
-                    row.get::<_, String>(2)?,
-                ))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)

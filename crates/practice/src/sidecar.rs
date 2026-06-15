@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::model::{LoopRegion, Plan, Section, Song};
+use crate::model::{LoopRegion, Section, Song};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -11,7 +11,6 @@ pub struct Sidecar {
     pub song: Song,
     pub sections: Vec<Section>,
     pub loops: Vec<LoopRegion>,
-    pub plans: Vec<Plan>,
 }
 
 pub fn sidecar_path(audio_path: &Path) -> PathBuf {
@@ -74,7 +73,6 @@ mod tests {
                 end: 2.0,
                 kind: LoopKind::Manual,
             }],
-            plans: vec![],
         }
     }
 

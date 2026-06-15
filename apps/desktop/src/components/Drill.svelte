@@ -9,7 +9,7 @@
   import { get } from "svelte/store";
   import {
     actions,
-    currentLoop,
+    activeLoop,
     drillHome,
     drillRecall,
     drillShow,
@@ -26,7 +26,7 @@
 
   let home = $derived($drillHome);
   let span = $derived($drillSpan);
-  let loopName = $derived($currentLoop?.name ?? "loop");
+  let loopName = $derived($activeLoop?.name ?? "loop");
   let diverged = $derived(
     !!(home && span && (span.start !== home.start || span.end !== home.end)),
   );

@@ -5,7 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 Earworm is an ear-first practice looper for Linux: load a song, loop sections,
-slow them down pitch-preserving, and run evidence-based practice plans. It ships
+slow them down pitch-preserving, and drill passages with a live tempo trainer.
+It ships
 as a Tauri desktop app (Svelte 5 frontend, Rust host) and a headless daemon that
 share the same Rust core. See `README.md` for the feature-level "what it does".
 
@@ -62,9 +63,8 @@ clients. When adding a heavy command, follow the `*_phased` pattern in `app.rs`.
   lock-free ring buffers (`ring.rs`, rtrb); commands/events flow through
   `pipeline.rs` (`EngineCmd`/`EngineEvent`).
 - **`practice`** (`crates/practice`) — domain + persistence. `model.rs` holds
-  the wire types (Song, Section, LoopRegion, Plan, Rating, TempoCurve…),
-  `tempo.rs`/`junction.rs`/`schedule.rs` are the practice intelligence,
-  `runner.rs` drives plan steps, and `store.rs` owns all SQLite I/O.
+  the wire types (Song, Section, LoopRegion, Analysis…), `naming.rs` derives
+  dynamic loop names from sections, and `store.rs` owns all SQLite I/O.
 - **`server`** (`crates/server`) — the dispatcher + transports above, plus
   the bridges to external work: `analysis.rs`, `stems.rs`, `capture_control.rs`.
 
@@ -75,9 +75,10 @@ three and embeds the built Svelte frontend.
 
 Single SQLite DB (rusqlite, bundled) at `~/.local/share/earworm/earworm.db`.
 Schema is **embedded in `crates/practice/src/store.rs`** — no migration files;
-versioning is incremental via `PRAGMA user_version` (currently V1 core tables →
-V2 `analysis` cache → V3 `settings`). To evolve the schema, add a new version
-block in `store.rs` rather than editing existing ones. App settings live in the
+versioning is incremental via `PRAGMA user_version` (V1 core tables → V2
+`analysis` cache → V3 `settings` → … → V8 drops the retired practice-plan
+tables). To evolve the schema, add a new version block in `store.rs` rather
+than editing existing ones. App settings live in the
 SQLite `settings` table as JSON; there are no TOML/JSON config files. Override
 the DB path with `--db` (daemon) or `EARWORM_DB` (desktop).
 
@@ -110,7 +111,7 @@ term maps to one thing. The three columns are **panes**:
   **tuner box** (`Tuner.svelte`, always present). Call them *boxes*, never
   "containers" or "panels".
 - **Panel** (right, `aside.panels`) — its switchable views are **tabs**
-  (structure, loops, plan, capture, due, profile, settings, guide), wired
+  (structure, loops, capture, profile, settings, guide), wired
   through the `TAB_VIEWS` registry in `App.svelte`. The **structure tab**
   (`Sections.svelte`) owns song structure; there is no longer a center
   "structure box".

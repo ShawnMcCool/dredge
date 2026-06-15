@@ -9,7 +9,6 @@
     COLOR_THEME,
     GRID_SNAP_DEFAULT,
     gridSnap,
-    PRACTICE_TOOLS,
     settings,
     UI_SCALE,
     WINDOW_DECORATIONS,
@@ -30,7 +29,6 @@
   let snapDefault = $derived($settings[GRID_SNAP_DEFAULT] !== false);
   let bufferSecs = $derived(Number($settings[CAPTURE_BUFFER_SECS] ?? 180));
   let device = $derived(($settings[ANALYSIS_DEVICE] as string) ?? "auto");
-  let practiceOn = $derived($settings[PRACTICE_TOOLS] === true);
   // default on: only an explicit false hides the frame
   let decorations = $derived($settings[WINDOW_DECORATIONS] !== false);
   let themeValue = $derived(
@@ -121,20 +119,6 @@
     </div>
     <Button variant="toggle" active={snapDefault} onclick={toggleSnap}>
       {snapDefault ? "on" : "off"}
-    </Button>
-  </div>
-
-  <div class="setting">
-    <div class="text">
-      <span class="name">practice tools</span>
-      <span class="desc">adds the plan + spaced-practice tabs · off keeps the panel to song-shaping</span>
-    </div>
-    <Button
-      variant="toggle"
-      active={practiceOn}
-      onclick={() => void actions.setSetting(PRACTICE_TOOLS, !practiceOn)}
-    >
-      {practiceOn ? "on" : "off"}
     </Button>
   </div>
 </section>

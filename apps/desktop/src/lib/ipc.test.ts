@@ -24,7 +24,7 @@ describe("cmd", () => {
 
   it("throws with the server error message on ok:false", async () => {
     invokeMock.mockResolvedValue({ id: 2, ok: false, error: "no song open" });
-    await expect(cmd("plan.start", { plan_id: 1 })).rejects.toThrow("no song open");
+    await expect(cmd("stems.gains", { gains: [1, 1, 1, 1] })).rejects.toThrow("no song open");
   });
 
   it("throws a generic message when error is absent", async () => {

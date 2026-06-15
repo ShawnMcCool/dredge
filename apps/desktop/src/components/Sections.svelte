@@ -72,10 +72,10 @@
     selection.set({ start: row.start, end: row.end });
   }
 
-  /** Loop a section directly: save it as a loop (mirrors the ⟳ control) and open
-   *  the drill box on it. */
+  /** Loop a section directly: spin up a working loop (mirrors the ⟳ control) and
+   *  open the drill box on it. Not saved until the save glyph. */
   function loop(row: Row) {
-    void actions.saveAndSelectLoop(row.start, row.end);
+    void actions.loopSpan(row.start, row.end);
   }
 
   let analysis = $derived($openSong?.analysis ?? null);
