@@ -26,13 +26,62 @@ pub fn compute_peaks(buf: &SongBuffer) -> Peaks {
     }
 }
 
+/// Binary cache format magic. The cache is a packed little-endian blob, not
+/// JSON — encoding/parsing thousands of float pairs as text was ~3x larger and
+/// far slower than a flat `[f32]` dump. Bump the tag (and the file extension) to
+/// invalidate older caches.
+const MAGIC: &[u8; 4] = b"EWP1";
+
+fn cache_path(file_hash: &str) -> Option<std::path::PathBuf> {
+    Some(
+        dirs::cache_dir()?
+            .join("earworm/peaks")
+            .join(format!("{file_hash}.peaks")),
+    )
+}
+
+fn encode(p: &Peaks) -> Vec<u8> {
+    let mut out = Vec::with_capacity(12 + p.buckets.len() * 8);
+    out.extend_from_slice(MAGIC);
+    out.extend_from_slice(&(p.frames_per_bucket as u32).to_le_bytes());
+    out.extend_from_slice(&(p.buckets.len() as u32).to_le_bytes());
+    for &(lo, hi) in &p.buckets {
+        out.extend_from_slice(&lo.to_le_bytes());
+        out.extend_from_slice(&hi.to_le_bytes());
+    }
+    out
+}
+
+fn decode(bytes: &[u8]) -> Option<Peaks> {
+    if bytes.len() < 12 || &bytes[..4] != MAGIC {
+        return None;
+    }
+    let frames_per_bucket = u32::from_le_bytes(bytes[4..8].try_into().ok()?) as usize;
+    let count = u32::from_le_bytes(bytes[8..12].try_into().ok()?) as usize;
+    let payload = &bytes[12..];
+    if payload.len() != count * 8 {
+        return None;
+    }
+    let buckets = payload
+        .chunks_exact(8)
+        .map(|c| {
+            let lo = f32::from_le_bytes(c[0..4].try_into().unwrap());
+            let hi = f32::from_le_bytes(c[4..8].try_into().unwrap());
+            (lo, hi)
+        })
+        .collect();
+    Some(Peaks {
+        frames_per_bucket,
+        buckets,
+    })
+}
+
 /// Delete the cached peaks for a song hash. A missing cache (or no cache dir)
 /// is a no-op — deletion cleanup must not fail on an absent file.
 pub fn remove_cache(file_hash: &str) -> std::io::Result<()> {
-    let Some(base) = dirs::cache_dir() else {
+    let Some(path) = cache_path(file_hash) else {
         return Ok(());
     };
-    let path = base.join("earworm/peaks").join(format!("{file_hash}.json"));
     match std::fs::remove_file(&path) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -40,21 +89,20 @@ pub fn remove_cache(file_hash: &str) -> std::io::Result<()> {
     }
 }
 
-/// Cache under ~/.cache/earworm/peaks/<file_hash>.json; load if present.
+/// Cache under ~/.cache/earworm/peaks/<file_hash>.peaks; load if present.
 pub fn load_or_compute(buf: &SongBuffer, file_hash: &str) -> std::io::Result<Peaks> {
-    let dir = dirs::cache_dir()
-        .ok_or_else(|| std::io::Error::other("no cache dir"))?
-        .join("earworm/peaks");
-    let path = dir.join(format!("{file_hash}.json"));
-    if let Ok(text) = std::fs::read_to_string(&path) {
-        if let Ok(peaks) = serde_json::from_str::<Peaks>(&text) {
+    let path = cache_path(file_hash).ok_or_else(|| std::io::Error::other("no cache dir"))?;
+    if let Ok(bytes) = std::fs::read(&path) {
+        if let Some(peaks) = decode(&bytes) {
             return Ok(peaks);
         }
-        // parse failure → fall through and recompute
+        // unreadable / stale format → fall through and recompute
     }
     let peaks = compute_peaks(buf);
-    std::fs::create_dir_all(&dir)?;
-    std::fs::write(&path, serde_json::to_string(&peaks)?)?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(&path, encode(&peaks))?;
     Ok(peaks)
 }
 
@@ -90,8 +138,18 @@ mod tests {
         let cached = load_or_compute(&SongBuffer { data: vec![] }, &hash).unwrap();
         assert_eq!(first, cached);
         // cleanup
-        let dir = dirs::cache_dir().unwrap().join("earworm/peaks");
-        let _ = std::fs::remove_file(dir.join(format!("{hash}.json")));
+        let _ = std::fs::remove_file(cache_path(&hash).unwrap());
+    }
+
+    #[test]
+    fn binary_encode_decode_roundtrip() {
+        let p = Peaks {
+            frames_per_bucket: FRAMES_PER_BUCKET,
+            buckets: vec![(-1.0, 1.0), (0.0, 0.5), (-0.25, -0.1)],
+        };
+        assert_eq!(decode(&encode(&p)), Some(p));
+        assert_eq!(decode(b"not a peaks blob"), None);
+        assert_eq!(decode(&[]), None);
     }
 
     #[test]
@@ -101,10 +159,7 @@ mod tests {
         };
         let hash = format!("rm-{}", std::process::id());
         load_or_compute(&buf, &hash).unwrap();
-        let path = dirs::cache_dir()
-            .unwrap()
-            .join("earworm/peaks")
-            .join(format!("{hash}.json"));
+        let path = cache_path(&hash).unwrap();
         assert!(path.exists());
 
         remove_cache(&hash).unwrap();
