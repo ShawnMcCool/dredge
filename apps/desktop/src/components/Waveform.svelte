@@ -222,7 +222,6 @@
       if (next !== view) view = next;
     }
     const playheadX = secToX(view, playhead);
-    const mid = LANE_H + WAVE_H / 2;
     const peaks = open.peaks;
     const perBucket = peaks.frames_per_bucket / SAMPLE_RATE;
     const { first, last } = visibleBuckets(
@@ -232,11 +231,19 @@
       peaks.buckets.length,
     );
 
-    // waveform: per px column aggregate the buckets it covers
+    // waveform: one bar per *device* pixel column. Drawn in device space (no
+    // dpr transform) so every bar is exactly 1 physical pixel — a fractional
+    // ui_scale (e.g. 2.1, 1.75) would otherwise land 1px CSS bars on sub-pixel
+    // boundaries and alias into fixed vertical stripes.
     const wave = c.wave;
-    for (let x = 0; x < w; x++) {
-      const b0 = Math.max(Math.floor(xToSec(view, x) / perBucket), first);
-      const b1 = Math.min(Math.max(Math.floor(xToSec(view, x + 1) / perBucket), b0), last);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const devW = canvas.width;
+    const midDev = (LANE_H + WAVE_H / 2) * dpr;
+    const ampDev = (WAVE_H / 2 - 2) * dpr;
+    ctx.fillStyle = wave;
+    for (let dx = 0; dx < devW; dx++) {
+      const b0 = Math.max(Math.floor(xToSec(view, dx / dpr) / perBucket), first);
+      const b1 = Math.min(Math.max(Math.floor(xToSec(view, (dx + 1) / dpr) / perBucket), b0), last);
       let lo = Infinity;
       let hi = -Infinity;
       for (let b = b0; b <= b1; b++) {
@@ -246,11 +253,11 @@
         hi = Math.max(hi, bucket[1]);
       }
       if (lo > hi) continue;
-      ctx.fillStyle = wave;
-      const y0 = mid - hi * (WAVE_H / 2 - 2);
-      const y1 = mid - lo * (WAVE_H / 2 - 2);
-      ctx.fillRect(x, y0, 1, Math.max(y1 - y0, 1));
+      const y0 = midDev - hi * ampDev;
+      const y1 = midDev - lo * ampDev;
+      ctx.fillRect(dx, y0, 1, Math.max(y1 - y0, 1));
     }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // restore CSS-space for grid/loops/etc.
 
     // beat grid — subdivision-aware; bottom ticks, or full vertical lines.
     // downbeats render stronger. Hidden when ticks would crowd (< MIN_TICK_PX).
