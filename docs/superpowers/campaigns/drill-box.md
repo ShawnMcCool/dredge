@@ -167,7 +167,14 @@ DSP + scheduling work. Ship only after 1–6 are solid; can be a separate effort
 (engine). Commit per phase on `main`. `just check` is the gate before declaring
 a phase done; pure-logic phases also run their colocated vitest file.
 
-**STATUS: in progress (started 2026-06-15).**
+**STATUS (2026-06-15): Phases 1–6 COMPLETE and committed on `main`** — the
+whole frontend feature (scratch span, box shell, tempo trainer, region toys,
+recall, teardown/key/guide). `pnpm vitest` 126 pass (28 in `lib/drill.test.ts`),
+`svelte-check` 0 errors. Backend untouched. Visual/interaction verification is
+pending in `just dev` (the Tauri webview can't be driven headlessly here).
+
+**Phase 7 (count-in) NOT STARTED** — it's the engine DSP work and was scoped as
+the stretch/separate effort; awaiting a go-ahead.
 
 ## Self-review notes
 - Every brainstorm decision maps to a phase: scratch span (1), appearance/wide
