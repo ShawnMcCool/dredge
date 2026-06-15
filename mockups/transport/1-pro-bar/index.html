@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Earworm · Transport — Pro Bar</title>
+<style>
+  :root {
+    --bg:#101014; --bg-raised:#16161c; --fg:#e8e6e3;
+    --accent:#e0a458;        /* amber — the single accent */
+    --accent-dim:#8a6a3f; --muted:#6b7280; --wave:#3f4250; --line:#26262e;
+    --miss:#c4564f; --shaky:#e0a458; --solid:#6fae6f; --cyan:#4fc3d4; --meter:#aab0ba;
+    --space:8px; --radius:2px; --mono: ui-monospace,"JetBrains Mono","Fira Code",monospace;
+    --ctl-h:27px;
+  }
+
+  * { box-sizing:border-box; }
+
+  html { color-scheme:dark; }
+
+  body {
+    margin:0;
+    background:var(--bg);
+    color:var(--fg);
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size:14px;
+    line-height:1.4;
+    padding:32px 28px 64px;
+  }
+
+  .page-label {
+    color:var(--muted);
+    font-size:11px;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    margin:0 0 6px;
+  }
+  .caption {
+    color:var(--muted);
+    font-size:12px;
+    margin:36px 0 8px;
+  }
+  .caption .em { color:var(--fg); }
+
+  /* fake waveform so the strip renders in situ under it */
+  .waveform {
+    height:96px;
+    background:
+      repeating-linear-gradient(90deg, transparent 0 3px, var(--wave) 3px 4px);
+    position:relative;
+    border-radius:var(--radius);
+    overflow:hidden;
+    opacity:0.42;
+  }
+  .waveform::after {
+    content:"";
+    position:absolute; inset:0;
+    background:linear-gradient(180deg, transparent 18%, var(--bg) 50%, transparent 82%);
+    background-size:100% 100%;
+  }
+  .frame { max-width:1000px; }
+  .frame.narrow { max-width:520px; }
+
+  /* ─────────────  THE TRANSPORT STRIP  ───────────── */
+
+  .transport {
+    border-top:1px solid var(--line);
+    background:var(--bg);
+    padding:10px 14px;
+    display:flex;
+    align-items:center;
+    gap:32px;                 /* generous whitespace BETWEEN clusters; no rules */
+    flex-wrap:wrap;
+  }
+
+  .cluster {
+    display:flex;
+    align-items:center;
+    gap:14px;
+    flex-wrap:wrap;
+  }
+  /* shaping cluster floats centre; output pins right */
+  .cluster.shaping { flex:0 1 auto; margin:0 auto; }
+  .cluster.output  { margin-left:auto; }
+
+  /* when wrapped narrow, kill the auto-margins so rows stack tidily */
+  .frame.narrow .transport { gap:14px 24px; }
+  .frame.narrow .cluster.shaping,
+  .frame.narrow .cluster.output { margin:0; }
+
+  /* ── generic quiet control ── */
+  .ctl {
+    height:var(--ctl-h);
+    display:inline-flex;
+    align-items:center;
+    gap:7px;
+    background:none;
+    border:none;
+    color:var(--muted);
+    font:inherit;
+    font-size:13px;
+    padding:0 4px;
+    cursor:pointer;
+    border-radius:var(--radius);
+    transition:color .12s ease, background .12s ease, border-color .12s ease;
+  }
+  .ctl:hover { color:var(--fg); }
+  .ctl svg { display:block; }
+
+  /* readouts */
+  .mono {
+    font-family:var(--mono);
+    font-variant-numeric:tabular-nums;
+    font-size:13px;
+    letter-spacing:-0.01em;
+  }
+
+  /* ── PLAY: the lone filled-amber primary ── */
+  .play {
+    height:34px; width:34px;
+    border-radius:50%;
+    background:var(--accent);
+    color:var(--bg);
+    border:none;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+    flex:0 0 auto;
+    transition:filter .12s ease, transform .06s ease;
+  }
+  .play:hover { filter:brightness(1.08); }
+  .play:active { transform:scale(0.95); }
+  .play svg { display:block; margin-left:1px; } /* optical centre for triangle */
+  .play.paused svg { margin-left:0; }
+
+  /* ── time readout ── */
+  .time .cur { color:var(--fg); }
+  .time .sep { color:var(--muted); padding:0 4px; }
+  .time .tot { color:var(--muted); }
+
+  /* ── SPEED: one segmented pill + live value ── */
+  .speed { display:inline-flex; align-items:center; gap:10px; }
+  .label {
+    font-size:11px;
+    letter-spacing:0.06em;
+    text-transform:uppercase;
+    color:var(--muted);
+  }
+  .segpill {
+    display:inline-flex;
+    height:var(--ctl-h);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    overflow:hidden;
+  }
+  .segpill button {
+    background:none;
+    border:none;
+    border-left:1px solid var(--line);
+    color:var(--muted);
+    font-family:var(--mono);
+    font-variant-numeric:tabular-nums;
+    font-size:12px;
+    padding:0 11px;
+    cursor:pointer;
+    transition:color .12s ease, background .12s ease;
+  }
+  .segpill button:first-child { border-left:none; }
+  .segpill button:hover { color:var(--fg); background:var(--bg-raised); }
+  .segpill button.active {
+    background:var(--accent);
+    color:var(--bg);
+  }
+  .segpill button.active:hover { background:var(--accent); filter:brightness(1.06); }
+
+  .speed-val {
+    font-family:var(--mono);
+    font-variant-numeric:tabular-nums;
+    font-size:13px;
+    color:var(--accent);
+    min-width:3.2em;
+  }
+
+  /* slim continuous range, used for speed + volume */
+  input[type=range].slim {
+    -webkit-appearance:none;
+    appearance:none;
+    height:3px;
+    background:var(--wave);
+    border-radius:2px;
+    outline:none;
+    cursor:pointer;
+    margin:0;
+  }
+  input[type=range].slim::-webkit-slider-thumb {
+    -webkit-appearance:none;
+    appearance:none;
+    width:11px; height:11px;
+    border-radius:50%;
+    background:var(--accent);
+    border:none;
+    cursor:pointer;
+  }
+  input[type=range].slim::-moz-range-thumb {
+    width:11px; height:11px;
+    border-radius:50%;
+    background:var(--accent);
+    border:none;
+    cursor:pointer;
+  }
+  input[type=range].speed-range { width:78px; }
+  input[type=range].vol-range   { width:84px; }
+
+  /* ── PITCH: one unified hairline stepper ── */
+  .pitch { display:inline-flex; align-items:center; gap:10px; }
+  .stepper {
+    display:inline-flex;
+    align-items:center;
+    height:var(--ctl-h);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    overflow:hidden;
+  }
+  .stepper button {
+    width:26px;
+    height:100%;
+    background:none;
+    border:none;
+    color:var(--muted);
+    font-size:15px;
+    line-height:1;
+    cursor:pointer;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    transition:color .12s ease, background .12s ease;
+  }
+  .stepper button:hover { color:var(--fg); background:var(--bg-raised); }
+  .stepper .val {
+    min-width:52px;
+    text-align:center;
+    font-family:var(--mono);
+    font-variant-numeric:tabular-nums;
+    font-size:13px;
+    color:var(--fg);
+    border-left:1px solid var(--line);
+    border-right:1px solid var(--line);
+    padding:0 4px;
+    line-height:var(--ctl-h);
+  }
+  .stepper .val.zero { color:var(--muted); }
+
+  /* ── VOLUME ── */
+  .volume { display:inline-flex; align-items:center; gap:9px; }
+  .vol-pct {
+    font-family:var(--mono);
+    font-variant-numeric:tabular-nums;
+    font-size:13px;
+    color:var(--fg);
+    min-width:3.2em;
+  }
+  .ctl.muted-state { color:var(--miss); }
+  .ctl.muted-state:hover { color:var(--miss); filter:brightness(1.12); }
+  .vol-pct.is-muted { color:var(--muted); text-decoration:line-through; text-decoration-color:var(--accent-dim); }
+
+  /* ── BASS FOCUS toggle ── */
+  .toggle {
+    height:var(--ctl-h);
+    display:inline-flex;
+    align-items:center;
+    gap:7px;
+    background:none;
+    border:1px solid transparent;
+    color:var(--muted);
+    font:inherit;
+    font-size:12px;
+    letter-spacing:0.02em;
+    padding:0 9px;
+    border-radius:var(--radius);
+    cursor:pointer;
+    transition:color .12s ease, border-color .12s ease, background .12s ease;
+  }
+  .toggle:hover { color:var(--fg); border-color:var(--line); }
+  .toggle .dot {
+    width:6px; height:6px; border-radius:50%;
+    background:var(--wave);
+    flex:0 0 auto;
+  }
+  .toggle.on {
+    color:var(--accent);
+    border-color:var(--accent-dim);
+    background:rgba(224,164,88,0.06);
+  }
+  .toggle.on .dot { background:var(--accent); }
+
+  /* ── RESET: quiet recovery, far end ── */
+  .reset { color:var(--wave); padding:0 4px; }
+  .reset:hover { color:var(--fg); }
+
+  /* small helper to visually separate the two demo widths */
+  hr.div { border:none; border-top:1px dashed var(--line); margin:0; }
+</style>
+</head>
+<body>
+
+  <p class="page-label">Earworm · Transport redesign — Direction 1: Dense Pro Bar</p>
+
+  <!-- ───────────  WIDE / PRIMARY  ─────────── -->
+  <div class="frame">
+    <div class="waveform" aria-hidden="true"></div>
+
+    <div class="transport" role="toolbar" aria-label="Playback transport">
+
+      <!-- CLUSTER: TRANSPORT (play · time) -->
+      <div class="cluster transport-c">
+        <button class="play" aria-label="Play" title="Play / pause">
+          <!-- play triangle (filled) -->
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M7 4.5 L19 12 L7 19.5 Z"/>
+          </svg>
+        </button>
+        <span class="time mono">
+          <span class="cur">01:12.4</span><span class="sep">/</span><span class="tot">04:24</span>
+        </span>
+      </div>
+
+      <!-- CLUSTER: SHAPING (speed · pitch) -->
+      <div class="cluster shaping">
+
+        <div class="speed">
+          <span class="label">speed</span>
+          <div class="segpill" role="group" aria-label="Speed presets">
+            <button type="button">50</button>
+            <button type="button">70</button>
+            <button type="button">85</button>
+            <button type="button" class="active" aria-pressed="true">100</button>
+          </div>
+          <input class="slim speed-range" type="range" min="25" max="200" value="100" aria-label="Speed (25–200%)">
+          <span class="speed-val">100%</span>
+        </div>
+
+        <div class="pitch">
+          <span class="label">pitch</span>
+          <div class="stepper" role="group" aria-label="Pitch in semitones">
+            <button type="button" aria-label="Pitch down">−</button>
+            <span class="val zero mono">0 st</span>
+            <button type="button" aria-label="Pitch up">+</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- CLUSTER: OUTPUT (volume · bass focus · reset) -->
+      <div class="cluster output">
+
+        <div class="volume">
+          <button class="ctl" aria-label="Mute" title="Mute">
+            <!-- volume: speaker + waves -->
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 9 H7 L12 5 V19 L7 15 H4 Z"/>
+              <path d="M16 8.5 a5 5 0 0 1 0 7"/>
+              <path d="M18.7 6 a8.5 8.5 0 0 1 0 12"/>
+            </svg>
+          </button>
+          <input class="slim vol-range" type="range" min="0" max="150" value="100" aria-label="Volume (0–150%)">
+          <span class="vol-pct">100%</span>
+        </div>
+
+        <!-- bass focus OFF -->
+        <button class="toggle" aria-pressed="false" title="Bass focus (off)">
+          <span class="dot"></span>Bass focus
+        </button>
+
+        <button class="ctl reset" aria-label="Reset workspace" title="Reset workspace">
+          <!-- rotate-ccw -->
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 9 a9 9 0 1 1 -1.5 5"/>
+            <path d="M3 4 V9 H8"/>
+          </svg>
+        </button>
+
+      </div>
+
+    </div>
+  </div>
+
+  <p class="caption">Same strip, <span class="em">paused</span> + <span class="em">muted</span> + <span class="em">bass focus active</span> + non-zero pitch + altered speed — to show the live states.</p>
+
+  <div class="frame">
+    <div class="transport" role="toolbar" aria-label="Playback transport (alternate states)">
+
+      <div class="cluster transport-c">
+        <button class="play paused" aria-label="Pause" title="Play / pause">
+          <!-- pause: two bars -->
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <rect x="6"  y="5" width="4" height="14" rx="1"/>
+            <rect x="14" y="5" width="4" height="14" rx="1"/>
+          </svg>
+        </button>
+        <span class="time mono">
+          <span class="cur">02:48.0</span><span class="sep">/</span><span class="tot">04:24</span>
+        </span>
+      </div>
+
+      <div class="cluster shaping">
+        <div class="speed">
+          <span class="label">speed</span>
+          <div class="segpill" role="group" aria-label="Speed presets">
+            <button type="button">50</button>
+            <button type="button">70</button>
+            <button type="button" class="active" aria-pressed="true">85</button>
+            <button type="button">100</button>
+          </div>
+          <input class="slim speed-range" type="range" min="25" max="200" value="85" aria-label="Speed (25–200%)">
+          <span class="speed-val">85%</span>
+        </div>
+
+        <div class="pitch">
+          <span class="label">pitch</span>
+          <div class="stepper" role="group" aria-label="Pitch in semitones">
+            <button type="button" aria-label="Pitch down">−</button>
+            <span class="val mono">−2 st</span>
+            <button type="button" aria-label="Pitch up">+</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="cluster output">
+        <div class="volume">
+          <button class="ctl muted-state" aria-label="Unmute" title="Unmute">
+            <!-- mute: speaker + x -->
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 9 H7 L12 5 V19 L7 15 H4 Z"/>
+              <line x1="16" y1="9" x2="21" y2="14"/>
+              <line x1="21" y1="9" x2="16" y2="14"/>
+            </svg>
+          </button>
+          <input class="slim vol-range" type="range" min="0" max="150" value="100" aria-label="Volume (0–150%)">
+          <span class="vol-pct is-muted">100%</span>
+        </div>
+
+        <!-- bass focus ON -->
+        <button class="toggle on" aria-pressed="true" title="Bass focus (on)">
+          <span class="dot"></span>Bass focus
+        </button>
+
+        <button class="ctl reset" aria-label="Reset workspace" title="Reset workspace">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 9 a9 9 0 1 1 -1.5 5"/>
+            <path d="M3 4 V9 H8"/>
+          </svg>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ───────────  NARROW / WRAP PROOF  ─────────── -->
+  <p class="caption">Narrow stage (~520px) — proves the three clusters <span class="em">wrap gracefully</span> onto multiple rows.</p>
+
+  <div class="frame narrow">
+    <div class="waveform" aria-hidden="true"></div>
+
+    <div class="transport" role="toolbar" aria-label="Playback transport (narrow)">
+
+      <div class="cluster transport-c">
+        <button class="play" aria-label="Play" title="Play / pause">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M7 4.5 L19 12 L7 19.5 Z"/>
+          </svg>
+        </button>
+        <span class="time mono">
+          <span class="cur">01:12.4</span><span class="sep">/</span><span class="tot">04:24</span>
+        </span>
+      </div>
+
+      <div class="cluster shaping">
+        <div class="speed">
+          <span class="label">speed</span>
+          <div class="segpill" role="group" aria-label="Speed presets">
+            <button type="button">50</button>
+            <button type="button">70</button>
+            <button type="button">85</button>
+            <button type="button" class="active" aria-pressed="true">100</button>
+          </div>
+          <input class="slim speed-range" type="range" min="25" max="200" value="100" aria-label="Speed (25–200%)">
+          <span class="speed-val">100%</span>
+        </div>
+
+        <div class="pitch">
+          <span class="label">pitch</span>
+          <div class="stepper" role="group" aria-label="Pitch in semitones">
+            <button type="button" aria-label="Pitch down">−</button>
+            <span class="val zero mono">0 st</span>
+            <button type="button" aria-label="Pitch up">+</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="cluster output">
+        <div class="volume">
+          <button class="ctl" aria-label="Mute" title="Mute">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 9 H7 L12 5 V19 L7 15 H4 Z"/>
+              <path d="M16 8.5 a5 5 0 0 1 0 7"/>
+              <path d="M18.7 6 a8.5 8.5 0 0 1 0 12"/>
+            </svg>
+          </button>
+          <input class="slim vol-range" type="range" min="0" max="150" value="100" aria-label="Volume (0–150%)">
+          <span class="vol-pct">100%</span>
+        </div>
+
+        <button class="toggle" aria-pressed="false" title="Bass focus (off)">
+          <span class="dot"></span>Bass focus
+        </button>
+
+        <button class="ctl reset" aria-label="Reset workspace" title="Reset workspace">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 9 a9 9 0 1 1 -1.5 5"/>
+            <path d="M3 4 V9 H8"/>
+          </svg>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+</body>
+</html>

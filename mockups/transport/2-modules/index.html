@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Earworm — Transport (Hero + Labelled Modules)</title>
+<style>
+  :root {
+    --bg:#101014; --bg-raised:#16161c; --fg:#e8e6e3;
+    --accent:#e0a458;        /* amber — the single accent */
+    --accent-dim:#8a6a3f; --muted:#6b7280; --wave:#3f4250; --line:#26262e;
+    --miss:#c4564f; --shaky:#e0a458; --solid:#6fae6f; --cyan:#4fc3d4; --meter:#aab0ba;
+    --space:8px; --radius:2px; --mono: ui-monospace,"JetBrains Mono","Fira Code",monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { color-scheme: dark; }
+
+  body {
+    margin:0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    line-height: 1.4;
+    padding: 40px 32px 72px;
+  }
+
+  .page-note {
+    color: var(--muted);
+    font-size: 12px;
+    max-width: 1000px;
+    margin: 0 auto 28px;
+  }
+  .page-note strong { color: var(--fg); font-weight: 600; }
+
+  .frame { max-width: 1000px; margin: 0 auto; }
+  .frame.narrow { max-width: 520px; margin-top: 48px; }
+
+  .caption {
+    color: var(--muted);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    margin: 0 0 10px;
+  }
+
+  /* faux waveform sliver so the strip reads as sitting under the wave */
+  .wave-stub {
+    height: 64px;
+    background:
+      repeating-linear-gradient(90deg, transparent 0 3px, var(--wave) 3px 4px);
+    -webkit-mask: linear-gradient(180deg, transparent, #000 12%, #000 88%, transparent);
+            mask: linear-gradient(180deg, transparent, #000 12%, #000 88%, transparent);
+    opacity:.5;
+  }
+
+  /* ===== THE TRANSPORT STRIP ===== */
+  .transport {
+    border-top: 1px solid var(--line);
+    background: var(--bg);
+    display: flex;
+    align-items: stretch;
+    gap: 28px;
+    padding: 14px 18px;
+    flex-wrap: wrap;
+  }
+
+  /* ---- HERO: lone amber play + big mono time ---- */
+  .hero {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex: 0 0 auto;
+  }
+
+  .play {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: none;
+    background: var(--accent);
+    color: var(--bg);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    flex: 0 0 auto;
+    transition: filter .12s ease, transform .06s ease;
+  }
+  .play:hover { filter: brightness(1.08); }
+  .play:active { transform: scale(.96); }
+  .play svg { width: 22px; height: 22px; }
+  .play .icon-pause { display: none; }
+  .play.is-playing .icon-play { display: none; }
+  .play.is-playing .icon-pause { display: block; }
+
+  .time {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .time .now {
+    font-size: 26px;
+    color: var(--fg);
+    letter-spacing: -.01em;
+  }
+  .time .total {
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .time .total::before { content: "/ "; }
+
+  /* hairline divider between hero and module rack */
+  .divider {
+    width: 1px;
+    align-self: stretch;
+    background: var(--line);
+    flex: 0 0 auto;
+  }
+
+  /* ---- MODULE RACK ---- */
+  .rack {
+    display: flex;
+    align-items: flex-start;
+    gap: 30px;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+  }
+
+  .module {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    min-width: 0;
+  }
+
+  .mlabel {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--muted);
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .mlabel .val {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--fg);
+  }
+  .mlabel .val.accent { color: var(--accent); }
+
+  .mbody {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 28px;
+  }
+
+  /* generic slim slider track */
+  .slider {
+    position: relative;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--wave);
+    cursor: pointer;
+  }
+  .slider .fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: 2px;
+    background: var(--accent-dim);
+  }
+  .slider .knob {
+    position: absolute;
+    top: 50%;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: var(--fg);
+    transform: translate(-50%, -50%);
+    transition: background .12s ease;
+  }
+  .slider:hover .knob { background: var(--accent); }
+
+  /* SPEED module */
+  .speed { min-width: 248px; }
+  .presets {
+    display: flex;
+    gap: 4px;
+  }
+  .preset {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    color: var(--muted);
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 3px 8px;
+    cursor: pointer;
+    transition: color .12s ease, border-color .12s ease, background .12s ease;
+  }
+  .preset:hover { color: var(--fg); border-color: var(--wave); }
+  .preset.active {
+    color: var(--accent);
+    border-color: var(--accent-dim);
+    background: rgba(224,164,88,.08);
+  }
+  .speed .slider { flex: 1 1 auto; }
+
+  /* PITCH module — unified stepper */
+  .stepper {
+    display: inline-flex;
+    align-items: stretch;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+    height: 28px;
+  }
+  .stepper button {
+    width: 30px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    transition: color .12s ease, background .12s ease;
+  }
+  .stepper button:hover { color: var(--fg); background: var(--bg-raised); }
+  .stepper button:active { color: var(--accent); }
+  .stepper .pval {
+    min-width: 56px;
+    display: grid;
+    place-items: center;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 13px;
+    color: var(--fg);
+    border-left: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+    padding: 0 4px;
+  }
+
+  /* VOLUME module */
+  .volume { min-width: 170px; }
+  .iconbtn {
+    border: none;
+    background: transparent;
+    color: var(--fg);
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 auto;
+    transition: color .12s ease;
+  }
+  .iconbtn:hover { color: var(--accent); }
+  .iconbtn svg { width: 18px; height: 18px; }
+  .iconbtn .icon-mute { display: none; }
+  .iconbtn.muted { color: var(--muted); }
+  .iconbtn.muted .icon-vol { display: none; }
+  .iconbtn.muted .icon-mute { display: block; }
+  .volume .slider { flex: 1 1 auto; min-width: 84px; }
+
+  /* BASS FOCUS module — toggle */
+  .toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 4px 10px;
+    height: 28px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 12px;
+    transition: color .12s ease, border-color .12s ease, background .12s ease;
+  }
+  .toggle:hover { color: var(--fg); border-color: var(--wave); }
+  .toggle .pip {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--wave);
+    flex: 0 0 auto;
+    transition: background .12s ease, box-shadow .12s ease;
+  }
+  .toggle .state {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: .04em;
+  }
+  .toggle.on {
+    color: var(--accent);
+    border-color: var(--accent-dim);
+    background: rgba(224,164,88,.08);
+  }
+  .toggle.on .pip {
+    background: var(--accent);
+    box-shadow: 0 0 0 3px rgba(224,164,88,.18);
+  }
+
+  /* RESET — quiet recovery, far right, low contrast until hover */
+  .rack-tail {
+    margin-left: auto;
+    display: flex;
+    align-items: flex-start;
+  }
+  .reset {
+    border: none;
+    background: transparent;
+    color: var(--wave);
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    margin-top: 17px; /* align with module bodies under labels */
+    transition: color .12s ease, transform .35s ease;
+  }
+  .reset:hover { color: var(--fg); }
+  .reset:active { transform: rotate(-90deg); }
+  .reset svg { width: 17px; height: 17px; }
+
+  /* narrow reflow tweaks */
+  .narrow .transport { gap: 16px; padding: 12px 14px; }
+  .narrow .hero { flex: 1 1 100%; }
+  .narrow .divider { display: none; }
+  .narrow .rack { gap: 20px 26px; flex: 1 1 100%; }
+  .narrow .speed { min-width: 100%; }
+  .narrow .reset { margin-top: 4px; }
+</style>
+</head>
+<body>
+
+  <p class="page-note">
+    <strong>Earworm — transport redesign · direction 2: hero + labelled modules.</strong>
+    Full-width control strip rendered in situ directly beneath the waveform in the centre stage.
+    A lone amber play/pause and a large mono time readout form the hero at left;
+    a hairline divider opens onto a rack of micro-labelled control modules.
+  </p>
+
+  <!-- ====================== WIDE (primary, ~1000px) ====================== -->
+  <div class="frame">
+    <p class="caption">Wide — stage column ~1000px</p>
+    <div class="wave-stub" aria-hidden="true"></div>
+
+    <div class="transport">
+      <!-- HERO -->
+      <div class="hero">
+        <button class="play" aria-label="Play / pause" title="Play / Pause (Space)">
+          <svg class="icon-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M7 4.5 19 12 7 19.5z"/>
+          </svg>
+          <svg class="icon-pause" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.4" stroke-linecap="round" aria-hidden="true">
+            <line x1="8.5" y1="5" x2="8.5" y2="19"/>
+            <line x1="15.5" y1="5" x2="15.5" y2="19"/>
+          </svg>
+        </button>
+        <div class="time">
+          <span class="now">00:00.0</span>
+          <span class="total">04:24</span>
+        </div>
+      </div>
+
+      <div class="divider" aria-hidden="true"></div>
+
+      <!-- MODULE RACK -->
+      <div class="rack">
+
+        <!-- SPEED -->
+        <div class="module speed">
+          <div class="mlabel">SPEED <span class="val accent">100%</span></div>
+          <div class="presets">
+            <button class="preset">50</button>
+            <button class="preset">70</button>
+            <button class="preset">85</button>
+            <button class="preset active">100</button>
+          </div>
+          <div class="mbody">
+            <div class="slider" title="25–200%">
+              <div class="fill" style="width:43%"></div>
+              <div class="knob" style="left:43%"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PITCH -->
+        <div class="module pitch">
+          <div class="mlabel">PITCH</div>
+          <div class="mbody">
+            <div class="stepper" title="±12 semitones">
+              <button aria-label="Pitch down">&minus;</button>
+              <span class="pval">0&nbsp;st</span>
+              <button aria-label="Pitch up">+</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- VOLUME -->
+        <div class="module volume">
+          <div class="mlabel">VOLUME <span class="val">100%</span></div>
+          <div class="mbody">
+            <button class="iconbtn" aria-label="Mute" title="Mute">
+              <svg class="icon-vol" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M4 9v6h4l5 4V5L8 9z"/>
+                <path d="M16.5 8.5a5 5 0 0 1 0 7"/>
+                <path d="M19 6a8.5 8.5 0 0 1 0 12"/>
+              </svg>
+              <svg class="icon-mute" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M4 9v6h4l5 4V5L8 9z"/>
+                <line x1="17" y1="9.5" x2="22" y2="14.5"/>
+                <line x1="22" y1="9.5" x2="17" y2="14.5"/>
+              </svg>
+            </button>
+            <div class="slider" title="0–150%">
+              <div class="fill" style="width:66%"></div>
+              <div class="knob" style="left:66%"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- BASS FOCUS (off) -->
+        <div class="module bass">
+          <div class="mlabel">BASS FOCUS</div>
+          <div class="mbody">
+            <button class="toggle" title="Bass-focus DSP mode">
+              <span class="pip"></span><span class="state">OFF</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- BASS FOCUS (on / active instance) -->
+        <div class="module bass">
+          <div class="mlabel">BASS FOCUS</div>
+          <div class="mbody">
+            <button class="toggle on" title="Bass-focus DSP mode (active)">
+              <span class="pip"></span><span class="state">ON</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- RESET (quiet, far right) -->
+        <div class="rack-tail">
+          <button class="reset" aria-label="Reset workspace" title="Reset workspace">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 12a9 9 0 1 0 3-6.7"/>
+              <path d="M3 4.5V10h5.5"/>
+            </svg>
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================== NARROW (~520px) ====================== -->
+  <div class="frame narrow">
+    <p class="caption">Narrow — graceful reflow ~520px</p>
+    <div class="wave-stub" aria-hidden="true"></div>
+
+    <div class="transport">
+      <div class="hero">
+        <button class="play is-playing" aria-label="Play / pause" title="Play / Pause (Space)">
+          <svg class="icon-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M7 4.5 19 12 7 19.5z"/>
+          </svg>
+          <svg class="icon-pause" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.4" stroke-linecap="round" aria-hidden="true">
+            <line x1="8.5" y1="5" x2="8.5" y2="19"/>
+            <line x1="15.5" y1="5" x2="15.5" y2="19"/>
+          </svg>
+        </button>
+        <div class="time">
+          <span class="now">01:12.4</span>
+          <span class="total">04:24</span>
+        </div>
+      </div>
+
+      <div class="rack">
+        <div class="module speed">
+          <div class="mlabel">SPEED <span class="val accent">85%</span></div>
+          <div class="presets">
+            <button class="preset">50</button>
+            <button class="preset">70</button>
+            <button class="preset active">85</button>
+            <button class="preset">100</button>
+          </div>
+          <div class="mbody">
+            <div class="slider" title="25–200%">
+              <div class="fill" style="width:34%"></div>
+              <div class="knob" style="left:34%"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="module pitch">
+          <div class="mlabel">PITCH</div>
+          <div class="mbody">
+            <div class="stepper" title="±12 semitones">
+              <button aria-label="Pitch down">&minus;</button>
+              <span class="pval">&minus;2&nbsp;st</span>
+              <button aria-label="Pitch up">+</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="module volume">
+          <div class="mlabel">VOLUME <span class="val">0%</span></div>
+          <div class="mbody">
+            <button class="iconbtn muted" aria-label="Unmute" title="Muted">
+              <svg class="icon-vol" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M4 9v6h4l5 4V5L8 9z"/>
+                <path d="M16.5 8.5a5 5 0 0 1 0 7"/>
+                <path d="M19 6a8.5 8.5 0 0 1 0 12"/>
+              </svg>
+              <svg class="icon-mute" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M4 9v6h4l5 4V5L8 9z"/>
+                <line x1="17" y1="9.5" x2="22" y2="14.5"/>
+                <line x1="22" y1="9.5" x2="17" y2="14.5"/>
+              </svg>
+            </button>
+            <div class="slider" title="0–150%">
+              <div class="fill" style="width:0%"></div>
+              <div class="knob" style="left:0%"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="module bass">
+          <div class="mlabel">BASS FOCUS</div>
+          <div class="mbody">
+            <button class="toggle on" title="Bass-focus DSP mode (active)">
+              <span class="pip"></span><span class="state">ON</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="rack-tail">
+          <button class="reset" aria-label="Reset workspace" title="Reset workspace">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 12a9 9 0 1 0 3-6.7"/>
+              <path d="M3 4.5V10h5.5"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

@@ -6,6 +6,7 @@
   import {
     actions,
     currentLoop,
+    drillSpan,
     gridLines,
     gridSnap,
     gridSubdivision,
@@ -173,6 +174,7 @@
     void $position;
     void $selection;
     void $currentLoop;
+    void $drillSpan;
     void $gridVisible;
     void $gridLines;
     void $gridSubdivision;
@@ -286,12 +288,18 @@
     // loops sit faint in the background. junction edges stay dashed.
     const accent = c.accent;
     const accentDim = c.accentDim;
+    const drill = get(drillSpan);
     for (const l of open.loops) {
-      const { start, end } = loopBounds(l);
+      const saved = loopBounds(l);
+      const isSel = get(currentLoop)?.id === l.id;
+      // while a loop is active the bold highlight tracks the scratch span (so
+      // isolate / run-up are visible); the saved bounds show as a faint ghost
+      // when the two diverge, marking where "reset span" returns to.
+      const { start, end } = isSel && drill ? drill : saved;
+      const diverged = !!(isSel && drill && (drill.start !== saved.start || drill.end !== saved.end));
       const x0 = secToX(view, start);
       const x1 = secToX(view, end);
       if (x1 < 0 || x0 > w) continue;
-      const isSel = get(currentLoop)?.id === l.id;
       ctx.globalAlpha = isSel ? 0.2 : 0.07;
       ctx.fillStyle = accent;
       ctx.fillRect(x0, LANE_H, x1 - x0, WAVE_H);
@@ -313,6 +321,16 @@
         ctx.fillRect(x0, LANE_H, x1 - x0, 3); // solid cap across the top
         ctx.fillRect(x0 - 1, LANE_H, 3, 14); // grab handles, taller than before
         ctx.fillRect(x1 - 2, LANE_H, 3, 14);
+      }
+      // ghost the saved bounds when the drill span has diverged from them
+      if (diverged) {
+        const gx0 = secToX(view, saved.start);
+        const gx1 = secToX(view, saved.end);
+        ctx.strokeStyle = accentDim;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 4]);
+        ctx.strokeRect(gx0 + 0.5, LANE_H + 0.5, gx1 - gx0 - 1, WAVE_H - 1);
+        ctx.setLineDash([]);
       }
     }
 
@@ -638,7 +656,7 @@
   async function playCurrentLoop() {
     const l = get(currentLoop);
     if (!l) return;
-    const b = loopBounds(l);
+    const b = get(drillSpan) ?? loopBounds(l);
     await actions.setTransportLoop(b.start, b.end);
     await actions.seek(b.start);
     await actions.play();
@@ -857,8 +875,8 @@
   {/if}
   {#if $currentLoop}
     <HoverActions
-      left={secToX(view, loopBounds($currentLoop).start)}
-      right={secToX(view, loopBounds($currentLoop).end)}
+      left={secToX(view, ($drillSpan ?? loopBounds($currentLoop)).start)}
+      right={secToX(view, ($drillSpan ?? loopBounds($currentLoop)).end)}
       bandTop={LANE_H}
       bandHeight={WAVE_H}
       viewWidth={view.width}

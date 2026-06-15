@@ -4,7 +4,8 @@
 import { get, writable } from "svelte/store";
 import { cmd, initialSong, onEvent } from "./ipc";
 import { trace } from "./trace";
-import type { GridSubdivision } from "./waveform-math";
+import { subdivisionTimes, type GridSubdivision } from "./waveform-math";
+import { bisect, nudgeEdge, runUp, type Span } from "./drill";
 
 // --- wire types ----------------------------------------------------------
 
@@ -229,6 +230,14 @@ export const planStatus = writable<PlanStatus | null>(null);
 export const selection = writable<{ start: number; end: number } | null>(null);
 /** Loop currently driving the transport (clicked or plan-applied). */
 export const currentLoop = writable<LoopRegion | null>(null);
+/** Ephemeral scratch loop bounds for the drill box — what actually plays while
+ *  a loop is active. Mirrors the active loop's bounds, then the drill region
+ *  toys (nudge / isolate / run-up) edit *this* only; the saved LoopRegion is
+ *  never touched. Null when no loop is active. */
+export const drillSpan = writable<Span | null>(null);
+// Reseed/clear the scratch span whenever the active loop changes — fires no
+// matter who set currentLoop (loops tab, waveform click, plan, reset).
+currentLoop.subscribe((l) => drillSpan.set(l ? { start: l.start, end: l.end } : null));
 /** Bumped by `resetWorkspace()` — the waveform watches this to refit zoom and
  *  drop its local view/active-span state (which no store mirrors). */
 export const workspaceReset = writable(0);
@@ -590,15 +599,64 @@ export const actions = {
     await cmd("loop.clear");
   },
 
+  // --- drill box: live edits to the scratch span (saved loops untouched) ---
+
+  /** Set the scratch span and point the transport at it. */
+  async applyDrillSpan(span: Span): Promise<void> {
+    drillSpan.set(span);
+    await cmd("loop.set", { start: span.start, end: span.end });
+  },
+
+  /** Grid lines for the current subdivision, and the downbeats, for snapping. */
+  drillGrid(): { grid: number[]; downbeats: number[] } {
+    const a = get(openSong)?.analysis;
+    if (!a) return { grid: [], downbeats: [] };
+    return { grid: subdivisionTimes(a.beats, a.downbeats, get(gridSubdivision)), downbeats: a.downbeats };
+  },
+
+  drillDuration(): number {
+    return get(openSong)?.song.duration_secs ?? get(drillSpan)?.end ?? 0;
+  },
+
+  /** Move one scratch edge by a grid step (or 0.25 s without a grid). */
+  async drillNudge(edge: "start" | "end", dir: 1 | -1): Promise<void> {
+    const span = get(drillSpan);
+    if (!span) return;
+    await this.applyDrillSpan(nudgeEdge(span, edge, dir, this.drillGrid().grid, this.drillDuration(), 0.25));
+  },
+
+  /** Shrink the scratch span to its first or second half. */
+  async drillIsolate(half: "first" | "second"): Promise<void> {
+    const span = get(drillSpan);
+    if (!span) return;
+    await this.applyDrillSpan(bisect(span, half, this.drillGrid().grid));
+  },
+
+  /** Extend (+) or retract (−) the scratch start by N bars to drill the entrance. */
+  async drillRunUp(deltaBars: number): Promise<void> {
+    const span = get(drillSpan);
+    if (!span) return;
+    await this.applyDrillSpan(runUp(span, deltaBars, this.drillGrid().downbeats, this.drillDuration()));
+  },
+
+  /** Snap the scratch span back to the active loop's saved bounds. */
+  async drillResetSpan(): Promise<void> {
+    const l = get(currentLoop);
+    if (l) await this.applyDrillSpan({ start: l.start, end: l.end });
+  },
+
   /** Reset the stage to a clean slate: stop playback, refit the waveform zoom,
-   *  drop the selection, the clicked active span, the playhead, and the active
-   *  loop — without touching speed, pitch or volume. The zoom + active span
-   *  live as local state in Waveform, so we signal it via workspaceReset. */
+   *  drop the selection, the clicked active span, the active loop, return the
+   *  playhead to the start, and restore speed to 100% and pitch to 0 — without
+   *  touching volume. The zoom + active span live as local state in Waveform,
+   *  so we signal it via workspaceReset. */
   async resetWorkspace(): Promise<void> {
     selection.set(null);
     if (get(position).playing) await this.pause();
     await this.clearTransportLoop();
     await this.seek(0);
+    await this.setRate(1.0);
+    await this.setPitch(0, 0);
     workspaceReset.update((n) => n + 1);
   },
 

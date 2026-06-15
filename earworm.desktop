@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Earworm
+GenericName=Practice Looper
+Comment=Ear-first practice looper: loop sections, slow them down, run practice plans
+Exec=/home/shawn/src/earworm/target/release/earworm
+Icon=/home/shawn/src/earworm/apps/desktop/src-tauri/icons/icon.png
+Terminal=false
+Categories=AudioVideo;Audio;Music;
+StartupWMClass=earworm
+Keywords=practice;loop;music;guitar;ear;tempo;

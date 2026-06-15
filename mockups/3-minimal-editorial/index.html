@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earworm — Structure panel (minimal editorial)</title>
+<style>
+  :root {
+    --bg:#101014; --bg-raised:#16161c; --fg:#e8e6e3;
+    --accent:#e0a458;        /* amber — the single accent */
+    --accent-dim:#8a6a3f; --muted:#6b7280; --wave:#3f4250; --line:#26262e;
+    --miss:#c4564f; --shaky:#e0a458; --solid:#6fae6f; --cyan:#4fc3d4; --meter:#aab0ba;
+    --space:8px; --radius:2px; --mono: ui-monospace,"JetBrains Mono","Fira Code",monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { color-scheme: dark; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    line-height: 1.4;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---- page scaffold: render the panel against full --bg ---- */
+  .page {
+    display: flex;
+    justify-content: flex-start;
+    min-height: 100vh;
+  }
+
+  /* simulate the rest of the app sitting to the left of the panel */
+  .stage-stub {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 24px;
+    color: var(--muted);
+    font-size: 12px;
+    display: none;
+  }
+  @media (min-width: 760px) { .stage-stub { display: block; } }
+
+  /* ---- the right panel ---- */
+  .panel {
+    flex: 0 0 300px;
+    width: 300px;
+    border-left: 1px solid var(--line);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* tab nav */
+  .tabs {
+    display: flex;
+    gap: 0;
+    padding: var(--space) calc(var(--space) * 1.5);
+    border-bottom: 1px solid var(--line);
+    flex-wrap: wrap;
+  }
+  .tab {
+    background: none;
+    border: none;
+    color: var(--muted);
+    font: inherit;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    padding: 4px 6px;
+    cursor: pointer;
+  }
+  .tab:hover { color: var(--fg); }
+  .tab.active { color: var(--accent); }
+
+  /* each demo state block */
+  .state {
+    padding: calc(var(--space) * 2) calc(var(--space) * 1.5) calc(var(--space) * 3);
+    border-bottom: 1px solid var(--line);
+  }
+  .caption {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--muted);
+    margin: 0 0 calc(var(--space) * 1.5);
+    opacity: .65;
+  }
+
+  /* ---- quiet metadata line (analysis stats, subordinate) ---- */
+  .meta {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: .01em;
+    margin-bottom: calc(var(--space) * 2.5);
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0 6px;
+  }
+  .meta .sep { color: var(--line); }
+  .meta .engine { color: var(--accent-dim); }
+
+  /* header row: title + the single re-analyze affordance + edit toggle */
+  .head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: calc(var(--space) * 1.5);
+    min-height: 22px;
+  }
+  .head h2 {
+    margin: 0;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--muted);
+  }
+  .head-actions { display: flex; gap: var(--space); }
+
+  /* small text-button affordance */
+  .txt-btn {
+    background: none;
+    border: none;
+    color: var(--muted);
+    font: inherit;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    cursor: pointer;
+    padding: 2px 0;
+  }
+  .txt-btn:hover { color: var(--fg); }
+  .txt-btn.active { color: var(--accent); }
+
+  /* ===== THE SECTION LIST — the hero ===== */
+  .sections { list-style: none; margin: 0; padding: 0; }
+
+  .row {
+    position: relative;
+    display: grid;
+    grid-template-columns: 18px 1fr auto;
+    align-items: baseline;
+    column-gap: 10px;
+    padding: 9px 8px 9px 6px;
+    margin: 0 -8px;            /* let hover bg bleed to panel edges */
+    border-radius: var(--radius);
+    cursor: pointer;
+    border-left: 2px solid transparent;
+  }
+
+  .row .ord {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--line);
+    text-align: right;
+    transition: color .12s;
+  }
+  .row .name {
+    font-size: 15px;
+    color: var(--fg);
+    letter-spacing: .005em;
+    line-height: 1.2;
+  }
+  .row .range {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+    letter-spacing: .01em;
+  }
+
+  /* hover / active span highlight — mirrors waveform span selection */
+  .row:hover {
+    background: var(--bg-raised);
+    border-left-color: var(--accent-dim);
+  }
+  .row:hover .ord { color: var(--muted); }
+
+  .row.active {
+    background: var(--bg-raised);
+    border-left-color: var(--accent);
+  }
+  .row.active .name { color: var(--accent); }
+  .row.active .ord { color: var(--accent-dim); }
+
+  /* per-row affordances — hidden at rest, fade in on hover */
+  .row-tools {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 12px;
+    margin-top: 6px;
+    padding-left: 28px;
+    opacity: 0;
+    max-height: 0;
+    overflow: hidden;
+    transition: opacity .12s ease, max-height .14s ease;
+    pointer-events: none;
+  }
+  .row:hover .row-tools,
+  .row.show-tools .row-tools {
+    opacity: 1;
+    max-height: 24px;
+    pointer-events: auto;
+  }
+  .row-tools .txt-btn { font-size: 10px; }
+  .row-tools .danger:hover { color: var(--miss); }
+
+  /* drag handle hint, also hover-revealed */
+  .row .grip {
+    position: absolute;
+    left: -2px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--line);
+    font-family: var(--mono);
+    font-size: 10px;
+    line-height: 1;
+    opacity: 0;
+    transition: opacity .12s;
+    cursor: grab;
+  }
+  .row:hover .grip { opacity: 1; color: var(--muted); }
+
+  /* ===== EDIT MODE ===== */
+  .row.edit {
+    cursor: default;
+    border-left-color: var(--line);
+    padding: 8px 8px 8px 6px;
+  }
+  .row.edit:hover { background: transparent; }
+  .row.edit .edit-grid {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 14px 1fr;
+    column-gap: 10px;
+    align-items: center;
+  }
+  .reorder {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    align-items: center;
+    color: var(--muted);
+  }
+  .reorder button {
+    background: none; border: none; color: var(--muted);
+    font-family: var(--mono); font-size: 9px; line-height: 1;
+    cursor: pointer; padding: 1px;
+  }
+  .reorder button:hover { color: var(--fg); }
+
+  .edit-fields { display: flex; flex-direction: column; gap: 5px; }
+  .edit-line { display: flex; align-items: center; gap: 6px; }
+
+  input.inp {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    color: var(--fg);
+    font: inherit;
+    padding: 4px 6px;
+    width: 100%;
+  }
+  input.inp:focus { outline: none; border-color: var(--muted); }
+  input.inp:hover { border-color: var(--muted); }
+  input.name-inp { font-size: 14px; }
+  input.time-inp {
+    font-family: var(--mono);
+    font-size: 11px;
+    width: 56px;
+    text-align: center;
+  }
+  .edit-line .lbl {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--muted);
+  }
+  .edit-line .dash { color: var(--muted); font-family: var(--mono); }
+  .edit-line .del {
+    margin-left: auto;
+    background: none; border: none;
+    color: var(--muted); font: inherit; font-size: 10px;
+    text-transform: uppercase; letter-spacing: .06em;
+    cursor: pointer;
+  }
+  .edit-line .del:hover { color: var(--miss); }
+
+  /* edit-mode footer: add / revert / save + unsaved hint */
+  .edit-footer {
+    margin-top: calc(var(--space) * 2);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space);
+  }
+  .add-section {
+    background: none;
+    border: 1px dashed var(--line);
+    border-radius: var(--radius);
+    color: var(--muted);
+    font: inherit;
+    font-size: 11px;
+    padding: 7px;
+    width: 100%;
+    cursor: pointer;
+    text-align: center;
+  }
+  .add-section:hover { border-color: var(--muted); color: var(--fg); }
+
+  .edit-actions { display: flex; align-items: center; gap: var(--space); }
+  .unsaved {
+    font-size: 10px;
+    color: var(--accent);
+    font-family: var(--mono);
+    margin-right: auto;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .unsaved::before {
+    content: "";
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  /* push buttons */
+  .btn {
+    background: var(--bg-raised);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    color: var(--fg);
+    font: inherit;
+    font-size: 11px;
+    padding: 6px 12px;
+    cursor: pointer;
+  }
+  .btn:hover { border-color: var(--muted); }
+  .btn.accent {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--bg);
+    font-weight: 600;
+  }
+  .btn.accent:hover { background: #e8b06a; border-color: #e8b06a; }
+  .btn.ghost { background: none; }
+
+  /* ===== EMPTY / UNANALYZED ===== */
+  .empty {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: calc(var(--space) * 1.5);
+    padding: calc(var(--space) * 2) 0;
+  }
+  .empty .empty-title {
+    font-size: 14px;
+    color: var(--fg);
+  }
+  .empty .empty-sub {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.5;
+    max-width: 240px;
+  }
+  .empty .btn.accent { margin-top: var(--space); }
+
+  .hint {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 10px;
+    opacity: .55;
+    font-style: italic;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="stage-stub">
+    <div style="border:1px solid var(--line);border-radius:2px;height:80px;display:flex;align-items:center;justify-content:center;color:var(--wave);font-family:var(--mono);font-size:11px;">[ waveform / stage ]</div>
+    <p style="margin-top:16px;max-width:520px;">The structure panel below lives in the right pane. Clicking a section
+    highlights its span on the waveform above. Mockup shows three states stacked vertically.</p>
+  </div>
+
+  <!-- ============ THE PANEL ============ -->
+  <div class="panel">
+
+    <!-- tab nav -->
+    <nav class="tabs">
+      <button class="tab active">structure</button>
+      <button class="tab">loops</button>
+      <button class="tab">capture</button>
+      <button class="tab">profile</button>
+      <button class="tab">settings</button>
+      <button class="tab">guide</button>
+    </nav>
+
+    <!-- ===== STATE 1: ANALYZED — DISPLAY MODE (primary) ===== -->
+    <section class="state">
+      <p class="caption">Analyzed · display</p>
+
+      <div class="head">
+        <h2>Sections</h2>
+        <div class="head-actions">
+          <button class="txt-btn">Edit</button>
+          <button class="txt-btn">Re-analyze</button>
+        </div>
+      </div>
+
+      <!-- quiet metadata line — analysis stats, clearly subordinate -->
+      <div class="meta">
+        <span>128 BPM</span><span class="sep">·</span>
+        <span>4/4</span><span class="sep">·</span>
+        <span>103 bars</span><span class="sep">·</span>
+        <span>412 beats</span><span class="sep">·</span>
+        <span class="engine">SongFormer</span>
+      </div>
+
+      <ol class="sections">
+        <li class="row"><span class="grip">⠿</span>
+          <span class="ord">1</span><span class="name">intro</span><span class="range">0:00–0:12</span></li>
+
+        <!-- this row shown in HOVER state to reveal its affordances -->
+        <li class="row active show-tools"><span class="grip">⠿</span>
+          <span class="ord">2</span><span class="name">verse 1</span><span class="range">0:12–0:38</span>
+          <div class="row-tools">
+            <button class="txt-btn">Loop</button>
+            <button class="txt-btn">Rename</button>
+            <button class="txt-btn danger">Delete</button>
+          </div>
+        </li>
+
+        <li class="row"><span class="grip">⠿</span>
+          <span class="ord">3</span><span class="name">pre-chorus</span><span class="range">0:38–0:52</span></li>
+        <li class="row"><span class="grip">⠿</span>
+          <span class="ord">4</span><span class="name">chorus 1</span><span class="range">0:52–1:18</span></li>
+        <li class="row"><span class="grip">⠿</span>
+          <span class="ord">5</span><span class="name">verse 2</span><span class="range">1:18–1:44</span></li>
+        <li class="row"><span class="grip">⠿</span>
+          <span class="ord">6</span><span class="name">chorus 2</span><span class="range">1:44–2:10</span></li>
+        <li class="row"><span class="grip">⠿</span>
+          <span class="ord">7</span><span class="name">bridge</span><span class="range">2:10–2:40</span></li>
+        <li class="row"><span class="grip">⠿</span>
+          <span class="ord">8</span><span class="name">chorus 3</span><span class="range">2:40–3:14</span></li>
+        <li class="row"><span class="grip">⠿</span>
+          <span class="ord">9</span><span class="name">outro</span><span class="range">3:14–3:48</span></li>
+      </ol>
+
+      <p class="hint">hover a row to reveal loop / rename / delete · click highlights its span</p>
+    </section>
+
+    <!-- ===== STATE 2: EDIT MODE ===== -->
+    <section class="state">
+      <p class="caption">Edit mode</p>
+
+      <div class="head">
+        <h2>Sections · editing</h2>
+        <div class="head-actions">
+          <button class="txt-btn active">Done</button>
+        </div>
+      </div>
+
+      <div class="meta">
+        <span>128 BPM</span><span class="sep">·</span>
+        <span>4/4</span><span class="sep">·</span>
+        <span>103 bars</span><span class="sep">·</span>
+        <span class="engine">SongFormer</span>
+      </div>
+
+      <ol class="sections">
+        <li class="row edit">
+          <div class="edit-grid">
+            <div class="reorder">
+              <button title="move up">▲</button>
+              <button title="move down">▼</button>
+            </div>
+            <div class="edit-fields">
+              <input class="inp name-inp" value="intro" aria-label="section name">
+              <div class="edit-line">
+                <input class="inp time-inp" value="0:00" aria-label="start">
+                <span class="dash">–</span>
+                <input class="inp time-inp" value="0:12" aria-label="end">
+                <button class="del">Delete</button>
+              </div>
+            </div>
+          </div>
+        </li>
+
+        <li class="row edit">
+          <div class="edit-grid">
+            <div class="reorder">
+              <button title="move up">▲</button>
+              <button title="move down">▼</button>
+            </div>
+            <div class="edit-fields">
+              <input class="inp name-inp" value="verse 1" aria-label="section name">
+              <div class="edit-line">
+                <input class="inp time-inp" value="0:12" aria-label="start">
+                <span class="dash">–</span>
+                <input class="inp time-inp" value="0:38" aria-label="end">
+                <button class="del">Delete</button>
+              </div>
+            </div>
+          </div>
+        </li>
+
+        <li class="row edit">
+          <div class="edit-grid">
+            <div class="reorder">
+              <button title="move up">▲</button>
+              <button title="move down">▼</button>
+            </div>
+            <div class="edit-fields">
+              <input class="inp name-inp" value="pre-chorus" aria-label="section name">
+              <div class="edit-line">
+                <input class="inp time-inp" value="0:38" aria-label="start">
+                <span class="dash">–</span>
+                <input class="inp time-inp" value="0:52" aria-label="end">
+                <button class="del">Delete</button>
+              </div>
+            </div>
+          </div>
+        </li>
+      </ol>
+
+      <div class="edit-footer">
+        <button class="add-section">+ Add section</button>
+        <div class="edit-actions">
+          <span class="unsaved">unsaved edits</span>
+          <button class="btn ghost">Revert</button>
+          <button class="btn accent">Save</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== STATE 3: UNANALYZED / EMPTY ===== -->
+    <section class="state" style="border-bottom:none;">
+      <p class="caption">Not analyzed</p>
+
+      <div class="head">
+        <h2>Sections</h2>
+      </div>
+
+      <div class="empty">
+        <div class="empty-title">Not analyzed yet</div>
+        <p class="empty-sub">Run analysis to detect beats, bars, and song sections.
+          The structure shows up here once it's done.</p>
+        <button class="btn accent">Analyze track</button>
+      </div>
+    </section>
+
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earworm — Structure Map</title>
+<style>
+  :root {
+    --bg:#101014; --bg-raised:#16161c; --fg:#e8e6e3;
+    --accent:#e0a458;        /* amber — the single accent */
+    --accent-dim:#8a6a3f; --muted:#6b7280; --wave:#3f4250; --line:#26262e;
+    --miss:#c4564f; --shaky:#e0a458; --solid:#6fae6f; --cyan:#4fc3d4; --meter:#aab0ba;
+    --space:8px; --radius:2px; --mono: ui-monospace,"JetBrains Mono","Fira Code",monospace;
+
+    /* tone codes for section TYPES — near-monochrome with amber/cyan accents */
+    --t-edge:#2a2a32;        /* intro/outro — quiet muted grey */
+    --t-edge-fg:#8b8f99;
+    --t-verse:#34343e;       /* verses — one slightly-lifted neutral tone */
+    --t-verse-fg:#bdc0c8;
+    --t-pre:#3a352c;         /* pre-chorus — warming toward amber */
+    --t-pre-fg:#c9b58e;
+    --t-chorus:#5a431f;      /* chorus — amber family, dim */
+    --t-chorus-fg:#f0c98a;
+    --t-bridge:#1f3d44;      /* bridge — cyan */
+    --t-bridge-fg:#9fd9e2;
+  }
+
+  * { box-sizing:border-box; }
+  html,body { margin:0; }
+  body {
+    background:var(--bg); color:var(--fg);
+    font-family:system-ui,-apple-system,sans-serif;
+    font-size:14px; line-height:1.4; color-scheme:dark;
+    padding:24px; display:flex; flex-wrap:wrap; gap:32px; align-items:flex-start;
+  }
+
+  .page-note {
+    width:100%; color:var(--muted); font-size:12px; margin:0 0 4px;
+    letter-spacing:.02em;
+  }
+
+  /* ---- the right panel as it sits in the app ---- */
+  .panel {
+    width:300px; flex:0 0 300px;
+    border-left:1px solid var(--line);
+    background:var(--bg);
+    display:flex; flex-direction:column;
+  }
+
+  .caption {
+    width:300px; flex:0 0 300px;
+    font-size:10px; text-transform:uppercase; letter-spacing:.08em;
+    color:var(--muted); margin-bottom:6px;
+  }
+  .stack { display:flex; flex-direction:column; }
+
+  /* ---- tab nav ---- */
+  .tabs {
+    display:flex; gap:2px; padding:6px var(--space);
+    border-bottom:1px solid var(--line);
+    overflow:hidden;
+  }
+  .tab {
+    font-size:10px; text-transform:uppercase; letter-spacing:.06em;
+    color:var(--muted); padding:3px 5px; cursor:pointer;
+    border-radius:var(--radius); background:none; border:none;
+    font-family:inherit;
+  }
+  .tab:hover { color:var(--fg); }
+  .tab.active { color:var(--accent); }
+
+  .body { padding:var(--space); }
+
+  /* ---- stat readout ---- */
+  .statline {
+    font-family:var(--mono); font-size:11px; color:var(--meter);
+    display:flex; flex-wrap:wrap; align-items:baseline;
+    gap:0; line-height:1.3; margin-bottom:2px;
+  }
+  .statline b { color:var(--fg); font-weight:600; }
+  .statline .sep { color:var(--line); margin:0 6px; }
+  .statline .engine { color:var(--accent-dim); }
+
+  .substat {
+    font-size:10px; color:var(--muted); margin-bottom:8px;
+    text-transform:uppercase; letter-spacing:.06em;
+  }
+
+  /* header row: title + actions */
+  .maphead {
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:6px;
+  }
+  .maphead .label {
+    font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted);
+  }
+  .maphead .acts { display:flex; gap:4px; }
+
+  button.btn {
+    background:var(--bg-raised); color:var(--fg);
+    border:1px solid var(--line); border-radius:var(--radius);
+    font-family:inherit; font-size:11px; padding:3px 8px; cursor:pointer;
+    line-height:1.2;
+  }
+  button.btn:hover { border-color:var(--muted); }
+  button.btn.tiny { font-size:10px; padding:2px 6px; }
+  button.btn.accent { background:var(--accent); color:var(--bg); border-color:var(--accent); }
+  button.btn.accent:hover { border-color:var(--accent); filter:brightness(1.08); }
+  button.btn.danger:hover { border-color:var(--miss); color:var(--miss); }
+
+  /* ---- the proportional map ---- */
+  .map {
+    display:flex; gap:8px;
+  }
+  .ruler {
+    position:relative; width:30px; flex:0 0 30px;
+    font-family:var(--mono); font-size:9px; color:var(--muted);
+  }
+  .ruler .tick {
+    position:absolute; right:0; transform:translateY(-50%);
+    white-space:nowrap;
+  }
+  .ruler .tick::after {
+    content:""; position:absolute; right:-8px; top:50%;
+    width:4px; height:1px; background:var(--line);
+  }
+
+  .blocks {
+    flex:1; display:flex; flex-direction:column; gap:2px;
+    position:relative;
+  }
+
+  .block {
+    position:relative; display:flex; flex-direction:column; justify-content:center;
+    border-radius:var(--radius);
+    padding:0 8px; cursor:pointer; overflow:hidden;
+    border:1px solid transparent;
+    background:var(--t-verse); color:var(--t-verse-fg);
+    transition:none;
+  }
+  /* left accent rail keyed to type — makes repeats "rhyme" */
+  .block::before {
+    content:""; position:absolute; left:0; top:0; bottom:0; width:2px;
+    background:currentColor; opacity:.55;
+  }
+  .block .bname {
+    font-size:11.5px; font-weight:600; letter-spacing:.01em; line-height:1.2;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .block .btime {
+    font-family:var(--mono); font-size:9.5px; opacity:.7; line-height:1.2;
+    white-space:nowrap;
+  }
+  /* short tracks collapse to a single inline line (name + time on one row) */
+  .block.sliver { flex-direction:row; align-items:center; gap:6px; }
+  .block.sliver .bname { font-size:11px; }
+  .block.sliver .btime { font-size:9px; }
+
+  /* type tones */
+  .block.t-edge   { background:var(--t-edge);   color:var(--t-edge-fg); }
+  .block.t-verse  { background:var(--t-verse);  color:var(--t-verse-fg); }
+  .block.t-pre    { background:var(--t-pre);    color:var(--t-pre-fg); }
+  .block.t-chorus { background:var(--t-chorus); color:var(--t-chorus-fg); }
+  .block.t-bridge { background:var(--t-bridge); color:var(--t-bridge-fg); }
+
+  .block:hover { border-color:var(--muted); }
+  .block.active {
+    border-color:var(--accent);
+    box-shadow:inset 0 0 0 1px var(--accent);
+  }
+  .block.active::before { opacity:1; }
+
+  .maplegend {
+    display:flex; flex-wrap:wrap; gap:8px 12px; margin-top:10px;
+    font-size:9px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted);
+  }
+  .maplegend span { display:inline-flex; align-items:center; gap:4px; }
+  .maplegend i { width:9px; height:9px; border-radius:1px; display:inline-block; }
+
+  /* ============ EDIT MODE ============ */
+  .editbanner {
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--bg-raised); border:1px solid var(--accent-dim);
+    border-radius:var(--radius); padding:4px 8px; margin-bottom:8px;
+  }
+  .editbanner .note { font-size:10px; color:var(--accent); letter-spacing:.02em; }
+  .editbanner .grp { display:flex; gap:4px; }
+
+  .erows { display:flex; flex-direction:column; gap:3px; }
+  .erow {
+    display:grid;
+    grid-template-columns: 14px 1fr 46px 46px 18px;
+    gap:5px; align-items:center;
+    background:var(--bg-raised); border:1px solid var(--line);
+    border-left:2px solid var(--t-verse-fg);
+    border-radius:var(--radius); padding:4px 6px;
+  }
+  .erow.t-edge   { border-left-color:var(--t-edge-fg); }
+  .erow.t-verse  { border-left-color:var(--t-verse-fg); }
+  .erow.t-pre    { border-left-color:var(--t-pre-fg); }
+  .erow.t-chorus { border-left-color:var(--t-chorus-fg); }
+  .erow.t-bridge { border-left-color:var(--t-bridge-fg); }
+  .erow.dirty { border-color:var(--accent-dim); }
+
+  .erow .drag {
+    color:var(--muted); cursor:grab; font-size:11px; text-align:center;
+    user-select:none; line-height:1;
+  }
+  .erow input.name {
+    background:transparent; border:none; color:var(--fg);
+    font-family:inherit; font-size:12px; padding:2px 2px; min-width:0; width:100%;
+    border-bottom:1px solid transparent;
+  }
+  .erow input.name:focus { outline:none; border-bottom-color:var(--accent); }
+  .erow input.time {
+    background:var(--bg); border:1px solid var(--line); color:var(--meter);
+    font-family:var(--mono); font-size:10px; padding:2px 4px; width:100%;
+    border-radius:var(--radius); text-align:center;
+  }
+  .erow input.time:focus { outline:none; border-color:var(--accent); color:var(--fg); }
+  .erow .del {
+    background:none; border:none; color:var(--muted); cursor:pointer;
+    font-size:13px; line-height:1; padding:0; text-align:center; font-family:var(--mono);
+  }
+  .erow .del:hover { color:var(--miss); }
+  .erow.dirty input.name { color:var(--accent); }
+
+  .ecols {
+    display:grid; grid-template-columns:14px 1fr 46px 46px 18px; gap:5px;
+    padding:0 6px 4px; font-size:8px; text-transform:uppercase;
+    letter-spacing:.06em; color:var(--muted);
+  }
+  .ecols span:nth-child(3),.ecols span:nth-child(4){ text-align:center; }
+
+  .addrow {
+    margin-top:5px;
+  }
+  .addrow button {
+    width:100%; background:var(--bg-raised); border:1px dashed var(--line);
+    color:var(--muted); border-radius:var(--radius); font-family:inherit;
+    font-size:11px; padding:5px; cursor:pointer;
+  }
+  .addrow button:hover { border-color:var(--muted); color:var(--fg); }
+
+  /* ============ EMPTY STATE ============ */
+  .empty {
+    display:flex; flex-direction:column; align-items:center; text-align:center;
+    padding:40px 16px 36px; gap:14px;
+  }
+  .empty .ghost {
+    display:flex; flex-direction:column; gap:3px; width:140px; opacity:.4;
+  }
+  .empty .ghost b {
+    border-radius:var(--radius); background:var(--wave);
+  }
+  .empty .ghost b:nth-child(1){ height:8px; }
+  .empty .ghost b:nth-child(2){ height:22px; }
+  .empty .ghost b:nth-child(3){ height:14px; }
+  .empty .ghost b:nth-child(4){ height:34px; background:var(--accent-dim); opacity:.6; }
+  .empty .ghost b:nth-child(5){ height:18px; }
+  .empty .ghost b:nth-child(6){ height:30px; background:var(--accent-dim); opacity:.6; }
+  .empty .etitle { font-size:13px; color:var(--fg); }
+  .empty .esub { font-size:11px; color:var(--muted); max-width:220px; line-height:1.5; }
+  .empty button.btn.accent { font-size:12px; padding:6px 16px; }
+</style>
+</head>
+<body>
+
+<p class="page-note">Earworm desktop — redesigned <b style="color:var(--fg)">structure</b> panel · proportional structure map · rendered in situ (right pane, ~300px)</p>
+
+<!-- ============================================================ -->
+<!-- STATE 1 — ANALYZED / DISPLAY MODE -->
+<!-- ============================================================ -->
+<div class="stack">
+  <div class="caption">1 — Analyzed · display mode</div>
+  <div class="panel">
+    <nav class="tabs">
+      <button class="tab active">structure</button>
+      <button class="tab">loops</button>
+      <button class="tab">capture</button>
+      <button class="tab">profile</button>
+      <button class="tab">settings</button>
+      <button class="tab">guide</button>
+    </nav>
+    <div class="body">
+
+      <div class="statline">
+        <b>128</b>&nbsp;BPM<span class="sep">·</span><b>4/4</b><span class="sep">·</span><b>103</b>&nbsp;bars<span class="sep">·</span><span class="engine">SongFormer</span>
+      </div>
+      <div class="substat">412 beats · 9 sections · 3:48</div>
+
+      <div class="maphead">
+        <span class="label">Structure map</span>
+        <div class="acts">
+          <button class="btn tiny">edit</button>
+          <button class="btn tiny">re-analyze</button>
+        </div>
+      </div>
+
+      <!-- The map: ruler + proportional blocks. Heights ∝ duration (1px ≈ 0.62s, ~228s total → ~366px). -->
+      <div class="map">
+        <div class="ruler" aria-hidden="true">
+          <span class="tick" style="top:0%">0:00</span>
+          <span class="tick" style="top:26.3%">1:00</span>
+          <span class="tick" style="top:52.6%">2:00</span>
+          <span class="tick" style="top:78.9%">3:00</span>
+          <span class="tick" style="top:100%">3:48</span>
+        </div>
+        <div class="blocks">
+          <!-- durations: intro12 v1 26 pre14 ch26 v2 26 ch26 br30 ch34 outro34 -->
+          <div class="block t-edge sliver" style="height:18px" title="intro 0:00–0:12">
+            <span class="bname">intro</span><span class="btime">0:00–0:12</span>
+          </div>
+          <div class="block t-verse" style="height:40px" title="verse 1 0:12–0:38">
+            <span class="bname">verse 1</span><span class="btime">0:12–0:38</span>
+          </div>
+          <div class="block t-pre sliver" style="height:22px" title="pre-chorus 0:38–0:52">
+            <span class="bname">pre-chorus</span><span class="btime">0:38–0:52</span>
+          </div>
+          <div class="block t-chorus active" style="height:40px" title="chorus 1 0:52–1:18">
+            <span class="bname">chorus 1</span><span class="btime">0:52–1:18</span>
+          </div>
+          <div class="block t-verse" style="height:40px" title="verse 2 1:18–1:44">
+            <span class="bname">verse 2</span><span class="btime">1:18–1:44</span>
+          </div>
+          <div class="block t-chorus" style="height:40px" title="chorus 2 1:44–2:10">
+            <span class="bname">chorus 2</span><span class="btime">1:44–2:10</span>
+          </div>
+          <div class="block t-bridge" style="height:46px" title="bridge 2:10–2:40">
+            <span class="bname">bridge</span><span class="btime">2:10–2:40</span>
+          </div>
+          <div class="block t-chorus" style="height:52px" title="chorus 3 2:40–3:14">
+            <span class="bname">chorus 3</span><span class="btime">2:40–3:14</span>
+          </div>
+          <div class="block t-edge" style="height:52px" title="outro 3:14–3:48">
+            <span class="bname">outro</span><span class="btime">3:14–3:48</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="maplegend">
+        <span><i style="background:var(--t-edge-fg)"></i>intro/outro</span>
+        <span><i style="background:var(--t-verse-fg)"></i>verse</span>
+        <span><i style="background:var(--t-pre-fg)"></i>pre</span>
+        <span><i style="background:var(--t-chorus-fg)"></i>chorus</span>
+        <span><i style="background:var(--t-bridge-fg)"></i>bridge</span>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- STATE 2 — EDIT MODE -->
+<!-- ============================================================ -->
+<div class="stack">
+  <div class="caption">2 — Edit mode</div>
+  <div class="panel">
+    <nav class="tabs">
+      <button class="tab active">structure</button>
+      <button class="tab">loops</button>
+      <button class="tab">capture</button>
+      <button class="tab">profile</button>
+      <button class="tab">settings</button>
+      <button class="tab">guide</button>
+    </nav>
+    <div class="body">
+
+      <div class="statline">
+        <b>128</b>&nbsp;BPM<span class="sep">·</span><b>4/4</b><span class="sep">·</span><b>103</b>&nbsp;bars<span class="sep">·</span><span class="engine">SongFormer</span>
+      </div>
+      <div class="substat">editing 9 sections</div>
+
+      <div class="editbanner">
+        <span class="note">● unsaved edits</span>
+        <div class="grp">
+          <button class="btn tiny">revert</button>
+          <button class="btn tiny accent">save</button>
+        </div>
+      </div>
+
+      <!-- In edit mode the proportional blocks flatten into editable rows that keep
+           the same left type-rail, so the map's vocabulary carries over. -->
+      <div class="ecols">
+        <span></span><span>name</span><span>start</span><span>end</span><span></span>
+      </div>
+      <div class="erows">
+        <div class="erow t-edge">
+          <span class="drag">⠿</span>
+          <input class="name" value="intro">
+          <input class="time" value="0:00">
+          <input class="time" value="0:12">
+          <button class="del" title="delete">×</button>
+        </div>
+        <div class="erow t-verse">
+          <span class="drag">⠿</span>
+          <input class="name" value="verse 1">
+          <input class="time" value="0:12">
+          <input class="time" value="0:38">
+          <button class="del" title="delete">×</button>
+        </div>
+        <div class="erow t-pre dirty">
+          <span class="drag">⠿</span>
+          <input class="name" value="pre-chorus">
+          <input class="time" value="0:38">
+          <input class="time" value="0:54">
+          <button class="del" title="delete">×</button>
+        </div>
+        <div class="erow t-chorus">
+          <span class="drag">⠿</span>
+          <input class="name" value="chorus 1">
+          <input class="time" value="0:54">
+          <input class="time" value="1:18">
+          <button class="del" title="delete">×</button>
+        </div>
+        <div class="erow t-verse">
+          <span class="drag">⠿</span>
+          <input class="name" value="verse 2">
+          <input class="time" value="1:18">
+          <input class="time" value="1:44">
+          <button class="del" title="delete">×</button>
+        </div>
+        <div class="erow t-chorus">
+          <span class="drag">⠿</span>
+          <input class="name" value="chorus 2">
+          <input class="time" value="1:44">
+          <input class="time" value="2:10">
+          <button class="del" title="delete">×</button>
+        </div>
+        <div class="erow t-bridge">
+          <span class="drag">⠿</span>
+          <input class="name" value="bridge">
+          <input class="time" value="2:10">
+          <input class="time" value="2:40">
+          <button class="del" title="delete">×</button>
+        </div>
+        <div class="erow t-chorus">
+          <span class="drag">⠿</span>
+          <input class="name" value="chorus 3">
+          <input class="time" value="2:40">
+          <input class="time" value="3:14">
+          <button class="del" title="delete">×</button>
+        </div>
+        <div class="erow t-edge">
+          <span class="drag">⠿</span>
+          <input class="name" value="outro">
+          <input class="time" value="3:14">
+          <input class="time" value="3:48">
+          <button class="del" title="delete">×</button>
+        </div>
+      </div>
+
+      <div class="addrow">
+        <button>+ add section</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- STATE 3 — UNANALYZED / EMPTY -->
+<!-- ============================================================ -->
+<div class="stack">
+  <div class="caption">3 — Unanalyzed · empty</div>
+  <div class="panel">
+    <nav class="tabs">
+      <button class="tab active">structure</button>
+      <button class="tab">loops</button>
+      <button class="tab">capture</button>
+      <button class="tab">profile</button>
+      <button class="tab">settings</button>
+      <button class="tab">guide</button>
+    </nav>
+    <div class="body">
+      <div class="empty">
+        <div class="ghost" aria-hidden="true">
+          <b></b><b></b><b></b><b></b><b></b><b></b>
+        </div>
+        <div class="etitle">Not analyzed yet</div>
+        <div class="esub">Detect beats, bars, and section boundaries to draw this track's structure map.</div>
+        <button class="btn accent">Analyze track</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
