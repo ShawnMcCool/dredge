@@ -8,6 +8,7 @@
     type CaptureNode,
   } from "../lib/stores";
   import { hzToReading } from "../lib/tuner-math";
+  import Box from "../lib/ui/Box.svelte";
   import MeterGauge from "./MeterGauge.svelte";
 
   const GATE = 0.5; // confidence below this = no steady pitch
@@ -75,19 +76,10 @@
   }
 </script>
 
-<section class="box tuner" class:off={!$tunerOn}>
-  <div class="head">
-    <button
-      class="power"
-      class:on={$tunerOn}
-      onclick={togglePower}
-      title="power"
-      aria-label="tuner power"
-    >⏻</button>
-    <span class="lbl">tuner</span>
-    <span class="spacer"></span>
-    <button class="gear" onclick={openGear} title="input device" aria-label="choose input">⚙</button>
-  </div>
+<Box label="tuner" dim={!$tunerOn}>
+  {#snippet tools()}
+    <button onclick={openGear} title="input device" aria-label="choose input">⚙</button>
+  {/snippet}
 
   {#if gearOpen}
     <div class="picker">
@@ -101,99 +93,40 @@
     </div>
   {/if}
 
-  <div class="body">
+  <div class="tuner-body">
     {#if error}
       <div class="err">{error}</div>
-    {:else if !$tunerOn}
-      <div class="hint">off — click power to listen</div>
     {:else}
-      <MeterGauge
-        listening={!voiced}
-        note={reading?.note ?? ""}
-        octave={reading?.octave ?? 0}
-        cents={reading?.cents ?? 0}
-        {inTune}
-        {locked}
-      />
+      <button
+        class="power"
+        class:on={$tunerOn}
+        onclick={togglePower}
+        title="power"
+        aria-label="tuner power"
+      >⏻</button>
+      {#if $tunerOn}
+        <MeterGauge
+          listening={!voiced}
+          note={reading?.note ?? ""}
+          octave={reading?.octave ?? 0}
+          cents={reading?.cents ?? 0}
+          {inTune}
+          {locked}
+        />
+      {:else}
+        <span class="hint">click to listen</span>
+      {/if}
     {/if}
   </div>
-</section>
+</Box>
 
 <style>
-  .box {
-    flex: 0 0 auto;
-    min-width: 0;
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    background: var(--bg-raised);
-    display: flex;
-    flex-direction: column;
-  }
-
-  .tuner.off {
-    opacity: 0.8;
-  }
-
-  .head {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 10px;
-    border-bottom: 1px solid var(--line);
-  }
-
-  .lbl {
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-
-  .spacer {
-    flex: 1;
-  }
-
-  .power {
-    border: 1.5px solid var(--muted);
-    color: var(--muted);
-    border-radius: 50%;
-    width: 20px;
-    height: 20px;
-    line-height: 1;
-    cursor: pointer;
-    background: none;
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 12px;
-    padding: 0;
-  }
-
-  .power.on {
-    border-color: var(--cyan);
-    color: var(--cyan);
-  }
-
-  .gear {
-    background: none;
-    border: none;
-    color: var(--muted);
-    cursor: pointer;
-    font-size: 0.95rem;
-    padding: 0;
-    line-height: 1;
-  }
-
-  .gear:hover {
-    color: var(--fg);
-  }
-
   .picker {
     display: flex;
     flex-direction: column;
     gap: 2px;
-    padding: 6px;
+    padding: 0 0 6px;
+    margin-bottom: 6px;
     border-bottom: 1px solid var(--line);
   }
 
@@ -207,17 +140,38 @@
     cursor: pointer;
     font-size: 0.85rem;
   }
-
   .dev:hover {
     background: var(--bg-raised);
   }
-
   .dev.sel {
     border-color: var(--cyan);
   }
 
-  .body {
-    padding: 10px;
+  /* power + readout centred in the box, both axes */
+  .tuner-body {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 6px 0;
+  }
+
+  .power {
+    border: none;
+    background: none;
+    color: var(--muted);
+    font-size: 30px;
+    line-height: 1;
+    padding: 4px;
+    cursor: pointer;
+  }
+  .power:hover {
+    color: var(--fg);
+  }
+  .power.on {
+    color: var(--cyan);
   }
 
   .hint {

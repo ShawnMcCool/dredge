@@ -1,9 +1,6 @@
 <script lang="ts">
   import { actions, bassFocus, muted, openSong, pitch, playbackVolume, position } from "../lib/stores";
-  import Button from "../lib/ui/Button.svelte";
   import Fader from "../lib/ui/Fader.svelte";
-
-  const RATE_PRESETS = [0.5, 0.7, 0.85, 1.0];
 
   function fmt(secs: number): string {
     const s = Math.max(secs, 0);
@@ -37,96 +34,127 @@
 
 <div class="transport">
   <div class="bar">
-    <!-- primary: the constantly-touched controls, given room -->
-    <div class="grp primary">
-      <Button
-        variant="icon"
-        style="width: 50px; height: 38px; font-size: 18px;"
-        onclick={() => ($position.playing ? actions.pause() : actions.play())}
-      >
-        {$position.playing ? "⏸" : "▶"}
-      </Button>
-      <span class="readout time">
-        {fmt($position.secs)} <span class="dim">/ {fmtTotal($openSong?.song.duration_secs ?? 0)}</span>
+    <!-- player: the whole cell toggles play -->
+    <button
+      class="seg player"
+      onclick={() => ($position.playing ? actions.pause() : actions.play())}
+      title={$position.playing ? "pause (Space)" : "play (Space)"}
+      aria-label={$position.playing ? "pause" : "play"}
+    >
+      <span class="play">
+        {#if $position.playing}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true">
+            <line x1="8.5" y1="5" x2="8.5" y2="19" />
+            <line x1="15.5" y1="5" x2="15.5" y2="19" />
+          </svg>
+        {:else}
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M7 4.5 19 12 7 19.5z" />
+          </svg>
+        {/if}
       </span>
-
-      <span class="vsep"></span>
-
-      <button
-        class="spk"
-        class:muted={$muted}
-        onclick={() => actions.mute(!$muted)}
-        title={$muted ? "unmute" : "mute"}
-        aria-label={$muted ? "unmute" : "mute"}
-      >
-        {$muted ? "🔇" : "🔊"}
-      </button>
-      <span class="vol">
-        <Fader
-          value={$playbackVolume}
-          min={0}
-          max={1.5}
-          step={0.05}
-          onchange={(v) => void actions.setVolume(v)}
-          format={(v) => `volume ${Math.round(v * 100)}%`}
-        />
+      <span class="time">
+        <span class="now mono">{fmt($position.secs)}</span>
+        <span class="total mono">/ {fmtTotal($openSong?.song.duration_secs ?? 0)}</span>
       </span>
-      <span class="readout volpct">{Math.round($playbackVolume * 100)}%</span>
+    </button>
 
-      <span class="vsep"></span>
+    <span class="vsep"></span>
 
-      <Button variant="chip" active={$bassFocus} onclick={() => actions.bassFocus(!$bassFocus)}>
-        bass focus
-      </Button>
+    <!-- volume -->
+    <div class="seg">
+      <span class="mlabel">volume <span class="val accent">{Math.round($playbackVolume * 100)}%</span></span>
+      <div class="mbody">
+        <button
+          class="iconbtn"
+          class:muted={$muted}
+          onclick={() => actions.mute(!$muted)}
+          title={$muted ? "unmute" : "mute"}
+          aria-label={$muted ? "unmute" : "mute"}
+        >
+          {#if $muted}
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" d="M3 9v6h4l5 4V5L7 9z" />
+              <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M16 9.5 21 14.5M21 9.5 16 14.5" />
+            </svg>
+          {:else}
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" d="M3 9v6h4l5 4V5L7 9z" />
+              <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M15.5 8.5a5 5 0 0 1 0 7" />
+              <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M18.5 6a9 9 0 0 1 0 12" />
+            </svg>
+          {/if}
+        </button>
+        <span class="fader">
+          <Fader
+            value={$playbackVolume}
+            min={0}
+            max={1.5}
+            step={0.05}
+            accent
+            onchange={(v) => void actions.setVolume(v)}
+            format={(v) => `volume ${Math.round(v * 100)}%`}
+          />
+        </span>
+      </div>
     </div>
 
-    <!-- tools: occasional controls, compact -->
-    <div class="grp tools">
-      <span class="lbl">speed</span>
-      <span class="presets">
-        {#each RATE_PRESETS as r (r)}
-          <Button
-            variant="chip"
-            active={Math.abs($position.rate - r) < 0.001}
-            onclick={() => actions.setRate(r)}
-          >
-            {Math.round(r * 100)}
-          </Button>
-        {/each}
-      </span>
-      <span class="speed-fader">
-        <Fader
-          value={$position.rate}
-          min={0.25}
-          max={2}
-          step={0.05}
-          accent
-          onchange={(v) => void actions.setRate(v)}
-          format={(v) => `speed ${Math.round(v * 100)}%`}
-        />
-      </span>
-      <span class="readout rate">{Math.round($position.rate * 100)}%</span>
+    <span class="vsep"></span>
 
-      <span class="vsep"></span>
+    <!-- bass focus: the whole cell toggles it -->
+    <button
+      class="seg bass"
+      class:on={$bassFocus}
+      onclick={() => actions.bassFocus(!$bassFocus)}
+      title="bass focus — low-pass + up an octave"
+      aria-label="bass focus"
+      aria-pressed={$bassFocus}
+    >
+      <span class="mlabel">bass focus</span>
+      <span class="mbody"><span class="toggle">{$bassFocus ? "on" : "off"}</span></span>
+    </button>
 
-      <span class="lbl">pitch</span>
-      <span class="stepper" onwheel={pitchWheel} title="± semitone · scroll for cents">
-        <Button variant="chip" onclick={() => stepPitch(-1)}>−</Button>
-        <span class="readout pitchval">{pitchLabel}</span>
-        <Button variant="chip" onclick={() => stepPitch(1)}>+</Button>
-      </span>
+    <span class="vsep"></span>
 
-      <span class="vsep"></span>
-
-      <button
-        class="reset"
-        onclick={() => actions.resetWorkspace()}
-        title="reset workspace — fit zoom, clear selection, loop & playhead"
-        aria-label="reset workspace"
-      >
-        ⟲
-      </button>
+    <!-- speed -->
+    <div class="seg">
+      <span class="mlabel">speed <span class="val">{Math.round($position.rate * 100)}%</span></span>
+      <div class="mbody">
+        <span class="fader">
+          <Fader
+            value={$position.rate}
+            min={0.25}
+            max={2}
+            step={0.05}
+            onchange={(v) => void actions.setRate(v)}
+            format={(v) => `speed ${Math.round(v * 100)}%`}
+          />
+        </span>
+      </div>
     </div>
+
+    <span class="vsep"></span>
+
+    <!-- pitch -->
+    <div class="seg">
+      <span class="mlabel">pitch</span>
+      <div class="mbody">
+        <span class="stepper" onwheel={pitchWheel} title="± semitone · scroll for cents">
+          <button onclick={() => stepPitch(-1)} aria-label="pitch down">−</button>
+          <span class="pval mono">{pitchLabel}</span>
+          <button onclick={() => stepPitch(1)} aria-label="pitch up">+</button>
+        </span>
+      </div>
+    </div>
+
+    <button
+      class="reset"
+      onclick={() => actions.resetWorkspace()}
+      title="reset workspace — fit zoom, clear selection, loop & playhead"
+      aria-label="reset workspace"
+    >
+      ⟲
+    </button>
   </div>
 </div>
 
@@ -138,123 +166,192 @@
     min-width: 0;
   }
 
-  /* one row that wraps the tools group to a second tier when width runs out */
+  /* a row of cells divided by the hairline separator; wraps when width runs out */
   .bar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 10px 18px;
+    gap: 10px 16px;
   }
 
-  .grp {
+  .seg {
     display: flex;
-    align-items: center;
-    gap: 10px;
+    flex-direction: column;
+    gap: 6px;
     min-width: 0;
   }
 
-  .primary,
-  .tools {
-    flex: 1 1 auto;
+  /* the two cells that are themselves a single button (play, bass focus) —
+     strip the default button chrome so they read as plain cells */
+  .seg.player,
+  .seg.bass {
+    background: none;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
   }
 
   .vsep {
     width: 1px;
     align-self: stretch;
-    min-height: 22px;
+    min-height: 38px;
     background: var(--line);
     flex: 0 0 auto;
   }
 
-  /* volume is generous (used often); speed slider stays compact (presets carry it) */
-  .vol {
-    display: flex;
-    flex: 1 1 120px;
-    max-width: 240px;
+  /* player: amber play disc + the time, inline; whole cell is the hit target */
+  .player {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
   }
 
-  .speed-fader {
-    display: flex;
+  .play {
+    width: 36px;
+    height: 36px;
     flex: 0 0 auto;
-    width: 80px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .player:hover .play {
+    filter: brightness(1.1);
+  }
+  .play svg {
+    width: 18px;
+    height: 18px;
   }
 
-  .presets {
-    display: inline-flex;
-    gap: calc(var(--space) / 2);
+  .time {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.15;
   }
-
-  .spk {
-    background: none;
-    border: none;
-    color: var(--muted);
-    cursor: pointer;
-    font-size: 16px;
-    padding: 0 2px;
-    line-height: 1;
-  }
-  .spk:hover {
+  .now {
+    font-size: 15px;
     color: var(--fg);
+    font-variant-numeric: tabular-nums;
   }
-  .spk.muted {
-    color: var(--accent);
+  .total {
+    font-size: 11px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
   }
 
-  .lbl {
+  /* module label + optional live value */
+  .mlabel {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
     font-size: 10px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--muted);
-    flex: 0 0 auto;
   }
-
-  .time {
-    color: var(--fg);
-    flex: 0 0 auto;
-  }
-  .time .dim {
+  .mlabel .val {
+    font-family: var(--mono);
+    font-size: 11px;
     color: var(--muted);
+    text-transform: none;
+    letter-spacing: 0;
   }
-
-  .rate {
+  .mlabel .val.accent {
     color: var(--accent);
-    min-width: 4ch;
-    text-align: right;
   }
 
-  .volpct {
+  .mbody {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 24px;
+  }
+
+  .fader {
+    display: flex;
+    width: 120px;
+  }
+
+  .iconbtn {
+    background: none;
+    border: none;
     color: var(--muted);
-    min-width: 4ch;
-    text-align: right;
+    cursor: pointer;
+    padding: 0;
+    display: flex;
+    flex: 0 0 auto;
+  }
+  .iconbtn:hover {
+    color: var(--fg);
+  }
+  .iconbtn.muted {
+    color: var(--accent);
+  }
+  .iconbtn svg {
+    width: 18px;
+    height: 18px;
   }
 
+  /* bass-focus: plain text state, amber when on, whole cell hover-highlights */
+  .toggle {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+  }
+  .seg.bass:not(.on):hover .toggle {
+    color: var(--fg);
+  }
+  .seg.bass.on .toggle {
+    color: var(--accent);
+  }
+
+  /* pitch stepper: bare − value + — no surrounding box or internal rules */
   .stepper {
     display: inline-flex;
     align-items: center;
     gap: 4px;
   }
-
-  /* subtle, low-contrast until hover — it's a recovery affordance, not a
-     primary control, so it sits quietly at the end of the tools row */
-  .reset {
+  .stepper button {
     background: none;
     border: none;
     color: var(--muted);
     cursor: pointer;
+    padding: 2px 4px;
     font-size: 15px;
     line-height: 1;
-    padding: 0 2px;
+  }
+  .stepper button:hover {
+    color: var(--fg);
+  }
+  .pval {
+    min-width: 5ch;
+    text-align: center;
+    font-size: 13px;
+    color: var(--fg);
+  }
+
+  /* quiet recovery affordance, pushed to the far end */
+  .reset {
+    margin-left: auto;
+    align-self: center;
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 4px;
+    font-size: 17px;
+    line-height: 1;
     opacity: 0.6;
     flex: 0 0 auto;
   }
   .reset:hover {
     color: var(--fg);
     opacity: 1;
-  }
-
-  .pitchval {
-    min-width: 5ch;
-    text-align: center;
-    color: var(--fg);
   }
 </style>

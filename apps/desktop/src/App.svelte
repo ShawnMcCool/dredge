@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import Analysis from "./components/Analysis.svelte";
   import AnalyzePrompt from "./components/AnalyzePrompt.svelte";
   import Capture from "./components/Capture.svelte";
   import DuePanel from "./components/DuePanel.svelte";
@@ -39,18 +38,18 @@
     settingsOpen,
   } from "./lib/stores";
 
-  const ALL_TABS = ["sections", "loops", "plan", "capture", "due", "profile", "settings", "guide"] as const;
+  const ALL_TABS = ["structure", "loops", "plan", "capture", "due", "profile", "settings", "guide"] as const;
   type Tab = (typeof ALL_TABS)[number];
   // the practice-routine tabs — concealed unless "practice tools" is on in settings
   const PRACTICE_TABS: Tab[] = ["plan", "due"];
   // practice tools are off by default; the routine tabs only appear once enabled
   let practiceOn = $derived($settings[PRACTICE_TOOLS] === true);
   let tabs = $derived(ALL_TABS.filter((t) => practiceOn || !PRACTICE_TABS.includes(t)));
-  let tab = $state<Tab>("sections");
+  let tab = $state<Tab>("structure");
 
   // if practice tools get switched off while viewing one of their tabs, fall back
   $effect(() => {
-    if (!practiceOn && PRACTICE_TABS.includes(tab)) tab = "sections";
+    if (!practiceOn && PRACTICE_TABS.includes(tab)) tab = "structure";
   });
   let running = $derived(
     $planStatus !== null ||
@@ -74,7 +73,7 @@
 
   $effect(() => {
     if ($sectionsOpen) {
-      tab = "sections";
+      tab = "structure";
       sectionsOpen.set(false);
     }
   });
@@ -114,20 +113,23 @@
   </aside>
   <main class="stage">
     <Waveform />
-    <!-- everything below the waveform is song-scoped: with no song open the
-         waveform's empty state is the whole stage -->
     {#if $openSong}
       <Transport />
-      <div class="results">
+    {/if}
+    <!-- boxes flow to fill the stage width and wrap to the next row as they run
+         out of room; every row (even a lone box) spans the full width. The tuner
+         is always present (useful with no song open); the song-scoped boxes join
+         the row once a track is open. -->
+    <div class="boxes">
+      {#if $openSong}
         {#if anyResults}
           <StemMixer />
-          <Analysis />
         {:else}
           <AnalyzePrompt />
         {/if}
-      </div>
-    {/if}
-    <Tuner />
+      {/if}
+      <Tuner />
+    </div>
   </main>
   <aside class="panels" class:collapsed={$panelsCollapsed}>
     {#if $panelsCollapsed}
@@ -144,7 +146,7 @@
       </nav>
       {#key tab}
         <div class="fade-in">
-          {#if tab === "sections"}
+          {#if tab === "structure"}
             <Sections />
           {:else if tab === "loops"}
             <Loops />
@@ -302,14 +304,18 @@
     padding: var(--space);
   }
 
-  /* stems + structure boxes side by side, filling the stage width */
-  .results {
+  /* boxes pack horizontally, wrap when they run out of room, and each row grows
+     to fill the full stage width */
+  .boxes {
     display: flex;
+    flex-wrap: wrap;
     align-items: stretch;
     gap: var(--space);
     padding: var(--space) 0;
     min-width: 0;
   }
+
+
 
   .panels {
     position: relative;

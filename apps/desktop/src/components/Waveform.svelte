@@ -20,7 +20,7 @@
     type OpenSong,
   } from "../lib/stores";
   import HoverActions from "../lib/ui/HoverActions.svelte";
-  import { labelColor } from "../lib/waveform-colors";
+  import { hexToHue, labelColor } from "../lib/waveform-colors";
   import {
     adjustWindow,
     playheadSecs,
@@ -269,12 +269,14 @@
     }
 
     // structure lane — label-colored spans: saved sections solid, analysis
-    // suggestions dashed/dimmer/italic; clicked span gets a second fill pass
+    // suggestions dashed/dimmer/italic; clicked span gets a second fill pass.
+    // Hues are derived from the live accent so the lane re-tints with the theme.
+    const baseHue = hexToHue(css("--accent"));
     for (const s of laneSpans(open)) {
       const x0 = secToX(view, s.start);
       const x1 = secToX(view, s.end);
       if (x1 < 0 || x0 > w) continue;
-      const { fill, edge } = labelColor(s.name);
+      const { fill, edge } = labelColor(s.name, baseHue);
       const active = activeSpan?.start === s.start && activeSpan?.end === s.end;
       ctx.globalAlpha = s.suggested && !active ? 0.6 : 1;
       ctx.fillStyle = fill;

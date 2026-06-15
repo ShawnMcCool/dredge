@@ -4,6 +4,7 @@
     actions,
     analysisError,
     openSong,
+    prepareState,
     selection,
     type AnalysisSection,
   } from "../lib/stores";
@@ -14,7 +15,7 @@
     name: string;
     start: number;
     end: number;
-    /** Came from analysis and is not saved yet — muted accent in the UI. */
+    /** Came from analysis and is not saved yet — muted in the UI. */
     suggested?: boolean;
   }
 
@@ -76,20 +77,39 @@
     selection.set({ start: row.start, end: row.end });
   }
 
-  let hasAnalysis = $derived(($openSong?.analysis?.sections?.length ?? 0) > 0);
+  /** Loop a section directly — transient, nothing saved (mirrors the ⟳ control). */
+  function loop(row: Row) {
+    void actions.setTransportLoop(row.start, row.end);
+  }
 
-  let engineLabel = $derived.by(() => {
-    const e = $openSong?.analysis?.engine;
-    if (!e) return null;
-    if (e === "songformer") return "SongFormer";
-    if (e.includes("novelty")) return "novelty (SongFormer unavailable)";
-    return e;
+  let analysis = $derived($openSong?.analysis ?? null);
+  let running = $derived($prepareState !== null);
+  let hasAnalysis = $derived((analysis?.sections?.length ?? 0) > 0);
+
+  // time signature ≈ beats per bar (beats / downbeats), when it's sane
+  let meter = $derived.by(() => {
+    const a = analysis;
+    if (!a?.beats?.length || !a?.downbeats?.length) return null;
+    const per = Math.round(a.beats.length / a.downbeats.length);
+    return per >= 2 && per <= 12 ? `${per}/4` : null;
+  });
+
+  // the subordinate stats line: only the facts we actually have
+  let metaParts = $derived.by(() => {
+    const a = analysis;
+    if (!a) return [];
+    const parts: string[] = [];
+    if (a.bpm) parts.push(`${Math.round(a.bpm)} BPM`);
+    if (meter) parts.push(meter);
+    if (a.downbeats?.length) parts.push(`${a.downbeats.length} bars`);
+    if (a.beats?.length) parts.push(`${a.beats.length} beats`);
+    return parts;
   });
 
   // revert the editor to the cached analysis — no model rerun needed, the
   // SongFormer result lives in the DB. Replaces the current (unsaved) edits.
   function revertToAnalysis() {
-    rows = ($openSong?.analysis?.sections ?? []).map(toRow);
+    rows = (analysis?.sections ?? []).map(toRow);
     touch();
   }
 
@@ -137,62 +157,90 @@
 </script>
 
 <div class="head">
-  <h2>sections</h2>
+  <h2>sections{#if editing}<span class="sub"> · editing</span>{/if}</h2>
   {#if $openSong}
-    <button class="edit-toggle" onclick={() => (editing = !editing)}>
-      {editing ? "done" : "edit"}
-    </button>
+    <div class="head-actions">
+      <button class="txt-btn" class:active={editing} onclick={() => (editing = !editing)}>
+        {editing ? "done" : "edit"}
+      </button>
+      {#if hasAnalysis || rows.length > 0}
+        <button class="txt-btn" onclick={() => (confirmReanalyze = true)}>re-analyze</button>
+      {/if}
+    </div>
   {/if}
 </div>
+
 {#if !$openSong}
-  <p class="empty">open a song first</p>
+  <p class="empty-line">open a song first</p>
 {:else}
-  {#if engineLabel}
-    <p class="engine mono" class:fallback={engineLabel.startsWith("novelty")}>
-      sections: {engineLabel}
-    </p>
+  {#if metaParts.length}
+    <div class="meta mono">
+      {#each metaParts as p, i (p)}
+        {#if i > 0}<span class="sep">·</span>{/if}<span>{p}</span>
+      {/each}
+    </div>
   {/if}
 
   {#if editing}
-    <ul>
+    <ol class="sections">
       {#each rows as row, i (i)}
-        <li class="row" class:suggested={row.suggested}>
-          <input class="name" bind:value={row.name} oninput={touch} />
-          <input class="mono t" type="number" step="0.1" min="0" bind:value={row.start} oninput={touch} />
-          <input class="mono t" type="number" step="0.1" min="0" bind:value={row.end} oninput={touch} />
-          <Button variant="chip" onclick={() => move(i, -1)} title="up">↑</Button>
-          <Button variant="chip" onclick={() => move(i, 1)} title="down">↓</Button>
-          <Button variant="chip" onclick={() => remove(i)} title="delete">×</Button>
+        <li class="row edit" class:suggested={row.suggested}>
+          <div class="reorder">
+            <button onclick={() => move(i, -1)} title="move up" aria-label="move up">▲</button>
+            <button onclick={() => move(i, 1)} title="move down" aria-label="move down">▼</button>
+          </div>
+          <div class="fields">
+            <input class="name-inp" bind:value={row.name} oninput={touch} aria-label="section name" />
+            <div class="time-line">
+              <input class="time-inp mono" type="number" step="0.1" min="0" bind:value={row.start} oninput={touch} aria-label="start" />
+              <span class="dash">–</span>
+              <input class="time-inp mono" type="number" step="0.1" min="0" bind:value={row.end} oninput={touch} aria-label="end" />
+              <button class="del" onclick={() => remove(i)}>delete</button>
+            </div>
+          </div>
         </li>
       {/each}
-    </ul>
-    <div class="bar">
-      <Button onclick={add}>+ add</Button>
-      {#if hasAnalysis}
-        <Button onclick={revertToAnalysis} title="discard edits, reload the analyzed structure">
-          revert to analysis
-        </Button>
-      {/if}
-      <Button onclick={() => (confirmReanalyze = true)}>re-analyze</Button>
-      <Button accent disabled={!dirty} onclick={save}>save</Button>
+    </ol>
+    <div class="edit-footer">
+      <button class="add-section" onclick={add}>+ add section</button>
+      <div class="edit-actions">
+        {#if dirty}<span class="unsaved mono">unsaved edits</span>{/if}
+        {#if hasAnalysis}
+          <Button onclick={revertToAnalysis} title="discard edits, reload the analyzed structure">revert</Button>
+        {/if}
+        <Button accent disabled={!dirty} onclick={save}>save</Button>
+      </div>
     </div>
-    {#if $analysisError}
-      <p class="error">{$analysisError}</p>
-    {/if}
+    {#if $analysisError}<p class="error">{$analysisError}</p>{/if}
   {:else if rows.length === 0}
-    <p class="empty">no sections yet — hit edit to add them, or analyze the song</p>
+    <div class="cta">
+      <div class="cta-title">not analyzed yet</div>
+      <p class="cta-sub">detect beats, bars, and song sections — the structure shows up here once it's done.</p>
+      {#if running}
+        <span class="analyzing mono">analyzing…</span>
+      {:else}
+        <Button accent onclick={() => void actions.prepare()}>Analyze track</Button>
+      {/if}
+      {#if $analysisError}<p class="error">{$analysisError}</p>{/if}
+    </div>
   {:else}
-    <ul class="display">
+    <ol class="sections">
       {#each rows as row, i (i)}
-        <li class="drow" class:suggested={row.suggested}>
-          <button class="row-btn" onclick={() => highlight(row)} title="highlight on the waveform">
-            <span class="sec-name">{row.name}</span>
-            <span class="sec-time mono">{fmtT(row.start)}–{fmtT(row.end)}</span>
+        <li
+          class="row"
+          class:suggested={row.suggested}
+          class:active={$selection?.start === row.start && $selection?.end === row.end}
+        >
+          <button class="open" onclick={() => highlight(row)} title="highlight on the waveform">
+            <span class="ord mono">{i + 1}</span>
+            <span class="name">{row.name}</span>
+            <span class="range mono">{fmtT(row.start)}–{fmtT(row.end)}</span>
           </button>
+          <button class="loop txt-btn" onclick={() => loop(row)} title="loop this section">loop</button>
         </li>
       {/each}
-    </ul>
-    {#if dirty}<p class="note unsaved">unsaved edits — open edit to save</p>{/if}
+    </ol>
+    {#if dirty}<p class="note unsaved mono">unsaved edits — open edit to save</p>{/if}
   {/if}
 
   <Modal open={confirmReanalyze} title="re-analyze" closable onclose={() => (confirmReanalyze = false)}>
@@ -207,131 +255,302 @@
 <style>
   .head {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
+    gap: var(--space);
+    min-height: 22px;
+    margin-bottom: var(--space);
+  }
+  .head h2 {
+    margin: 0;
+  }
+  .head h2 .sub {
+    color: var(--accent-dim);
+  }
+  .head-actions {
+    display: flex;
     gap: var(--space);
   }
 
-  .edit-toggle {
+  .txt-btn {
     background: none;
     border: none;
     color: var(--muted);
-    cursor: pointer;
-    font-size: 11px;
-    letter-spacing: 0.06em;
+    font: inherit;
+    font-size: 10px;
     text-transform: uppercase;
-    padding: 2px 4px;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    padding: 2px 0;
   }
-  .edit-toggle:hover {
+  .txt-btn:hover {
+    color: var(--fg);
+  }
+  .txt-btn.active {
     color: var(--accent);
   }
 
-  .empty,
-  .note {
+  /* subordinate stats line — present but clearly a byline, not a dashboard */
+  .meta {
     font-size: 11px;
     color: var(--muted);
-  }
-  .note.unsaved {
-    color: var(--shaky);
-  }
-
-  .engine {
-    font-size: 10px;
-    color: var(--muted);
-    margin-bottom: calc(var(--space) / 2);
-  }
-  .engine.fallback {
-    color: var(--shaky);
-  }
-
-  .row {
     display: flex;
-    align-items: center;
-    gap: calc(var(--space) / 2);
-    margin-bottom: calc(var(--space) / 2);
-    min-width: 0;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0 6px;
+    margin-bottom: calc(var(--space) * 2.5);
+  }
+  .meta .sep {
+    color: var(--line);
   }
 
-  .row input {
-    font-size: 12px;
-    padding: 2px 4px;
-    min-width: 0;
-  }
-
-  /* analysis suggestions: visibly provisional until saved */
-  .row.suggested input {
-    color: var(--muted);
-    border-color: var(--accent-dim);
-  }
-
-  /* read-only display rows */
-  .display {
+  /* ===== the section list — the hero ===== */
+  .sections {
     list-style: none;
     margin: 0;
     padding: 0;
   }
-  .drow {
-    padding: 0;
+
+  .row {
+    display: flex;
+    align-items: baseline;
     min-width: 0;
+    border-left: 2px solid transparent;
+    border-radius: var(--radius);
   }
-  .drow.suggested {
+  .row:hover {
+    background: var(--bg-raised);
+    border-left-color: var(--accent-dim);
+  }
+  .row:hover .ord {
     color: var(--muted);
   }
-  /* the whole row is the click target (highlight the section) */
-  .row-btn {
-    display: flex;
-    width: 100%;
+  /* click-to-highlight marks the row active (its span owns the selection) */
+  .row.active {
+    background: var(--bg-raised);
+    border-left-color: var(--accent);
+  }
+  .row.active .name {
+    color: var(--accent);
+  }
+  .row.active .ord {
+    color: var(--accent-dim);
+  }
+
+  /* the row body is the click target (highlight the section's span) */
+  .open {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 18px 1fr auto;
     align-items: baseline;
-    justify-content: space-between;
-    gap: var(--space);
+    column-gap: 10px;
     background: none;
     border: none;
     color: inherit;
     cursor: pointer;
     text-align: left;
-    padding: 2px 4px;
-    border-radius: var(--radius);
+    padding: 5px 8px;
     min-width: 0;
   }
-  .row-btn:hover {
-    background: var(--bg-raised);
+  .ord {
+    font-size: 10px;
+    color: var(--line);
+    text-align: right;
+    transition: color 0.12s;
   }
-  .row-btn:hover .sec-name {
-    color: var(--accent);
-  }
-  .sec-name {
-    font-size: 13px;
+  .name {
+    font-size: 15px;
+    color: var(--fg);
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    line-height: 1.2;
   }
-  .sec-time {
+  .range {
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  /* analysis suggestions: visibly provisional until saved */
+  .row.suggested .name {
+    color: var(--muted);
+  }
+
+  /* per-row loop affordance — holds its slot so the range never shifts, but
+     stays invisible until the row is hovered (or the button is focused) */
+  .loop {
     flex: 0 0 auto;
+    margin-right: 6px;
+    opacity: 0;
+    transition: opacity 0.12s;
+    pointer-events: none;
+  }
+  .row:hover .loop,
+  .loop:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .loop:hover {
+    color: var(--accent);
+  }
+
+  /* ===== edit mode ===== */
+  .row.edit {
+    display: grid;
+    grid-template-columns: 14px 1fr;
+    column-gap: 10px;
+    align-items: center;
+    padding: 6px 0;
+  }
+  .reorder {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    align-items: center;
+  }
+  .reorder button {
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 9px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 1px;
+  }
+  .reorder button:hover {
+    color: var(--fg);
+  }
+  .fields {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+  }
+  .name-inp {
+    width: 100%;
+    font-size: 14px;
+  }
+  .time-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .time-inp {
+    width: 7em;
+    font-size: 11px;
+    text-align: center;
+    padding: 3px 4px;
+  }
+  .dash {
+    color: var(--muted);
+    font-family: var(--mono);
+  }
+  .del {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--muted);
+    font: inherit;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    padding: 0;
+  }
+  .del:hover {
+    color: var(--miss);
+  }
+  .row.edit.suggested .name-inp {
+    color: var(--muted);
+    border-color: var(--accent-dim);
+  }
+
+  .edit-footer {
+    margin-top: calc(var(--space) * 2);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space);
+  }
+  .add-section {
+    background: none;
+    border: 1px dashed var(--line);
+    border-radius: var(--radius);
+    color: var(--muted);
+    font: inherit;
+    font-size: 11px;
+    padding: 7px;
+    width: 100%;
+    cursor: pointer;
+    text-align: center;
+  }
+  .add-section:hover {
+    border-color: var(--muted);
+    color: var(--fg);
+  }
+  .edit-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space);
+  }
+  .unsaved {
+    font-size: 10px;
+    color: var(--accent);
+    margin-right: auto;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .unsaved::before {
+    content: "";
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .note.unsaved {
+    margin-top: var(--space);
+  }
+  .note.unsaved::before {
+    display: none;
+  }
+
+  /* ===== empty / unanalyzed ===== */
+  .cta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: calc(var(--space) * 1.5);
+    padding: var(--space) 0;
+  }
+  .cta-title {
+    font-size: 14px;
+    color: var(--fg);
+  }
+  .cta-sub {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.5;
+    max-width: 240px;
+    margin: 0;
+  }
+  .analyzing {
+    font-size: 11px;
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  .empty-line {
     font-size: 11px;
     color: var(--muted);
   }
 
   .error {
     font-size: 11px;
-    color: var(--accent);
+    color: var(--miss);
     max-width: 60ch;
-  }
-
-  .name {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .t {
-    width: 4.5em;
-  }
-
-  .bar {
-    display: flex;
-    flex-wrap: wrap;
-    gap: calc(var(--space) / 2);
-    margin-top: var(--space);
   }
 
   .modal-actions {

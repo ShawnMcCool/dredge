@@ -14,13 +14,11 @@
     UI_SCALE,
     WINDOW_DECORATIONS,
   } from "../lib/stores";
-  import { applyTheme, type Accent } from "../lib/theme";
+  import { ACCENTS, applyTheme } from "../lib/theme";
   import Button from "../lib/ui/Button.svelte";
   import Fader from "../lib/ui/Fader.svelte";
   import { applyDecorations } from "../lib/window";
   import { getZoom, setZoom } from "../lib/zoom";
-
-  const ACCENTS: Accent[] = ["amber", "cyan"];
 
   const BUFFERS = [60, 120, 180, 300];
 
@@ -35,11 +33,14 @@
   let practiceOn = $derived($settings[PRACTICE_TOOLS] === true);
   // default on: only an explicit false hides the frame
   let decorations = $derived($settings[WINDOW_DECORATIONS] !== false);
-  let accent = $derived(($settings[COLOR_THEME] as Accent) === "cyan" ? "cyan" : "amber");
+  let themeValue = $derived(
+    typeof $settings[COLOR_THEME] === "string" ? ($settings[COLOR_THEME] as string) : "amber",
+  );
+  let activeName = $derived(ACCENTS.find((o) => o.value === themeValue)?.name ?? themeValue);
 
-  function pickAccent(a: Accent) {
-    applyTheme(a); // live swap
-    void actions.setSetting(COLOR_THEME, a);
+  function setAccent(value: string) {
+    applyTheme(value); // live swap
+    void actions.setSetting(COLOR_THEME, value);
   }
 
   function toggleSnap() {
@@ -56,112 +57,187 @@
 </script>
 
 <h2>settings</h2>
-<div class="row">
-  <span class="label">ui scale</span>
-  <Fader
-    value={shownScale}
-    min={0.75}
-    max={2.5}
-    step={0.05}
-    accent
-    onchange={(v) => (preview = v)}
-    oncommit={(v) => {
-      preview = null;
-      void setZoom(v);
-    }}
-    format={(v) => `ui scale ${Math.round(v * 100)}%`}
-  />
-  <span class="readout mono">{Math.round(shownScale * 100)}%</span>
-</div>
-<div class="row">
-  <span class="label">color theme</span>
-  <div class="chips">
-    {#each ACCENTS as a (a)}
-      <Button variant="chip" active={accent === a} onclick={() => pickAccent(a)}>
-        <span class="swatch {a}"></span>{a}
-      </Button>
-    {/each}
+
+<section class="group">
+  <h3 class="group-head">appearance</h3>
+
+  <div class="setting stacked">
+    <div class="text"><span class="name">ui scale</span></div>
+    <div class="fader-row">
+      <Fader
+        value={shownScale}
+        min={0.75}
+        max={2.5}
+        step={0.05}
+        accent
+        onchange={(v) => (preview = v)}
+        oncommit={(v) => {
+          preview = null;
+          void setZoom(v);
+        }}
+        format={(v) => `ui scale ${Math.round(v * 100)}%`}
+      />
+      <span class="readout mono">{Math.round(shownScale * 100)}%</span>
+    </div>
   </div>
-</div>
-<div class="row">
-  <span class="label">native window frame</span>
-  <Button variant="toggle" active={decorations} onclick={toggleDecorations}>
-    {decorations ? "on" : "off"}
-  </Button>
-</div>
-<p class="hint mono">the OS title bar + min/max/close · off = borderless (use your WM)</p>
-<div class="row">
-  <span class="label">grid snap by default</span>
-  <Button variant="toggle" active={snapDefault} onclick={toggleSnap}>
-    {snapDefault ? "on" : "off"}
-  </Button>
-</div>
-<div class="row">
-  <span class="label">practice tools</span>
-  <Button
-    variant="toggle"
-    active={practiceOn}
-    onclick={() => void actions.setSetting(PRACTICE_TOOLS, !practiceOn)}
-  >
-    {practiceOn ? "on" : "off"}
-  </Button>
-</div>
-<p class="hint mono">adds the plan + spaced-practice tabs · off keeps the panel to song-shaping</p>
-<div class="row">
-  <span class="label">capture buffer</span>
-  <div class="chips">
-    {#each BUFFERS as b (b)}
+
+  <div class="setting stacked">
+    <div class="text"><span class="name">color theme</span></div>
+    <div class="swatches">
+      {#each ACCENTS as opt (opt.value)}
+        <button
+          class="swatch-btn"
+          class:active={themeValue === opt.value}
+          style="--dot: {opt.hex}"
+          onclick={() => setAccent(opt.value)}
+          title={opt.name}
+          aria-label={opt.name}
+        >
+          <span class="dot"></span>
+        </button>
+      {/each}
+      <span class="swatch-name">{activeName}</span>
+    </div>
+  </div>
+
+  <div class="setting">
+    <div class="text">
+      <span class="name">native window frame</span>
+      <span class="desc">the OS title bar + min/max/close · off is borderless (use your WM)</span>
+    </div>
+    <Button variant="toggle" active={decorations} onclick={toggleDecorations}>
+      {decorations ? "on" : "off"}
+    </Button>
+  </div>
+</section>
+
+<section class="group">
+  <h3 class="group-head">editing</h3>
+
+  <div class="setting">
+    <div class="text">
+      <span class="name">grid snap by default</span>
+      <span class="desc">loop + selection edges snap to analyzed downbeats</span>
+    </div>
+    <Button variant="toggle" active={snapDefault} onclick={toggleSnap}>
+      {snapDefault ? "on" : "off"}
+    </Button>
+  </div>
+
+  <div class="setting">
+    <div class="text">
+      <span class="name">practice tools</span>
+      <span class="desc">adds the plan + spaced-practice tabs · off keeps the panel to song-shaping</span>
+    </div>
+    <Button
+      variant="toggle"
+      active={practiceOn}
+      onclick={() => void actions.setSetting(PRACTICE_TOOLS, !practiceOn)}
+    >
+      {practiceOn ? "on" : "off"}
+    </Button>
+  </div>
+</section>
+
+<section class="group">
+  <h3 class="group-head">capture &amp; analysis</h3>
+
+  <div class="setting stacked">
+    <div class="text"><span class="name">capture buffer</span></div>
+    <div class="chips">
+      {#each BUFFERS as b (b)}
+        <Button
+          variant="chip"
+          active={bufferSecs === b}
+          onclick={() => void actions.setSetting(CAPTURE_BUFFER_SECS, b)}
+        >
+          {b}s
+        </Button>
+      {/each}
+    </div>
+  </div>
+
+  <div class="setting stacked">
+    <div class="text">
+      <span class="name">analysis device</span>
+      <span class="desc">auto = GPU when it fits, else CPU · cpu = slower, never out of VRAM</span>
+    </div>
+    <div class="chips">
       <Button
         variant="chip"
-        active={bufferSecs === b}
-        onclick={() => void actions.setSetting(CAPTURE_BUFFER_SECS, b)}
+        active={device === "auto"}
+        onclick={() => void actions.setSetting(ANALYSIS_DEVICE, "auto")}
       >
-        {b}s
+        auto
       </Button>
-    {/each}
+      <Button
+        variant="chip"
+        active={device === "cpu"}
+        onclick={() => void actions.setSetting(ANALYSIS_DEVICE, "cpu")}
+      >
+        cpu
+      </Button>
+    </div>
   </div>
-</div>
-<div class="row">
-  <span class="label">analysis device</span>
-  <div class="chips">
-    <Button
-      variant="chip"
-      active={device === "auto"}
-      onclick={() => void actions.setSetting(ANALYSIS_DEVICE, "auto")}
-    >
-      auto
-    </Button>
-    <Button
-      variant="chip"
-      active={device === "cpu"}
-      onclick={() => void actions.setSetting(ANALYSIS_DEVICE, "cpu")}
-    >
-      cpu
-    </Button>
-  </div>
-</div>
-<p class="hint mono">auto = GPU when it fits, else CPU · cpu = slower, never out of VRAM</p>
+</section>
 
 <style>
-  .row {
-    display: flex;
-    align-items: center;
-    gap: var(--space);
-    margin-bottom: calc(var(--space) * 1.5);
-    min-width: 0;
+  .group {
+    margin-bottom: calc(var(--space) * 2.5);
   }
-
-  .row:last-child {
+  .group:last-child {
     margin-bottom: 0;
   }
 
-  .label {
-    flex: 0 0 auto;
-    width: 40%;
-    font-size: 12px;
+  .group-head {
+    margin: 0 0 calc(var(--space) / 2);
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--line);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
     color: var(--muted);
   }
 
+  /* one setting: label/desc text block + its control, inline by default */
+  .setting {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space);
+    padding: 7px 0;
+    min-width: 0;
+  }
+
+  /* continuous / multi-option controls drop below their label, full width */
+  .setting.stacked {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 7px;
+  }
+
+  .text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .name {
+    font-size: 13px;
+    color: var(--fg);
+  }
+  .desc {
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.4;
+  }
+
+  .fader-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space);
+  }
   .readout {
     flex: 0 0 auto;
     width: 4ch;
@@ -176,24 +252,40 @@
     min-width: 0;
   }
 
-  .hint {
-    font-size: 10px;
-    color: var(--muted);
-    margin-top: calc(var(--space) * -0.5);
+  /* curated accent palette — colour dots, active gets a neutral ring */
+  .swatches {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
   }
-
-  .swatch {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
+  .swatch-btn {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid transparent;
     border-radius: 50%;
-    margin-right: 5px;
-    vertical-align: middle;
+    background: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
-  .swatch.amber {
-    background: #e0a458;
+  .swatch-btn:hover {
+    border-color: var(--line);
   }
-  .swatch.cyan {
-    background: #4fc3d4;
+  .swatch-btn.active {
+    border-color: var(--fg);
+  }
+  .dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--dot);
+  }
+  .swatch-name {
+    margin-left: 2px;
+    font-size: 11px;
+    color: var(--muted);
   }
 </style>
