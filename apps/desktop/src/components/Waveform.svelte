@@ -78,7 +78,7 @@
   // pointer interaction state
   type Drag =
     | { mode: "select"; anchorX: number; moved: boolean }
-    | { mode: "resize"; loop: LoopRegion; edge: "start" | "end"; start: number; end: number }
+    | { mode: "resize"; loopId: number | null; edge: "start" | "end"; start: number; end: number; start0: number; end0: number }
     | { mode: "lane"; anchor: { start: number; end: number }; moved: boolean; double: boolean }
     | { mode: "zoom"; anchorX: number; curX: number };
   let drag: Drag | null = null;
@@ -135,7 +135,7 @@
   }
 
   function loopBounds(l: LoopRegion): { start: number; end: number } {
-    if (drag?.mode === "resize" && drag.loop.id === l.id) {
+    if (drag?.mode === "resize" && drag.loopId === l.id) {
       return { start: drag.start, end: drag.end };
     }
     if (pendingResize?.id === l.id) {
@@ -349,12 +349,24 @@
       }
     }
 
-    // working loop — a live, unsaved loop. The same bold treatment as a selected
-    // loop, but a dashed border marks it provisional. Its scratch span drives the
-    // highlight; the home bounds ghost when the two diverge (where "reset" goes).
+    // working loop — a live, unsaved loop. Rendered exactly like a selected saved
+    // loop (solid, bold): unsaved-ness is signalled by the save glyph in its hover
+    // cluster, not by the region's look. Its scratch span drives the highlight;
+    // the home bounds ghost when the two diverge (where "reset" returns to). While
+    // right-drag resizing it, the preview bounds (in non-reactive `drag`) win.
     const wl = get(workingLoop);
     if (wl) {
-      const { start, end } = drill ?? wl;
+      const resizingWorking = drag?.mode === "resize" && drag.loopId === null;
+      let start: number;
+      let end: number;
+      if (drag?.mode === "resize" && drag.loopId === null) {
+        start = drag.start;
+        end = drag.end;
+      } else {
+        const b = drill ?? wl;
+        start = b.start;
+        end = b.end;
+      }
       const x0 = secToX(view, start);
       const x1 = secToX(view, end);
       if (x1 >= 0 && x0 <= w) {
@@ -364,14 +376,18 @@
         ctx.globalAlpha = 1;
         ctx.strokeStyle = accent;
         ctx.lineWidth = 2;
-        ctx.setLineDash([6, 4]); // dashed = unsaved
-        ctx.strokeRect(x0 + 1, LANE_H + 1, x1 - x0 - 2, WAVE_H - 2);
-        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(x0 + 1, LANE_H);
+        ctx.lineTo(x0 + 1, LANE_H + WAVE_H);
+        ctx.moveTo(x1 - 1, LANE_H);
+        ctx.lineTo(x1 - 1, LANE_H + WAVE_H);
+        ctx.stroke();
         ctx.lineWidth = 1;
         ctx.fillStyle = accent;
+        ctx.fillRect(x0, LANE_H, x1 - x0, 3); // solid cap across the top
         ctx.fillRect(x0 - 1, LANE_H, 3, 14); // grab handles
         ctx.fillRect(x1 - 2, LANE_H, 3, 14);
-        if (drill && (drill.start !== wl.start || drill.end !== wl.end)) {
+        if (!resizingWorking && drill && (drill.start !== wl.start || drill.end !== wl.end)) {
           const gx0 = secToX(view, wl.start);
           const gx1 = secToX(view, wl.end);
           ctx.strokeStyle = accentDim;
@@ -485,6 +501,36 @@
     return open ? nearestEdge(open.loops, view, x) : null;
   }
 
+  type ResizeTarget = { loopId: number | null; edge: "start" | "end"; start: number; end: number };
+
+  /** Nearest resize target across the working loop AND saved loops (right-drag
+   *  grabs from anywhere). `loopId: null` is the working loop. */
+  function nearestResizeTarget(x: number): ResizeTarget | null {
+    let best: ResizeTarget | null = null;
+    let bestDist = Infinity;
+    const consider = (loopId: number | null, edge: "start" | "end", start: number, end: number, atSec: number) => {
+      const d = Math.abs(secToX(view, atSec) - x);
+      if (d < bestDist) ((bestDist = d), (best = { loopId, edge, start, end }));
+    };
+    const wl = get(workingLoop);
+    if (wl) {
+      consider(null, "start", wl.start, wl.end, wl.start);
+      consider(null, "end", wl.start, wl.end, wl.end);
+    }
+    const le = nearestLoopEdge(x);
+    if (le) consider(le.loop.id, le.edge, le.loop.start, le.loop.end, le.edge === "start" ? le.loop.start : le.loop.end);
+    return best;
+  }
+
+  /** True when canvas x is within the edge hit-zone of the working loop. */
+  function hitWorkingEdge(x: number): boolean {
+    const wl = get(workingLoop);
+    if (!wl) return false;
+    return (
+      Math.abs(secToX(view, wl.start) - x) <= EDGE_PX || Math.abs(secToX(view, wl.end) - x) <= EDGE_PX
+    );
+  }
+
   function canvasX(e: MouseEvent): number {
     return e.clientX - canvas.getBoundingClientRect().left;
   }
@@ -518,11 +564,11 @@
     // right button is the ONLY resize: grab the nearest loop edge from anywhere
     // (Hyprland super+right-drag feel) and drag it. inert if there are no loops.
     if (e.button === 2) {
-      const edge = nearestLoopEdge(x);
-      if (edge) {
+      const t = nearestResizeTarget(x);
+      if (t) {
         e.preventDefault();
         canvas.setPointerCapture(e.pointerId);
-        drag = { mode: "resize", loop: edge.loop, edge: edge.edge, start: edge.loop.start, end: edge.loop.end };
+        drag = { mode: "resize", loopId: t.loopId, edge: t.edge, start: t.start, end: t.end, start0: t.start, end0: t.end };
       }
       return;
     }
@@ -558,7 +604,7 @@
     if (!drag) {
       const y = canvasY(e);
       let cursor = "crosshair";
-      if (hitLoopEdge(x)) cursor = "ew-resize";
+      if (hitLoopEdge(x) || hitWorkingEdge(x)) cursor = "ew-resize";
       else if (hitLaneSpan(x, y)) cursor = "grab";
       else if (hitLoopBody(x, y)) cursor = "pointer";
       canvas.style.cursor = cursor;
@@ -630,27 +676,34 @@
       return;
     }
     if (d.mode === "resize") {
-      if (d.start !== d.loop.start || d.end !== d.loop.end) {
-        // pin the new bounds visually until the store reflects them, then release
-        pendingResize = { id: d.loop.id, start: d.start, end: d.end };
-        requestRedraw(); // pinned bounds live in non-reactive `pendingResize`
-        const id = d.loop.id;
-        void actions.updateLoop(id, { start: d.start, end: d.end }).finally(() => {
-          if (pendingResize?.id === id) pendingResize = null;
-          requestRedraw(); // repaint once the store round-trip releases the pin
-        });
+      if (d.start !== d.start0 || d.end !== d.end0) {
+        if (d.loopId === null) {
+          // working loop: update its bounds in place (no DB round-trip; save will
+          // persist these). The store set is synchronous, so no pin is needed.
+          void actions.setWorkingLoopBounds(d.start, d.end);
+        } else {
+          // pin the new bounds visually until the store reflects them, then release
+          const id = d.loopId;
+          pendingResize = { id, start: d.start, end: d.end };
+          requestRedraw(); // pinned bounds live in non-reactive `pendingResize`
+          void actions.updateLoop(id, { start: d.start, end: d.end }).finally(() => {
+            if (pendingResize?.id === id) pendingResize = null;
+            requestRedraw(); // repaint once the store round-trip releases the pin
+          });
+        }
       }
     } else if (!d.moved) {
       const cx = canvasX(e);
-      // a plain click dismisses any drag-selection box + its Loop/Play chip
+      // a plain click dismisses only the transient drag-selection box — the active
+      // loop (working or saved) is STICKY and never cleared by a click. Clicking a
+      // *visible* saved loop's body establishes that one as active; clicking empty
+      // space (or while only the active loop shows) leaves it be — just seeks.
       selection.set(null);
-      // clicking inside a loop selects it (for handles / Delete); clicking away
-      // deselects, so it's always clear which loop Delete would remove. either
-      // way the click still seeks — a plain click never engages the transport loop
-      const loop = hitLoopBody(cx, canvasY(e));
-      // a plain click also dismisses any working loop (clicking away = discard)
-      workingLoop.set(null);
-      currentLoop.set(loop);
+      const loop = get(allLoopsVisible) ? hitLoopBody(cx, canvasY(e)) : null;
+      if (loop) {
+        workingLoop.set(null);
+        currentLoop.set(loop);
+      }
       void actions.seek(Math.min(Math.max(xToSec(view, cx), 0), duration()));
     }
   }

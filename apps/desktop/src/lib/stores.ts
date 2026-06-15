@@ -361,6 +361,11 @@ let recallMuted = false;
 /** Debounce handle for the volume fader's settings write-through. */
 let volumeSaveTimer: ReturnType<typeof setTimeout> | undefined;
 
+/** The active loop's bounds the drill was last seeded from — the seeder (set up
+ *  near the bottom) compares against this so a save-promotion or an in-place
+ *  resize of the *same* loop doesn't tear down the drill. */
+let lastDrillBounds: string | null = null;
+
 function loopName(id: number): string {
   return get(openSong)?.loops.find((l) => l.id === id)?.name ?? `loop ${id}`;
 }
@@ -604,6 +609,20 @@ export const actions = {
     const l = existing ?? (await this.createLoop(w.start, w.end));
     currentLoop.set(l);
     workingLoop.set(null);
+  },
+
+  /** Resize the working loop in place (right-drag on the waveform). Moves its
+   *  bounds and follows the drill home/scratch to them WITHOUT a teardown — the
+   *  trainer and any opened tools survive, mirroring a saved-loop resize. Save
+   *  persists these bounds. Pre-setting `lastDrillBounds` makes the seeder treat
+   *  this as the same engagement rather than a fresh loop. */
+  async setWorkingLoopBounds(start: number, end: number): Promise<void> {
+    if (!get(workingLoop)) return;
+    lastDrillBounds = `${start},${end}`;
+    drillHome.set({ start, end });
+    drillSpan.set({ start, end });
+    workingLoop.set({ start, end });
+    await cmd("loop.set", { start, end });
   },
 
   async clearTransportLoop(): Promise<void> {
@@ -1006,8 +1025,8 @@ export const actions = {
 //
 // Keyed on bounds, NOT identity: promoting a working loop to a saved one keeps
 // the same bounds (it only gains an id + name), so the seeder skips it and an
-// armed trainer / recall survive the save.
-let lastDrillBounds: string | null = null;
+// armed trainer / recall survive the save. `lastDrillBounds` is hoisted up top
+// so `setWorkingLoopBounds` can pre-seed it for the same reason on resize.
 activeLoop.subscribe((al) => {
   const key = al ? `${al.start},${al.end}` : null;
   if (key === lastDrillBounds) return;

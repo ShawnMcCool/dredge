@@ -18,7 +18,18 @@ properties — that only becomes a saved `LoopRegion` when you explicitly hit a
 ## Decisions (from brainstorming)
 
 - **Lifecycle:** at most **one** working loop. A new selection + loop silently
-  replaces it (drill tweaks discarded); clicking away dismisses it.
+  replaces it (drill tweaks discarded). **Revised (post-build):** an established
+  loop — working *or* saved — is **sticky**: a plain left-click and drawing a new
+  selection box never clear it. It is only replaced via the loop icon (new
+  selection → loop), or discarded via the ✕ on its hover cluster (working) / the
+  reset-workspace ⟲ (either). Clicking a *visible* saved loop's body still
+  establishes that one as active.
+- **Look:** the working loop renders **solid, identical to a selected saved
+  loop** (no dashed/provisional styling) — unsaved-ness is signalled only by the
+  💾 save glyph in its hover cluster.
+- **Resize:** the working loop is **right-drag resizable** like saved loops; the
+  resized bounds are what save persists. Resizing follows drill home/scratch to
+  the new bounds *without* a teardown (trainer/tools survive).
 - **Save bounds:** save persists the working loop's **home bounds** (what "reset
   span" snaps back to), not transient drill reshaping (isolate half, run-up).
 - **Save affordance:** lives **on the waveform region** (not the drill box).
@@ -66,8 +77,9 @@ The "all loops visible" flag rides the existing generic
 - The draw loop (currently renders every loop region) renders **only
   `activeLoop`** by default. When `allLoopsVisible` is on, render all loops as a
   dim overlay with the active one still bold.
-- A working loop's region reads **provisional**: dashed/ghost styling vs solid
-  for a saved loop.
+- A working loop's region renders **solid, like a selected saved loop** (revised
+  from the original dashed/provisional idea — unsaved-ness shows only via the 💾
+  glyph). While right-drag resizing it, the preview bounds win.
 - The region's HoverActions cluster is three-state:
   - raw selection → ⟳ **loop**
   - working loop → 💾 **save** (SVG floppy, per the icon convention), ⟳
@@ -80,9 +92,10 @@ The "all loops visible" flag rides the existing generic
   bounds, gains id+name) does not reseed, and an armed trainer / recall survive
   the save. `saveWorkingLoop` sets `currentLoop` *before* clearing `workingLoop`
   so `activeLoop`'s bounds never momentarily go null.
-- Working loops are shaped via the drill region tools, not waveform right-drag
-  (right-drag resizes only persisted loops); once saved, the loop becomes
-  drag-resizable like any other.
+- Working loops are right-drag resizable on the waveform (via
+  `setWorkingLoopBounds`), in addition to the drill region tools. The resize
+  hit-test (`nearestResizeTarget`) considers the working loop's edges alongside
+  saved loops and grabs whichever is nearest.
 
 ### Loops tab (`Loops.svelte`)
 
