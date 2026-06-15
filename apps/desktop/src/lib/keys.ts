@@ -115,6 +115,10 @@ async function handle(e: KeyboardEvent): Promise<void> {
       // loop/selection edges snap to the analyzed grid while on (persisted)
       await actions.setGridSnap(!get(gridSnap));
       break;
+    case "d":
+      // arm / disarm the drill tempo trainer for the active loop
+      if (get(currentLoop)) await actions.toggleTrainer();
+      break;
     case "m":
       // THE one-key move: mute the recorded bass, I play it
       if (get(openSong)?.stems) await actions.toggleStemMute(BASS_STEM);

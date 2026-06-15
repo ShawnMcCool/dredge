@@ -16,6 +16,7 @@
       keys: [
         ["l", "loop the selection (transient — nothing saved)"],
         ["p", "quick-practice the selection"],
+        ["d", "arm / disarm the drill tempo trainer"],
         ["del", "delete the current loop"],
         ["1 / 2 / 3", "rate a rep: miss / shaky / solid"],
       ],
@@ -60,6 +61,10 @@
     [
       "quick practice",
       "Select a span on the waveform and press p — a zero-ceremony micro-session: it plays, you rate it 1/2/3, and the loop enters the spaced-repetition schedule.",
+    ],
+    [
+      "drill box",
+      "Select a loop to open the drill box — a live workbench for that one passage. The tempo trainer (d) ramps the speed up across loop passes (ladder / oscillate / dwell); region toys isolate, nudge, or add a run-up to drill the entrance; and recall mutes the recording so you play a pass from memory. It works a scratch span — your saved loop is never changed; ⟲ snaps back.",
     ],
     [
       "bass focus",

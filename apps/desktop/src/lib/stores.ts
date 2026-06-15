@@ -235,9 +235,9 @@ export const currentLoop = writable<LoopRegion | null>(null);
  *  toys (nudge / isolate / run-up) edit *this* only; the saved LoopRegion is
  *  never touched. Null when no loop is active. */
 export const drillSpan = writable<Span | null>(null);
-// Reseed/clear the scratch span whenever the active loop changes — fires no
-// matter who set currentLoop (loops tab, waveform click, plan, reset).
-currentLoop.subscribe((l) => drillSpan.set(l ? { start: l.start, end: l.end } : null));
+// The active-loop → drill-state lifecycle subscription is set up after `actions`
+// is defined (see "drill box lifecycle" near the bottom): it reseeds drillSpan
+// and tears down trainer/recall state on every loop switch or clear.
 
 /** Step-up tempo trainer for the drill box: a ramp recipe (a `TempoCurve`) that
  *  autopilots the *global* playback rate across loop cycles. No second tempo —
@@ -686,6 +686,12 @@ export const actions = {
     drillTrainer.update((t) => ({ ...t, armed: false }));
   },
 
+  /** Toggle the trainer — the drill box's primary verb (the `d` key). */
+  async toggleTrainer(): Promise<void> {
+    if (get(drillTrainer).armed) this.disarmTrainer();
+    else await this.armTrainer();
+  },
+
   /** Edit the ramp recipe; re-apply at the current cycle if already armed. */
   async setTrainerRecipe(recipe: TempoCurve): Promise<void> {
     drillTrainer.update((t) => ({ ...t, recipe }));
@@ -1087,6 +1093,17 @@ export const actions = {
     retention.set(await cmd<RetentionRow[]>("retention", { song_id: open.song.id }));
   },
 };
+
+// --- drill box lifecycle ----------------------------------------------------
+// Whenever the active loop changes — switched, or cleared (incl. via
+// resetWorkspace / song open) — reseed the scratch span and tear down live
+// drill state so nothing leaks across loops: disarm the trainer, zero its
+// cycle, and clear recall (which hands the engine mute back if recall held it).
+currentLoop.subscribe((l) => {
+  drillSpan.set(l ? { start: l.start, end: l.end } : null);
+  drillTrainer.update((t) => ({ ...t, armed: false, cycle: 0 }));
+  void actions.clearRecall();
+});
 
 // --- launch restore ---------------------------------------------------------
 
