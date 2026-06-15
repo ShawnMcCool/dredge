@@ -2,6 +2,7 @@
   import { onMount, type Component } from "svelte";
   import AnalyzePrompt from "./components/AnalyzePrompt.svelte";
   import Capture from "./components/Capture.svelte";
+  import Drill from "./components/Drill.svelte";
   import DuePanel from "./components/DuePanel.svelte";
   import Guide from "./components/Guide.svelte";
   import Library from "./components/Library.svelte";
@@ -22,6 +23,7 @@
   import { initZoom } from "./lib/zoom";
   import {
     actions,
+    currentLoop,
     initEvents,
     libraryCollapsed,
     loopsOpen,
@@ -132,6 +134,9 @@
          is always present (useful with no song open); the song-scoped boxes join
          the row once a track is open. -->
     <div class="boxes">
+      {#if $openSong && $currentLoop}
+        <Drill />
+      {/if}
       {#if $openSong}
         {#if anyResults}
           <StemMixer />

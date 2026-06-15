@@ -10,15 +10,18 @@
     dim?: boolean;
     /** Grow to fill the row (default), or lock the box to its content width. */
     grow?: boolean;
+    /** Prefer the full row: a large flex-basis so the box wraps to its own line
+     *  except on a very wide stage (where it can still pair with a sibling). */
+    wide?: boolean;
     /** Right-aligned header controls. */
     tools?: Snippet;
     children: Snippet;
   }
 
-  let { label, dim = false, grow = true, tools, children }: Props = $props();
+  let { label, dim = false, grow = true, wide = false, tools, children }: Props = $props();
 </script>
 
-<section class="box" class:dim class:nogrow={!grow}>
+<section class="box" class:dim class:nogrow={!grow} class:wide>
   <header class="head">
     <span class="lbl">{label}</span>
     {#if tools}<span class="head-actions">{@render tools()}</span>{/if}
@@ -40,6 +43,10 @@
   /* lock to content width instead of growing (e.g. the stems box) */
   .box.nogrow {
     flex: 0 0 auto;
+  }
+  /* prefer a full row: a large basis forces a wrap unless the stage is wide */
+  .box.wide {
+    flex: 1 1 480px;
   }
   .box.dim {
     opacity: 0.8;
