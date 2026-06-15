@@ -8,7 +8,11 @@
 
 **Tech Stack:** Rust (engine/practice/server crates, rusqlite, symphonia, rubato, bytemuck), Svelte 5 + Tauri frontend, vitest + cargo test.
 
-> **STATUS: COMPLETE (2026-06-15).** All workstreams landed across 12 commits (064030d…f46ac64), `just check` green. Task 4.2 (stable `{#each}` keys in Sections) was intentionally skipped — `Row` has no stable id and the edit list binds+reorders by index, so index keys are correct there. One item needs a human empirical check (see note under Task 1.2): confirm a paused, song-loaded app settles to **zero** canvas repaints on next `just dev` (verified by reasoning + svelte-check/vitest, not headless-runnable here).
+> **STATUS: COMPLETE (2026-06-15).** All workstreams landed, `just check` green. Task 4.2 (stable `{#each}` keys in Sections) was intentionally skipped — `Row` has no stable id and the edit list binds+reorders by index, so index keys are correct there.
+>
+> **Follow-up (post-review):** demand-driven redraw exposed a pre-existing playhead sawtooth — `playheadSecs` re-anchored to each ~50 ms position event, so tick/IPC arrival jitter nudged the rendered playhead frame-to-frame. Fixed with a stateful smoothing clock (`tickPlayhead`): free-run at the true rate between events, gentle low-pass toward the server position, hard snap on seeks / loop wraps / resume gaps. User confirmed playback now tracks evenly. Remaining optional polish if ever wanted: sub-pixel playhead line (currently `Math.round`ed for a crisp 1px line).
+>
+> The one item not runnable headless here — confirming a paused, song-loaded app settles to **zero** canvas repaints — was implicitly validated by the user's playback review (the redraw loop is alive and smooth during playback; the same gating stops it when paused).
 
 **Verification gate for every Rust task:** `just test` (cargo test --workspace + pnpm vitest) and `just lint` (clippy -D warnings, fmt, svelte-check) must pass. Commit on `main` (this repo's convention).
 
