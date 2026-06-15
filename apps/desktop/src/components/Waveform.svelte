@@ -294,9 +294,9 @@
       }
     }
 
-    // loop regions — the selected loop (the Delete target) reads boldly: bright
-    // 2px edges + denser fill, but no top/bottom border — just the two vertical
-    // edges (a "gate"). Unselected loops sit faint. junction edges stay dashed.
+    // loop regions — the selected loop (the Delete target) reads boldly: a bright
+    // 2px rectangle + denser fill. Unselected loops sit faint. junction edges
+    // stay dashed.
     const accent = c.accent;
     const accentDim = c.accentDim;
     const drill = get(drillSpan);
@@ -323,12 +323,7 @@
       ctx.lineWidth = isSel ? 2 : 1;
       const off = isSel ? 1 : 0.5;
       ctx.setLineDash(l.kind.kind === "junction" ? [3, 3] : []);
-      ctx.beginPath();
-      ctx.moveTo(x0 + off, LANE_H);
-      ctx.lineTo(x0 + off, LANE_H + WAVE_H);
-      ctx.moveTo(x1 - off, LANE_H);
-      ctx.lineTo(x1 - off, LANE_H + WAVE_H);
-      ctx.stroke();
+      ctx.strokeRect(x0 + off, LANE_H + off, x1 - x0 - 2 * off, WAVE_H - 2 * off);
       ctx.setLineDash([]);
       ctx.lineWidth = 1;
       // ghost the saved bounds when the drill span has diverged from them
@@ -370,12 +365,7 @@
         ctx.globalAlpha = 1;
         ctx.strokeStyle = accent;
         ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(x0 + 1, LANE_H);
-        ctx.lineTo(x0 + 1, LANE_H + WAVE_H);
-        ctx.moveTo(x1 - 1, LANE_H);
-        ctx.lineTo(x1 - 1, LANE_H + WAVE_H);
-        ctx.stroke();
+        ctx.strokeRect(x0 + 1, LANE_H + 1, x1 - x0 - 2, WAVE_H - 2);
         ctx.lineWidth = 1;
         if (!resizingWorking && drill && (drill.start !== wl.start || drill.end !== wl.end)) {
           const gx0 = secToX(view, wl.start);
@@ -397,16 +387,9 @@
       ctx.fillStyle = accent;
       ctx.fillRect(x0, LANE_H, x1 - x0, WAVE_H);
       ctx.globalAlpha = 1;
-      // just the two vertical edges (a "gate"), matching the loop look — no
-      // top/bottom border.
       ctx.strokeStyle = c.fg;
       ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(x0 + 0.5, LANE_H);
-      ctx.lineTo(x0 + 0.5, LANE_H + WAVE_H);
-      ctx.moveTo(x1 - 0.5, LANE_H);
-      ctx.lineTo(x1 - 0.5, LANE_H + WAVE_H);
-      ctx.stroke();
+      ctx.strokeRect(x0 + 0.5, LANE_H + 0.5, x1 - x0 - 1, WAVE_H - 1);
     }
 
     // middle-drag zoom preview — dashed accent box over the range to zoom into
