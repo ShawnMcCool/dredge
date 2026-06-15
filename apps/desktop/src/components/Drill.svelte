@@ -7,7 +7,7 @@
   // playback rate across loop cycles (no second tempo). Region toys + recall
   // land in later phases.
   import { get } from "svelte/store";
-  import { actions, currentLoop, drillSpan, drillTrainer, position } from "../lib/stores";
+  import { actions, currentLoop, drillSpan, drillTrainer, openSong, position } from "../lib/stores";
   import type { TempoCurve } from "../lib/stores";
   import { fmtClock } from "../lib/format";
   import Box from "../lib/ui/Box.svelte";
@@ -48,6 +48,7 @@
   let armed = $derived($drillTrainer.armed);
   let cycle = $derived($drillTrainer.cycle);
   let ratePct = $derived(Math.round($position.rate * 100));
+  let hasGrid = $derived(!!$openSong?.analysis?.downbeats?.length);
 </script>
 
 <Box label="drill" wide>
@@ -69,6 +70,33 @@
       </span>
     {/if}
   </div>
+
+  <section class="toys">
+    <div class="row">
+      <span class="cap">region</span>
+      <span class="grp" title="move the loop start">
+        start
+        <Button variant="chip" onclick={() => actions.drillNudge("start", -1)} aria-label="start earlier">◂</Button>
+        <Button variant="chip" onclick={() => actions.drillNudge("start", 1)} aria-label="start later">▸</Button>
+      </span>
+      <span class="grp" title="move the loop end">
+        end
+        <Button variant="chip" onclick={() => actions.drillNudge("end", -1)} aria-label="end earlier">◂</Button>
+        <Button variant="chip" onclick={() => actions.drillNudge("end", 1)} aria-label="end later">▸</Button>
+      </span>
+      <span class="grp" title="shrink to one half">
+        isolate
+        <Button variant="chip" onclick={() => actions.drillIsolate("first")}>1st</Button>
+        <Button variant="chip" onclick={() => actions.drillIsolate("second")}>2nd</Button>
+      </span>
+      <span class="grp" title="extend / retract the start to rehearse the entrance">
+        run-up
+        <Button variant="chip" onclick={() => actions.drillRunUp(1)}>+bar</Button>
+        <Button variant="chip" onclick={() => actions.drillRunUp(-1)}>−bar</Button>
+      </span>
+      {#if !hasGrid}<span class="hint">no grid — stepping by 0.25 s / ~2 s bars</span>{/if}
+    </div>
+  </section>
 
   <section class="trainer">
     <div class="row">
@@ -130,6 +158,7 @@
     opacity: 0.8;
   }
 
+  .toys,
   .trainer {
     margin-top: 10px;
     padding-top: 10px;
@@ -137,6 +166,18 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+  }
+  .grp {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .hint {
+    font-size: 10px;
+    color: var(--muted);
+    opacity: 0.7;
   }
   .row {
     display: flex;
