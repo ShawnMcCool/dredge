@@ -21,4 +21,14 @@ if [ ! -x "$PY" ] || ! "$PY" -c "import beat_this" >/dev/null 2>&1; then
   echo "earworm-analyze: venv ready" >&2
 fi
 
-exec "$PY" "$HERE/analyze_impl.py" "$@"
+# analyze_impl.py sits next to this wrapper in a repo checkout, or under
+# /usr/lib/earworm when installed from a package (the wrapper lands on PATH as
+# /usr/bin/earworm-analyze, away from its impls). songformer_impl.py is resolved
+# by analyze_impl.py relative to its own location, so co-location is enough.
+IMPL=""
+for d in "$HERE" /usr/lib/earworm /usr/local/lib/earworm; do
+  if [ -f "$d/analyze_impl.py" ]; then IMPL="$d/analyze_impl.py"; break; fi
+done
+[ -n "$IMPL" ] || { echo "earworm-analyze: analyze_impl.py not found (looked in $HERE, /usr/lib/earworm, /usr/local/lib/earworm)" >&2; exit 1; }
+
+exec "$PY" "$IMPL" "$@"

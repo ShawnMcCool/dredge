@@ -23,13 +23,28 @@
     }
   },
   "bundle": {
-    "active": false,
+    "active": true,
+    "targets": ["deb"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "publisher": "Shawn McCool",
+    "linux": {
+      "deb": {
+        "depends": ["librubberband2", "libpipewire-0.3-0"],
+        "recommends": ["uv", "demucs"],
+        "files": {
+          "/usr/bin/earwormd": "../../../target/release/earwormd",
+          "/usr/bin/earworm-analyze": "../../../scripts/analyze",
+          "/usr/bin/earworm-enable-ml": "../../../scripts/earworm-enable-ml",
+          "/usr/lib/earworm/analyze_impl.py": "../../../scripts/analyze_impl.py",
+          "/usr/lib/earworm/songformer_impl.py": "../../../scripts/songformer_impl.py"
+        }
+      }
+    }
   }
 }

@@ -7,10 +7,20 @@ default:
 dev:
     cd apps/desktop && pnpm tauri dev
 
-# Release build of everything (UI binary + headless daemon)
+# Release build of everything (headless daemon + UI binary + .deb bundle)
+# Daemon first: the .deb bundle's files-map pulls in target/release/earwormd.
 build:
-    cd apps/desktop && pnpm tauri build
     cargo build -p server --release
+    cd apps/desktop && pnpm tauri build
+
+# Stage the release .deb into dist/ for distribution
+package: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p dist
+    deb=$(ls -t target/release/bundle/deb/*.deb | head -1)
+    cp "$deb" dist/
+    echo "staged $(basename "$deb") -> dist/"
 
 # Run the release desktop app (builds if missing)
 run:
