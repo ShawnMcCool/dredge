@@ -334,23 +334,6 @@
       }
     }
 
-    // transient drill (a looped selection, no saved loop selected): draw the
-    // scratch span as a bold band so the drill box has a visible target
-    if (drill && !get(currentLoop)) {
-      const tx0 = secToX(view, drill.start);
-      const tx1 = secToX(view, drill.end);
-      if (tx1 >= 0 && tx0 <= w) {
-        ctx.globalAlpha = 0.2;
-        ctx.fillStyle = accent;
-        ctx.fillRect(tx0, LANE_H, tx1 - tx0, WAVE_H);
-        ctx.globalAlpha = 1;
-        ctx.strokeStyle = accent;
-        ctx.lineWidth = 2;
-        ctx.strokeRect(tx0 + 1, LANE_H + 1, tx1 - tx0 - 2, WAVE_H - 2);
-        ctx.lineWidth = 1;
-      }
-    }
-
     // selection — brighter
     const sel = get(selection);
     if (sel) {
@@ -651,23 +634,13 @@
     await actions.play();
   }
 
-  /** Primary glyph: loop the selection now — transient, nothing saved. */
+  /** Loop the selection: save it as a loop (or reuse a matching one), make it the
+   *  active loop, and play — which opens the drill box on it. */
   async function loopSelection() {
     const sel = get(selection);
     if (!sel) return;
-    await actions.drillLoopSpan(sel.start, sel.end);
-    await actions.seek(sel.start);
-    await actions.play();
-    selection.set(null); // the drill band now marks the loop; drop the box
-  }
-
-  /** Secondary glyph: save the selection to the loops list (server names it),
-   *  then surface the loops tab. Does not change playback. */
-  async function saveSelection() {
-    const sel = get(selection);
-    if (!sel) return;
-    await actions.saveLoop(sel.start, sel.end);
     selection.set(null);
+    await actions.saveAndSelectLoop(sel.start, sel.end);
   }
 
   /** Loop glyph on the selected loop: point the transport at it and play. */
@@ -885,10 +858,9 @@
       bandHeight={WAVE_H}
       viewWidth={view.width}
       pointer={hoverPt}
-      count={2}
+      count={1}
     >
-      <button class="sa-btn" onclick={loopSelection} title="loop selection" aria-label="loop selection">⟳</button>
-      <button class="sa-btn" onclick={saveSelection} title="save loop" aria-label="save loop">🖫</button>
+      <button class="sa-btn" onclick={loopSelection} title="loop — saves it & opens the drill" aria-label="loop selection">⟳</button>
     </HoverActions>
   {/if}
   {#if $currentLoop}

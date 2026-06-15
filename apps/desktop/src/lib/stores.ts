@@ -240,9 +240,8 @@ export const drillSpan = writable<Span | null>(null);
  *  selection-loop). Null when no loop is active; the drill box shows iff this
  *  (and drillSpan) is non-null. */
 export const drillHome = writable<Span | null>(null);
-// The seeding/teardown is centralized in `actions.seedDrill`, driven from every
-// loop-engagement point (saved-loop selection via the currentLoop hook, and the
-// transient "loop this span" gesture via drillLoopSpan) and from clear/reset.
+// The seeding/teardown is centralized in `actions.seedDrill`, driven by the
+// active loop: selecting a (saved) loop seeds it, clearing/reset tears it down.
 // The currentLoop lifecycle hook is set up after `actions` is defined (see
 // "drill box lifecycle" near the bottom).
 
@@ -620,22 +619,28 @@ export const actions = {
   },
 
   /** Point the transport at a span without persisting anything (a dumb
-   *  primitive; also used by restart/play, so it must NOT touch drill state). */
+   *  primitive used by restart/play; it must NOT touch drill state). */
   async setTransportLoop(start: number, end: number): Promise<void> {
     await cmd("loop.set", { start, end });
-  },
-
-  /** The "loop this span now" gesture (l / the ⟳ chip / a section row): engage a
-   *  transient loop AND open the drill on it. Distinct from setTransportLoop so
-   *  restart/play don't reseed the drill. */
-  async drillLoopSpan(start: number, end: number): Promise<void> {
-    await this.setTransportLoop(start, end);
-    this.seedDrill({ start, end });
   },
 
   async selectLoop(l: LoopRegion): Promise<void> {
     currentLoop.set(l);
     await cmd("loop.set", { start: l.start, end: l.end });
+  },
+
+  /** The "loop" gesture: turn a span into a saved loop (or reuse a matching one),
+   *  make it the active loop, and play — which opens the drill box on it. This is
+   *  the single selection action (the old transient-loop / save split is gone). */
+  async saveAndSelectLoop(start: number, end: number): Promise<void> {
+    const open = get(openSong);
+    const existing = open?.loops.find(
+      (l) => Math.abs(l.start - start) < 0.01 && Math.abs(l.end - end) < 0.01,
+    );
+    const l = existing ?? (await this.createLoop(start, end));
+    await this.selectLoop(l);
+    await this.seek(l.start);
+    await this.play();
   },
 
   async clearTransportLoop(): Promise<void> {
@@ -786,14 +791,6 @@ export const actions = {
       end,
     });
     await this.refreshLoops();
-    return l;
-  },
-
-  /** Deliberate save from the waveform: persist + surface the loops tab.
-   *  Does not change what's currently playing. */
-  async saveLoop(start: number, end: number): Promise<LoopRegion> {
-    const l = await this.createLoop(start, end);
-    loopsOpen.set(true);
     return l;
   },
 
@@ -1126,9 +1123,8 @@ export const actions = {
 // drill state so nothing leaks across loops: disarm the trainer, zero its
 // cycle, and clear recall (which hands the engine mute back if recall held it).
 currentLoop.subscribe((l) => {
-  // Selecting a saved loop (loops tab or a waveform loop-click) seeds the drill;
-  // deselecting / clearing / reset tears it down. Transient selection-loops seed
-  // via drillLoopSpan instead, so they don't depend on this hook.
+  // Selecting a loop (loops tab, a waveform loop-click, or "loop" on a
+  // selection) seeds the drill; deselecting / clearing / reset tears it down.
   actions.seedDrill(l ? { start: l.start, end: l.end } : null);
 });
 

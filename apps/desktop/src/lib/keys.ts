@@ -76,13 +76,11 @@ async function handle(e: KeyboardEvent): Promise<void> {
       await actions.setRate(get(position).rate + 0.05);
       break;
     case "l": {
-      // mirror the waveform's loop glyph: loop the selection now, transient
+      // mirror the waveform's loop glyph: save the selection as a loop + drill it
       const sel = get(selection);
       if (sel && get(openSong)) {
-        await actions.drillLoopSpan(sel.start, sel.end);
-        await actions.seek(sel.start);
-        await actions.play();
         selection.set(null);
+        await actions.saveAndSelectLoop(sel.start, sel.end);
       }
       break;
     }

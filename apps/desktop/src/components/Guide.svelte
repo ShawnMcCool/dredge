@@ -14,7 +14,7 @@
     {
       title: "loops & practice",
       keys: [
-        ["l", "loop the selection (transient — nothing saved)"],
+        ["l", "loop the selection — saves it as a loop & opens the drill"],
         ["p", "quick-practice the selection"],
         ["d", "arm / disarm the drill tempo trainer"],
         ["del", "delete the current loop"],
@@ -76,7 +76,7 @@
     ],
     [
       "looping & saving",
-      "Drag a selection, then ⟳ loops it instantly (transient — nothing saved) and 🖫 saves it to the Loops tab without changing playback. Saved loops are named automatically from the sections they cover (“verse 2”, “verse 2 → chorus 1”); double-click a name to pin your own, and “fit” snaps a loop's edges to the nearest section boundaries.",
+      "Drag a selection, then ⟳ (or l) turns it into a saved loop, makes it the active loop, and starts playing — which opens the drill box on it. Saved loops are named automatically from the sections they cover (“verse 2”, “verse 2 → chorus 1”); double-click a name to pin your own, and “fit” snaps a loop's edges to the nearest section boundaries.",
     ],
     [
       "sections",

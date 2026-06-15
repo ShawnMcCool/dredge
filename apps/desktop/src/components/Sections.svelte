@@ -72,10 +72,10 @@
     selection.set({ start: row.start, end: row.end });
   }
 
-  /** Loop a section directly — transient, nothing saved (mirrors the ⟳ control);
-   *  opens the drill box on it. */
+  /** Loop a section directly: save it as a loop (mirrors the ⟳ control) and open
+   *  the drill box on it. */
   function loop(row: Row) {
-    void actions.drillLoopSpan(row.start, row.end);
+    void actions.saveAndSelectLoop(row.start, row.end);
   }
 
   let analysis = $derived($openSong?.analysis ?? null);
