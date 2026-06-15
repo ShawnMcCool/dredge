@@ -44,6 +44,14 @@ pub fn decode_file(path: &Path) -> Result<SongBuffer> {
     let mut src_rate: Option<u32> = track.codec_params.sample_rate;
     let mut src_channels: Option<usize> = track.codec_params.channels.map(|c| c.count());
     let mut interleaved: Vec<f32> = Vec::new();
+    // Pre-size from the declared frame count when known, so the decode loop
+    // doesn't repeatedly grow/realloc a multi-MB buffer.
+    if let (Some(nf), Some(c)) = (track.codec_params.n_frames, src_channels) {
+        interleaved.reserve(nf as usize * c);
+    }
+    // Allocate the sample buffer once (on the first decoded frame) and reuse it
+    // — per-packet allocation churned thousands of small Vecs across a song.
+    let mut sample_buf: Option<SampleBuffer<f32>> = None;
 
     loop {
         let packet = match format.next_packet() {
@@ -68,7 +76,8 @@ pub fn decode_file(path: &Path) -> Result<SongBuffer> {
         let spec = *decoded.spec();
         src_rate.get_or_insert(spec.rate);
         src_channels.get_or_insert(spec.channels.count());
-        let mut sb = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
+        let sb = sample_buf
+            .get_or_insert_with(|| SampleBuffer::<f32>::new(decoded.capacity() as u64, spec));
         sb.copy_interleaved_ref(decoded);
         interleaved.extend_from_slice(sb.samples());
     }
@@ -79,19 +88,52 @@ pub fn decode_file(path: &Path) -> Result<SongBuffer> {
         return Err(Error::Unsupported("zero channels".into()));
     }
 
-    let (left, right) = to_stereo_planar(&interleaved, ch);
-    let (left, right) = if rate == SAMPLE_RATE {
-        (left, right)
+    let data = if rate == SAMPLE_RATE {
+        // No resampling needed: downmix straight to the canonical interleaved
+        // stereo buffer, skipping the planar split + re-interleave round-trip.
+        to_stereo_interleaved(&interleaved, ch)
     } else {
-        resample_stereo(&left, &right, rate)?
+        // rubato needs planar input; split, resample, then re-interleave.
+        let (left, right) = to_stereo_planar(&interleaved, ch);
+        let (left, right) = resample_stereo(&left, &right, rate)?;
+        let mut data = Vec::with_capacity(left.len() * CHANNELS);
+        for (l, r) in left.iter().zip(right.iter()) {
+            data.push(*l);
+            data.push(*r);
+        }
+        data
     };
-
-    let mut data = Vec::with_capacity(left.len() * CHANNELS);
-    for (l, r) in left.iter().zip(right.iter()) {
-        data.push(*l);
-        data.push(*r);
-    }
     Ok(SongBuffer { data })
+}
+
+/// Downmix source-interleaved audio directly to interleaved stereo.
+/// Mono → duplicate; stereo → passthrough; >2 ch → L = mean(even chans),
+/// R = mean(odd chans). Mirrors `to_stereo_planar` but emits interleaved.
+fn to_stereo_interleaved(interleaved: &[f32], ch: usize) -> Vec<f32> {
+    let frames = interleaved.len() / ch;
+    match ch {
+        1 => {
+            let mut out = Vec::with_capacity(frames * CHANNELS);
+            for &s in &interleaved[..frames] {
+                out.push(s);
+                out.push(s);
+            }
+            out
+        }
+        2 => interleaved[..frames * CHANNELS].to_vec(),
+        n => {
+            let mut out = Vec::with_capacity(frames * CHANNELS);
+            let evens = n.div_ceil(2) as f32;
+            let odds = (n / 2).max(1) as f32;
+            for fr in interleaved.chunks_exact(n) {
+                let l: f32 = fr.iter().step_by(2).sum();
+                let r: f32 = fr.iter().skip(1).step_by(2).sum();
+                out.push(l / evens);
+                out.push(r / odds);
+            }
+            out
+        }
+    }
 }
 
 /// Mono → duplicate; stereo → split; >2 ch → L = mean(even chans), R = mean(odd chans).
@@ -133,53 +175,52 @@ fn resample_stereo(left: &[f32], right: &[f32], src_rate: u32) -> Result<(Vec<f3
         window: WindowFunction::BlackmanHarris2,
     };
     let ratio = SAMPLE_RATE as f64 / src_rate as f64;
-    let mut resampler = SincFixedIn::<f64>::new(ratio, 2.0, params, RESAMPLE_CHUNK, 2)
+    // f32 resampler: feed the decoded f32 samples directly, no f32→f64→f32
+    // round-trip (the old f64 path allocated two full-length f64 copies of the
+    // whole song — a large transient spike on every non-48k open).
+    let mut resampler = SincFixedIn::<f32>::new(ratio, 2.0, params, RESAMPLE_CHUNK, 2)
         .map_err(|e| Error::Decode(format!("resampler init: {e}")))?;
 
-    let l64: Vec<f64> = left.iter().map(|s| *s as f64).collect();
-    let r64: Vec<f64> = right.iter().map(|s| *s as f64).collect();
     let mut out_l: Vec<f32> = Vec::with_capacity((left.len() as f64 * ratio) as usize + 1024);
     let mut out_r: Vec<f32> = Vec::with_capacity(out_l.capacity());
 
     let mut pos = 0;
-    while pos + RESAMPLE_CHUNK <= l64.len() {
+    while pos + RESAMPLE_CHUNK <= left.len() {
         let chunk = [
-            &l64[pos..pos + RESAMPLE_CHUNK],
-            &r64[pos..pos + RESAMPLE_CHUNK],
+            &left[pos..pos + RESAMPLE_CHUNK],
+            &right[pos..pos + RESAMPLE_CHUNK],
         ];
         let out = resampler
             .process(&chunk, None)
             .map_err(|e| Error::Decode(format!("resample: {e}")))?;
-        out_l.extend(out[0].iter().map(|s| *s as f32));
-        out_r.extend(out[1].iter().map(|s| *s as f32));
+        out_l.extend_from_slice(&out[0]);
+        out_r.extend_from_slice(&out[1]);
         pos += RESAMPLE_CHUNK;
     }
-    if pos < l64.len() {
-        let chunk = [&l64[pos..], &r64[pos..]];
+    if pos < left.len() {
+        let chunk = [&left[pos..], &right[pos..]];
         let out = resampler
             .process_partial(Some(&chunk), None)
             .map_err(|e| Error::Decode(format!("resample tail: {e}")))?;
-        out_l.extend(out[0].iter().map(|s| *s as f32));
-        out_r.extend(out[1].iter().map(|s| *s as f32));
+        out_l.extend_from_slice(&out[0]);
+        out_r.extend_from_slice(&out[1]);
     }
     // Drain the resampler's internal delay line.
     let out = resampler
-        .process_partial::<&[f64]>(None, None)
+        .process_partial::<&[f32]>(None, None)
         .map_err(|e| Error::Decode(format!("resample flush: {e}")))?;
-    out_l.extend(out[0].iter().map(|s| *s as f32));
-    out_r.extend(out[1].iter().map(|s| *s as f32));
+    out_l.extend_from_slice(&out[0]);
+    out_r.extend_from_slice(&out[1]);
 
     // Trim the leading delay and the zero-padded tail so the output length
-    // matches the source duration.
+    // matches the source duration. Copy the kept range out instead of
+    // draining from the front (which memmoves the whole multi-MB buffer).
     let delay = resampler.output_delay();
     let expected = (left.len() as f64 * ratio).round() as usize;
-    let end = (delay + expected).min(out_l.len());
-    out_l.drain(..delay.min(out_l.len()));
-    out_l.truncate(end - delay.min(end));
-    out_r.drain(..delay.min(out_r.len()));
-    out_r.truncate(end - delay.min(end));
-
-    Ok((out_l, out_r))
+    let n = out_l.len().min(out_r.len());
+    let start = delay.min(n);
+    let end = (delay + expected).min(n);
+    Ok((out_l[start..end].to_vec(), out_r[start..end].to_vec()))
 }
 
 /// blake3 hash of the file contents (streaming, 1 MiB chunks), hex string.

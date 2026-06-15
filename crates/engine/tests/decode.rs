@@ -40,6 +40,34 @@ fn decodes_resamples_and_upmixes() {
 }
 
 #[test]
+fn decodes_native_48k_stereo_without_resampling() {
+    // 48 kHz stereo exercises the no-resample fast path (to_stereo_interleaved):
+    // left ramps up, right is constant, so channels must stay distinct.
+    let dir = std::env::temp_dir().join("earworm-decode-48k");
+    std::fs::create_dir_all(&dir).unwrap();
+    let wav = dir.join("stereo48.wav");
+    let spec = hound::WavSpec {
+        channels: 2,
+        sample_rate: SAMPLE_RATE,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut w = hound::WavWriter::create(&wav, spec).unwrap();
+    for i in 0..1000 {
+        w.write_sample(((i as f32 / 1000.0) * i16::MAX as f32) as i16)
+            .unwrap(); // L
+        w.write_sample(i16::MAX / 2).unwrap(); // R constant
+    }
+    w.finalize().unwrap();
+
+    let buf = decode_file(&wav).unwrap();
+    assert_eq!(buf.frames(), 1000, "no resampling at native 48k");
+    // right channel is constant ~0.5, left is a rising ramp distinct from right
+    assert!((buf.data[500 * 2 + 1] - 0.5).abs() < 0.01);
+    assert!(buf.data[900 * 2] > buf.data[100 * 2], "left ramps up");
+}
+
+#[test]
 fn missing_file_is_an_error() {
     assert!(decode_file(std::path::Path::new("/nope/missing.flac")).is_err());
 }
