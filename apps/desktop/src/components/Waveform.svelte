@@ -295,8 +295,8 @@
     }
 
     // loop regions — the selected loop (the Delete target) reads boldly: bright
-    // 2px edges, a solid top cap, taller grab handles, denser fill. Unselected
-    // loops sit faint in the background. junction edges stay dashed.
+    // 2px edges + denser fill, but no top/bottom border — just the two vertical
+    // edges (a "gate"). Unselected loops sit faint. junction edges stay dashed.
     const accent = c.accent;
     const accentDim = c.accentDim;
     const drill = get(drillSpan);
@@ -331,12 +331,6 @@
       ctx.stroke();
       ctx.setLineDash([]);
       ctx.lineWidth = 1;
-      if (isSel) {
-        ctx.fillStyle = accent;
-        ctx.fillRect(x0, LANE_H, x1 - x0, 3); // solid cap across the top
-        ctx.fillRect(x0 - 1, LANE_H, 3, 14); // grab handles, taller than before
-        ctx.fillRect(x1 - 2, LANE_H, 3, 14);
-      }
       // ghost the saved bounds when the drill span has diverged from them
       if (diverged) {
         const gx0 = secToX(view, saved.start);
@@ -383,10 +377,6 @@
         ctx.lineTo(x1 - 1, LANE_H + WAVE_H);
         ctx.stroke();
         ctx.lineWidth = 1;
-        ctx.fillStyle = accent;
-        ctx.fillRect(x0, LANE_H, x1 - x0, 3); // solid cap across the top
-        ctx.fillRect(x0 - 1, LANE_H, 3, 14); // grab handles
-        ctx.fillRect(x1 - 2, LANE_H, 3, 14);
         if (!resizingWorking && drill && (drill.start !== wl.start || drill.end !== wl.end)) {
           const gx0 = secToX(view, wl.start);
           const gx1 = secToX(view, wl.end);
@@ -589,14 +579,22 @@
     drag = { mode: "select", anchorX: x, moved: false };
   }
 
-  /** Pull a time onto the nearest grid line (at the chosen subdivision) when
-   *  grid snap applies. */
+  /** Pull a time onto the nearest snap target when grid snap is on. Targets are
+   *  the section boundaries (the primary alignment for loops — so dragging a loop
+   *  edge lands exactly on the verse/chorus edge) plus the beat/bar grid at the
+   *  chosen subdivision. Nearest within SNAP_PX wins; identity otherwise. */
   function maybeSnap(secs: number): number {
-    const a = get(openSong)?.analysis;
-    if (!a || !get(gridSnap)) return secs;
-    const times = subdivisionTimes(a.beats, a.downbeats, get(gridSubdivision));
-    if (!times.length) return secs;
-    return snapToGrid(secs, times, view, SNAP_PX);
+    if (!get(gridSnap)) return secs;
+    const open = get(openSong);
+    if (!open) return secs;
+    const targets: number[] = [];
+    for (const s of spansFor(open)) {
+      targets.push(s.start, s.end);
+    }
+    const a = open.analysis;
+    if (a && a.beats.length) targets.push(...subdivisionTimes(a.beats, a.downbeats, get(gridSubdivision)));
+    if (!targets.length) return secs;
+    return snapToGrid(secs, targets, view, SNAP_PX);
   }
 
   function onPointerMove(e: PointerEvent) {

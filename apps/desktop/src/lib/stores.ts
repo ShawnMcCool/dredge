@@ -6,6 +6,7 @@ import { cmd, initialSong, onEvent } from "./ipc";
 import { trace } from "./trace";
 import { subdivisionTimes, type GridSubdivision } from "./waveform-math";
 import { bisect, nudgeEdge, rateForRep, runUp, type Span } from "./drill";
+import { deriveLoopName } from "./loop-name";
 
 // --- wire types ----------------------------------------------------------
 
@@ -178,12 +179,20 @@ export const currentLoop = writable<LoopRegion | null>(null);
 export const workingLoop = writable<Span | null>(null);
 /** The loop currently driving the stage — a working loop if one is up, else the
  *  selected saved loop — normalized so the drill box, waveform and transport all
- *  read one shape. `id === null` marks a working (unsaved) loop. */
+ *  read one shape. `id === null` marks a working (unsaved) loop. The working
+ *  loop's name is derived from the song's sections exactly as the server names
+ *  saved loops (e.g. "verse 2", "verse 2 → chorus 1"), so it reads like any
+ *  other loop — there's no user-facing "working loop" concept. */
 export const activeLoop = derived(
-  [workingLoop, currentLoop],
-  ([$working, $current]): { id: number | null; start: number; end: number; name: string } | null =>
+  [workingLoop, currentLoop, openSong],
+  ([$working, $current, $open]): { id: number | null; start: number; end: number; name: string } | null =>
     $working
-      ? { id: null, start: $working.start, end: $working.end, name: "working loop" }
+      ? {
+          id: null,
+          start: $working.start,
+          end: $working.end,
+          name: deriveLoopName($working.start, $working.end, $open?.sections ?? []),
+        }
       : $current
         ? { id: $current.id, start: $current.start, end: $current.end, name: $current.name }
         : null,
