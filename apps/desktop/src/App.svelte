@@ -23,7 +23,7 @@
   import { initZoom } from "./lib/zoom";
   import {
     actions,
-    currentLoop,
+    drillSpan,
     initEvents,
     libraryCollapsed,
     loopsOpen,
@@ -134,7 +134,7 @@
          is always present (useful with no song open); the song-scoped boxes join
          the row once a track is open. -->
     <div class="boxes">
-      {#if $openSong && $currentLoop}
+      {#if $openSong && $drillSpan}
         <Drill />
       {/if}
       {#if $openSong}

@@ -10,6 +10,7 @@
   import {
     actions,
     currentLoop,
+    drillHome,
     drillRecall,
     drillSpan,
     drillTrainer,
@@ -22,10 +23,11 @@
   import Button from "../lib/ui/Button.svelte";
   import NumberField from "../lib/ui/NumberField.svelte";
 
-  let saved = $derived($currentLoop);
+  let home = $derived($drillHome);
   let span = $derived($drillSpan);
+  let loopName = $derived($currentLoop?.name ?? "loop");
   let diverged = $derived(
-    !!(saved && span && (span.start !== saved.start || span.end !== saved.end)),
+    !!(home && span && (span.start !== home.start || span.end !== home.end)),
   );
   let length = $derived(span ? span.end - span.start : 0);
 
@@ -78,7 +80,7 @@
   {/snippet}
 
   <div class="head-row">
-    <span class="loop-name">{saved?.name ?? "loop"}</span>
+    <span class="loop-name">{loopName}</span>
     {#if span}
       <span class="span" class:diverged>
         {fmtClock(span.start)} – {fmtClock(span.end)}

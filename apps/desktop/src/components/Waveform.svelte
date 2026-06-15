@@ -334,6 +334,23 @@
       }
     }
 
+    // transient drill (a looped selection, no saved loop selected): draw the
+    // scratch span as a bold band so the drill box has a visible target
+    if (drill && !get(currentLoop)) {
+      const tx0 = secToX(view, drill.start);
+      const tx1 = secToX(view, drill.end);
+      if (tx1 >= 0 && tx0 <= w) {
+        ctx.globalAlpha = 0.2;
+        ctx.fillStyle = accent;
+        ctx.fillRect(tx0, LANE_H, tx1 - tx0, WAVE_H);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(tx0 + 1, LANE_H + 1, tx1 - tx0 - 2, WAVE_H - 2);
+        ctx.lineWidth = 1;
+      }
+    }
+
     // selection — brighter
     const sel = get(selection);
     if (sel) {
@@ -638,9 +655,10 @@
   async function loopSelection() {
     const sel = get(selection);
     if (!sel) return;
-    await actions.setTransportLoop(sel.start, sel.end);
+    await actions.drillLoopSpan(sel.start, sel.end);
     await actions.seek(sel.start);
     await actions.play();
+    selection.set(null); // the drill band now marks the loop; drop the box
   }
 
   /** Secondary glyph: save the selection to the loops list (server names it),

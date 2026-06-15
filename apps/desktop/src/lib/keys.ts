@@ -8,6 +8,7 @@ import {
   BASS_STEM,
   bassFocus,
   currentLoop,
+  drillSpan,
   gridSnap,
   openSong,
   pendingRatings,
@@ -78,7 +79,7 @@ async function handle(e: KeyboardEvent): Promise<void> {
       // mirror the waveform's loop glyph: loop the selection now, transient
       const sel = get(selection);
       if (sel && get(openSong)) {
-        await actions.setTransportLoop(sel.start, sel.end);
+        await actions.drillLoopSpan(sel.start, sel.end);
         await actions.seek(sel.start);
         await actions.play();
         selection.set(null);
@@ -117,7 +118,7 @@ async function handle(e: KeyboardEvent): Promise<void> {
       break;
     case "d":
       // arm / disarm the drill tempo trainer for the active loop
-      if (get(currentLoop)) await actions.toggleTrainer();
+      if (get(drillSpan)) await actions.toggleTrainer();
       break;
     case "m":
       // THE one-key move: mute the recorded bass, I play it

@@ -235,9 +235,16 @@ export const currentLoop = writable<LoopRegion | null>(null);
  *  toys (nudge / isolate / run-up) edit *this* only; the saved LoopRegion is
  *  never touched. Null when no loop is active. */
 export const drillSpan = writable<Span | null>(null);
-// The active-loop → drill-state lifecycle subscription is set up after `actions`
-// is defined (see "drill box lifecycle" near the bottom): it reseeds drillSpan
-// and tears down trainer/recall state on every loop switch or clear.
+/** The bounds the scratch span resets to — the "home" of the current drill,
+ *  seeded whenever a loop is engaged (a saved loop, or a transient
+ *  selection-loop). Null when no loop is active; the drill box shows iff this
+ *  (and drillSpan) is non-null. */
+export const drillHome = writable<Span | null>(null);
+// The seeding/teardown is centralized in `actions.seedDrill`, driven from every
+// loop-engagement point (saved-loop selection via the currentLoop hook, and the
+// transient "loop this span" gesture via drillLoopSpan) and from clear/reset.
+// The currentLoop lifecycle hook is set up after `actions` is defined (see
+// "drill box lifecycle" near the bottom).
 
 /** Step-up tempo trainer for the drill box: a ramp recipe (a `TempoCurve`) that
  *  autopilots the *global* playback rate across loop cycles. No second tempo —
@@ -612,9 +619,18 @@ export const actions = {
     await cmd("volume", { value: v });
   },
 
-  /** Point the transport at a span without persisting anything. */
+  /** Point the transport at a span without persisting anything (a dumb
+   *  primitive; also used by restart/play, so it must NOT touch drill state). */
   async setTransportLoop(start: number, end: number): Promise<void> {
     await cmd("loop.set", { start, end });
+  },
+
+  /** The "loop this span now" gesture (l / the ⟳ chip / a section row): engage a
+   *  transient loop AND open the drill on it. Distinct from setTransportLoop so
+   *  restart/play don't reseed the drill. */
+  async drillLoopSpan(start: number, end: number): Promise<void> {
+    await this.setTransportLoop(start, end);
+    this.seedDrill({ start, end });
   },
 
   async selectLoop(l: LoopRegion): Promise<void> {
@@ -628,6 +644,16 @@ export const actions = {
   },
 
   // --- drill box: live edits to the scratch span (saved loops untouched) ---
+
+  /** (Re)seed the drill from an engaged loop's bounds, or tear it down (null).
+   *  Sets both the home and the live scratch span, and resets live drill state
+   *  (disarm trainer, zero cycle, clear recall) so nothing leaks across loops. */
+  seedDrill(span: Span | null): void {
+    drillHome.set(span);
+    drillSpan.set(span);
+    drillTrainer.update((t) => ({ ...t, armed: false, cycle: 0 }));
+    void this.clearRecall();
+  },
 
   /** Set the scratch span and point the transport at it. */
   async applyDrillSpan(span: Span): Promise<void> {
@@ -667,10 +693,10 @@ export const actions = {
     await this.applyDrillSpan(runUp(span, deltaBars, this.drillGrid().downbeats, this.drillDuration()));
   },
 
-  /** Snap the scratch span back to the active loop's saved bounds. */
+  /** Snap the scratch span back to the drill's home bounds. */
   async drillResetSpan(): Promise<void> {
-    const l = get(currentLoop);
-    if (l) await this.applyDrillSpan({ start: l.start, end: l.end });
+    const home = get(drillHome);
+    if (home) await this.applyDrillSpan({ ...home });
   },
 
   // --- drill box: step-up tempo trainer ---
@@ -1100,9 +1126,10 @@ export const actions = {
 // drill state so nothing leaks across loops: disarm the trainer, zero its
 // cycle, and clear recall (which hands the engine mute back if recall held it).
 currentLoop.subscribe((l) => {
-  drillSpan.set(l ? { start: l.start, end: l.end } : null);
-  drillTrainer.update((t) => ({ ...t, armed: false, cycle: 0 }));
-  void actions.clearRecall();
+  // Selecting a saved loop (loops tab or a waveform loop-click) seeds the drill;
+  // deselecting / clearing / reset tears it down. Transient selection-loops seed
+  // via drillLoopSpan instead, so they don't depend on this hook.
+  actions.seedDrill(l ? { start: l.start, end: l.end } : null);
 });
 
 // --- launch restore ---------------------------------------------------------
