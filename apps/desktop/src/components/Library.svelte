@@ -1,6 +1,7 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
   import { onMount } from "svelte";
+  import { fmtDur } from "../lib/format";
   import { actions, openingSong, openSong, songs } from "../lib/stores";
   import Button from "../lib/ui/Button.svelte";
   import Modal from "../lib/ui/Modal.svelte";
@@ -10,12 +11,6 @@
   onMount(() => {
     void actions.refreshSongs();
   });
-
-  function fmtDur(secs: number): string {
-    const m = Math.floor(secs / 60);
-    const s = Math.floor(secs % 60);
-    return `${m}:${String(s).padStart(2, "0")}`;
-  }
 
   async function importSong() {
     error = "";

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { fmtDur } from "../lib/format";
   import {
     actions,
     analysisError,
@@ -63,13 +64,6 @@
       end: Math.round(s.end * 10) / 10,
       suggested: true,
     };
-  }
-
-  /** Compact m:ss for the read-only display. */
-  function fmtT(s: number): string {
-    const m = Math.floor(s / 60);
-    const r = Math.round(s % 60);
-    return `${m}:${String(r).padStart(2, "0")}`;
   }
 
   /** Click a section in display mode → highlight its span on the waveform. */
@@ -234,7 +228,7 @@
           <button class="open" onclick={() => highlight(row)} title="highlight on the waveform">
             <span class="ord mono">{i + 1}</span>
             <span class="name">{row.name}</span>
-            <span class="range mono">{fmtT(row.start)}–{fmtT(row.end)}</span>
+            <span class="range mono">{fmtDur(row.start, true)}–{fmtDur(row.end, true)}</span>
           </button>
           <button class="loop txt-btn" onclick={() => loop(row)} title="loop this section">loop</button>
         </li>

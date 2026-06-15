@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fmtElapsed } from "../lib/format";
   import { prepareState, workSample, vram, type PrepareStepState } from "../lib/stores";
 
   const STEPS = [
@@ -9,12 +10,6 @@
   const GLYPHS: Record<PrepareStepState, string> = {
     pending: "·", running: "◌", done: "✓", cached: "✓", failed: "✗",
   };
-
-  function fmt(ms: number): string {
-    if (ms < 1000) return `${ms} ms`;
-    const s = ms / 1000;
-    return s < 60 ? `${s.toFixed(1)} s` : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-  }
 
   // Running min/max per metric over the current run. workSample is instantaneous,
   // so we accumulate here; the component unmounts when prepareState clears between
@@ -71,7 +66,7 @@
         <span class="model mono">· {step.model}</span>
         {#if active}
           <span class="stage mono">{$workSample.stage}</span>
-          <span class="elapsed mono">{fmt($workSample.elapsed_ms)}</span>
+          <span class="elapsed mono">{fmtElapsed($workSample.elapsed_ms)}</span>
         {:else if s === "cached"}
           <span class="muted mono">cached</span>
         {/if}

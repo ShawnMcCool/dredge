@@ -1,19 +1,7 @@
 <script lang="ts">
+  import { fmtClock } from "../lib/format";
   import { actions, bassFocus, muted, openSong, pitch, playbackVolume, position } from "../lib/stores";
   import Fader from "../lib/ui/Fader.svelte";
-
-  function fmt(secs: number): string {
-    const s = Math.max(secs, 0);
-    const m = Math.floor(s / 60);
-    const r = s - m * 60;
-    return `${String(m).padStart(2, "0")}:${r.toFixed(1).padStart(4, "0")}`;
-  }
-
-  function fmtTotal(secs: number): string {
-    const m = Math.floor(secs / 60);
-    const r = Math.floor(secs % 60);
-    return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
-  }
 
   // pitch stepper: ± a semitone; scroll over it for ±5 cents
   const clampSt = (st: number) => Math.max(-12, Math.min(12, st));
@@ -54,8 +42,8 @@
         {/if}
       </span>
       <span class="time">
-        <span class="now mono">{fmt($position.secs)}</span>
-        <span class="total mono">/ {fmtTotal($openSong?.song.duration_secs ?? 0)}</span>
+        <span class="now mono">{fmtClock($position.secs)}</span>
+        <span class="total mono">/ {fmtClock($openSong?.song.duration_secs ?? 0, 0)}</span>
       </span>
     </button>
 
