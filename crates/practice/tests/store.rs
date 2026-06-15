@@ -305,6 +305,35 @@ fn open_migrates_v1_db_to_v2() {
                 end_secs REAL NOT NULL,
                 kind_json TEXT NOT NULL
             );
+            CREATE TABLE sections (
+                id INTEGER PRIMARY KEY,
+                song_id INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                start_secs REAL NOT NULL,
+                end_secs REAL NOT NULL,
+                position INTEGER NOT NULL
+            );
+            CREATE TABLE plans (
+                id INTEGER PRIMARY KEY,
+                song_id INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                steps_json TEXT NOT NULL
+            );
+            CREATE TABLE reps (
+                id INTEGER PRIMARY KEY,
+                loop_id INTEGER NOT NULL REFERENCES loops(id) ON DELETE CASCADE,
+                plan_id INTEGER REFERENCES plans(id) ON DELETE SET NULL,
+                mode TEXT NOT NULL,
+                rate REAL NOT NULL,
+                rating TEXT,
+                is_retest INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE resurfacing (
+                loop_id INTEGER PRIMARY KEY REFERENCES loops(id) ON DELETE CASCADE,
+                interval_idx INTEGER NOT NULL,
+                due_on TEXT NOT NULL
+            );
             INSERT INTO songs (title, path, file_hash, duration_secs)
             VALUES ('Old', '/tmp/old.wav', 'hash-v1', 60.0);",
         )

@@ -105,6 +105,18 @@ const SCHEMA_V6: &str = "
 ALTER TABLE loops ADD COLUMN name_override TEXT;
 ";
 
+/// v7: indexes on the foreign-key / lookup columns used by hot queries. Without
+/// these, every `WHERE song_id = ?` / `WHERE loop_id = ?` is a full-table scan;
+/// `retention`'s correlated subquery over `reps` was O(n²). `idx_reps_loop` is
+/// the priority — reps grows fastest (one row per practice rep).
+const SCHEMA_V7: &str = "
+CREATE INDEX IF NOT EXISTS idx_reps_loop ON reps(loop_id);
+CREATE INDEX IF NOT EXISTS idx_sections_song ON sections(song_id);
+CREATE INDEX IF NOT EXISTS idx_loops_song ON loops(song_id);
+CREATE INDEX IF NOT EXISTS idx_plans_song ON plans(song_id);
+CREATE INDEX IF NOT EXISTS idx_profiles_song ON profiles(song_id);
+";
+
 pub struct Store {
     conn: rusqlite::Connection,
 }
@@ -184,6 +196,14 @@ impl Store {
 
     fn init(conn: rusqlite::Connection) -> Result<Self> {
         conn.pragma_update(None, "foreign_keys", "ON")?;
+        // Durability/concurrency tuning. WAL + synchronous=NORMAL collapses the
+        // ~2 fsyncs-per-write of the default rollback journal down to far fewer,
+        // which is the single biggest write-latency lever for this single-writer
+        // desktop DB. (WAL is a no-op for :memory: connections used in tests.)
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+        conn.pragma_update(None, "synchronous", "NORMAL")?;
+        conn.pragma_update(None, "busy_timeout", 5000)?;
+        conn.pragma_update(None, "cache_size", -8000)?; // ~8 MB page cache
         let store = Self { conn };
         store.migrate()?;
         Ok(store)
@@ -217,6 +237,10 @@ impl Store {
             self.conn.execute_batch(SCHEMA_V6)?;
             self.conn.pragma_update(None, "user_version", 6)?;
         }
+        if version < 7 {
+            self.conn.execute_batch(SCHEMA_V7)?;
+            self.conn.pragma_update(None, "user_version", 7)?;
+        }
         Ok(())
     }
 
@@ -248,7 +272,7 @@ impl Store {
     }
 
     pub fn song_by_hash(&self, hash: &str) -> Result<Option<Song>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT id, title, artist, path, file_hash, duration_secs
              FROM songs WHERE file_hash = ?1",
         )?;
@@ -257,7 +281,7 @@ impl Store {
     }
 
     pub fn list_songs(&self) -> Result<Vec<Song>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT id, title, artist, path, file_hash, duration_secs
              FROM songs ORDER BY id",
         )?;
@@ -268,7 +292,7 @@ impl Store {
     }
 
     pub fn song_by_id(&self, id: SongId) -> Result<Option<Song>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT id, title, artist, path, file_hash, duration_secs
              FROM songs WHERE id = ?1",
         )?;
@@ -328,7 +352,7 @@ impl Store {
     }
 
     pub fn list_sections(&self, song_id: SongId) -> Result<Vec<Section>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT id, song_id, name, start_secs, end_secs, position
              FROM sections WHERE song_id = ?1 ORDER BY position",
         )?;
@@ -373,7 +397,7 @@ impl Store {
     }
 
     pub fn loop_by_id(&self, id: LoopId) -> Result<Option<LoopRegion>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT id, song_id, name, name_override, start_secs, end_secs, kind_json
              FROM loops WHERE id = ?1",
         )?;
@@ -418,7 +442,7 @@ impl Store {
     }
 
     pub fn list_loops(&self, song_id: SongId) -> Result<Vec<LoopRegion>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT id, song_id, name, name_override, start_secs, end_secs, kind_json
              FROM loops WHERE song_id = ?1 ORDER BY id",
         )?;
@@ -454,7 +478,7 @@ impl Store {
     }
 
     pub fn list_plans(&self, song_id: SongId) -> Result<Vec<Plan>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT id, song_id, name, steps_json FROM plans WHERE song_id = ?1 ORDER BY id",
         )?;
         let plans = stmt
@@ -501,9 +525,9 @@ impl Store {
     }
 
     pub fn all_resurfacing(&self) -> Result<Vec<Resurfacing>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT loop_id, interval_idx, due_on FROM resurfacing ORDER BY loop_id")?;
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT loop_id, interval_idx, due_on FROM resurfacing ORDER BY loop_id",
+        )?;
         let items = stmt
             .query_map([], |row| {
                 let due_on: String = row.get(2)?;
@@ -537,7 +561,7 @@ impl Store {
     }
 
     pub fn get_analysis(&self, song_id: SongId) -> Result<Option<Analysis>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT bpm, beats_json, downbeats_json, sections_json, engine
              FROM analysis WHERE song_id = ?1",
         )?;
@@ -569,7 +593,7 @@ impl Store {
     pub fn get_setting(&self, key: &str) -> Result<Option<serde_json::Value>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT value_json FROM settings WHERE key = ?1")?;
+            .prepare_cached("SELECT value_json FROM settings WHERE key = ?1")?;
         let mut rows = stmt.query_map(params![key], |row| {
             let v: String = row.get(0)?;
             serde_json::from_str(&v).map_err(json_err)
@@ -580,7 +604,7 @@ impl Store {
     pub fn all_settings(&self) -> Result<Vec<(String, serde_json::Value)>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT key, value_json FROM settings ORDER BY key")?;
+            .prepare_cached("SELECT key, value_json FROM settings ORDER BY key")?;
         let rows = stmt
             .query_map([], |row| {
                 let v: String = row.get(1)?;
@@ -617,16 +641,25 @@ impl Store {
             ],
             |row| row.get(0),
         )?;
-        self.conn.execute(
-            "DELETE FROM profiles WHERE id NOT IN
-                (SELECT id FROM profiles ORDER BY id DESC LIMIT 200)",
-            [],
-        )?;
+        // Cap the profiles table at 200 rows, but only pay for the trim once we
+        // actually exceed it (this runs after every heavy op). The `id <= …`
+        // form is index-friendly (PK), unlike the old `NOT IN (subquery)` which
+        // re-scanned the whole table on every single insert.
+        let count: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM profiles", [], |r| r.get(0))?;
+        if count > 200 {
+            self.conn.execute(
+                "DELETE FROM profiles WHERE id <=
+                    (SELECT id FROM profiles ORDER BY id DESC LIMIT 1 OFFSET 200)",
+                [],
+            )?;
+        }
         Ok(started)
     }
 
     pub fn list_profiles(&self, limit: i64) -> Result<Vec<crate::model::ProfileRun>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT op, song_id, started_at, total_ms, ok, error, device, engine, stages_json,
                 max_cpu_pct, max_gpu_util, max_vram_used_mb, vram_total_mb
              FROM profiles ORDER BY id DESC LIMIT ?1",
@@ -656,7 +689,7 @@ impl Store {
 
     /// Latest retest rating per loop — the retention metric.
     pub fn retention(&self, song_id: SongId) -> Result<Vec<(LoopId, Rating, String)>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT r.loop_id, r.rating, r.created_at FROM reps r
              JOIN loops l ON l.id = r.loop_id
              WHERE l.song_id = ?1 AND r.is_retest = 1 AND r.rating IS NOT NULL
@@ -786,5 +819,39 @@ mod tests {
             store.song_by_id(b.id).unwrap().is_some(),
             "other song untouched"
         );
+    }
+
+    #[test]
+    fn save_profile_caps_table_at_200_keeping_newest() {
+        let store = Store::open_in_memory().unwrap();
+        let mk = || crate::model::ProfileRun {
+            op: "analysis".into(),
+            song_id: None,
+            started_at: String::new(),
+            total_ms: 1,
+            ok: true,
+            error: None,
+            device: None,
+            engine: None,
+            max_cpu_pct: None,
+            max_gpu_util: None,
+            max_vram_used_mb: None,
+            vram_total_mb: None,
+            stages: vec![],
+        };
+        for _ in 0..205 {
+            store.save_profile(&mk()).unwrap();
+        }
+        let count: i64 = store
+            .conn
+            .query_row("SELECT COUNT(*) FROM profiles", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 200, "profiles table is capped at 200 rows");
+        // The newest rows survive: ids 6..=205 remain, 1..=5 were trimmed.
+        let min_id: i64 = store
+            .conn
+            .query_row("SELECT MIN(id) FROM profiles", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(min_id, 6, "the 5 oldest rows were trimmed");
     }
 }
