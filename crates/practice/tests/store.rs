@@ -109,6 +109,77 @@ fn loop_by_id_finds_one_or_none() {
 }
 
 #[test]
+fn loops_by_ids_batch_fetch() {
+    let (store, song) = store_with_song();
+    let mk = |name: &str| {
+        store
+            .insert_loop(
+                song.id,
+                NewLoop {
+                    name,
+                    name_override: None,
+                    start: 0.0,
+                    end: 1.0,
+                    kind: LoopKind::Manual,
+                },
+            )
+            .unwrap()
+    };
+    let a = mk("a");
+    let b = mk("b");
+    let _c = mk("c");
+
+    assert!(store.loops_by_ids(&[]).unwrap().is_empty());
+    let got = store.loops_by_ids(&[a.id, b.id, LoopId(999)]).unwrap();
+    let mut ids: Vec<i64> = got.iter().map(|l| l.id.0).collect();
+    ids.sort();
+    assert_eq!(
+        ids,
+        vec![a.id.0, b.id.0],
+        "fetches the existing ids, skips 999"
+    );
+}
+
+#[test]
+fn plan_by_id_point_lookup() {
+    let (store, song) = store_with_song();
+    let steps = vec![PlanStep::PlayReps {
+        loop_id: LoopId(1),
+        reps: 3,
+        curve: TempoCurve::Dwell { rate: 1.0 },
+    }];
+    let plan = store.save_plan(song.id, "p", &steps).unwrap();
+    assert_eq!(store.plan_by_id(plan.id).unwrap(), Some(plan));
+    assert!(store.plan_by_id(PlanId(999)).unwrap().is_none());
+}
+
+#[test]
+fn resurfacing_by_loop_point_lookup() {
+    let (store, song) = store_with_song();
+    let l = store
+        .insert_loop(
+            song.id,
+            NewLoop {
+                name: "r",
+                name_override: None,
+                start: 0.0,
+                end: 1.0,
+                kind: LoopKind::Manual,
+            },
+        )
+        .unwrap();
+    assert!(store.resurfacing_by_loop(l.id).unwrap().is_none());
+    let r = Resurfacing {
+        loop_id: l.id,
+        interval_idx: 2,
+        due_on: date!(2026 - 06 - 15),
+    };
+    store.upsert_resurfacing(r).unwrap();
+    assert_eq!(store.resurfacing_by_loop(l.id).unwrap(), Some(r));
+    assert!(store.resurfacing_by_loop(LoopId(999)).unwrap().is_none());
+}
+
+#[test]
 fn loop_override_roundtrips() {
     let (store, song) = store_with_song();
     let l = store

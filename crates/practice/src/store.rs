@@ -396,24 +396,50 @@ impl Store {
         })
     }
 
+    const LOOP_COLS: &'static str =
+        "id, song_id, name, name_override, start_secs, end_secs, kind_json";
+
+    fn loop_from_row(row: &rusqlite::Row) -> rusqlite::Result<LoopRegion> {
+        let kind_json: String = row.get(6)?;
+        Ok(LoopRegion {
+            id: LoopId(row.get(0)?),
+            song_id: SongId(row.get(1)?),
+            name: row.get(2)?,
+            name_override: row.get(3)?,
+            start: row.get(4)?,
+            end: row.get(5)?,
+            kind: serde_json::from_str(&kind_json).map_err(json_err)?,
+        })
+    }
+
     pub fn loop_by_id(&self, id: LoopId) -> Result<Option<LoopRegion>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT id, song_id, name, name_override, start_secs, end_secs, kind_json
              FROM loops WHERE id = ?1",
         )?;
-        let mut rows = stmt.query_map(params![id.0], |row| {
-            let kind_json: String = row.get(6)?;
-            Ok(LoopRegion {
-                id: LoopId(row.get(0)?),
-                song_id: SongId(row.get(1)?),
-                name: row.get(2)?,
-                name_override: row.get(3)?,
-                start: row.get(4)?,
-                end: row.get(5)?,
-                kind: serde_json::from_str(&kind_json).map_err(json_err)?,
-            })
-        })?;
+        let mut rows = stmt.query_map(params![id.0], Self::loop_from_row)?;
         rows.next().transpose().map_err(Into::into)
+    }
+
+    /// Batch loop fetch by id (single `IN (...)` query) — avoids the N+1 of
+    /// calling `loop_by_id` in a loop. Result order is unspecified; callers that
+    /// need a specific order should index by `id`.
+    pub fn loops_by_ids(&self, ids: &[LoopId]) -> Result<Vec<LoopRegion>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders = vec!["?"; ids.len()].join(",");
+        // Dynamic placeholder count → not prepare_cached (SQL varies by len).
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {} FROM loops WHERE id IN ({placeholders})",
+            Self::LOOP_COLS
+        ))?;
+        let params: Vec<&dyn rusqlite::ToSql> =
+            ids.iter().map(|id| &id.0 as &dyn rusqlite::ToSql).collect();
+        let loops = stmt
+            .query_map(params.as_slice(), Self::loop_from_row)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(loops)
     }
 
     /// Rename and/or move a loop in place; kind is untouched. `name` is the
@@ -447,18 +473,7 @@ impl Store {
              FROM loops WHERE song_id = ?1 ORDER BY id",
         )?;
         let loops = stmt
-            .query_map(params![song_id.0], |row| {
-                let kind_json: String = row.get(6)?;
-                Ok(LoopRegion {
-                    id: LoopId(row.get(0)?),
-                    song_id: SongId(row.get(1)?),
-                    name: row.get(2)?,
-                    name_override: row.get(3)?,
-                    start: row.get(4)?,
-                    end: row.get(5)?,
-                    kind: serde_json::from_str(&kind_json).map_err(json_err)?,
-                })
-            })?
+            .query_map(params![song_id.0], Self::loop_from_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(loops)
     }
@@ -493,6 +508,24 @@ impl Store {
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(plans)
+    }
+
+    /// Resolve a single plan by id (PK probe) — avoids scanning every song's
+    /// plans (and parsing every steps_json) just to find one.
+    pub fn plan_by_id(&self, id: PlanId) -> Result<Option<Plan>> {
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT id, song_id, name, steps_json FROM plans WHERE id = ?1")?;
+        let mut rows = stmt.query_map(params![id.0], |row| {
+            let steps_json: String = row.get(3)?;
+            Ok(Plan {
+                id: PlanId(row.get(0)?),
+                song_id: SongId(row.get(1)?),
+                name: row.get(2)?,
+                steps: serde_json::from_str(&steps_json).map_err(json_err)?,
+            })
+        })?;
+        rows.next().transpose().map_err(Into::into)
     }
 
     pub fn record_rep(&self, r: NewRep) -> Result<()> {
@@ -539,6 +572,23 @@ impl Store {
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(items)
+    }
+
+    /// One resurfacing row by loop id (PK probe) — avoids loading the whole
+    /// table to read a single ladder state.
+    pub fn resurfacing_by_loop(&self, loop_id: LoopId) -> Result<Option<Resurfacing>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT loop_id, interval_idx, due_on FROM resurfacing WHERE loop_id = ?1",
+        )?;
+        let mut rows = stmt.query_map(params![loop_id.0], |row| {
+            let due_on: String = row.get(2)?;
+            Ok(Resurfacing {
+                loop_id: LoopId(row.get(0)?),
+                interval_idx: row.get::<_, i64>(1)? as usize,
+                due_on: time::Date::parse(&due_on, DATE_FMT).map_err(date_err)?,
+            })
+        })?;
+        rows.next().transpose().map_err(Into::into)
     }
 
     /// Upsert the cached analysis for a song (re-analysis overwrites).

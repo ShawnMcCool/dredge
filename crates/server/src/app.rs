@@ -517,12 +517,7 @@ impl App {
     /// Advance the resurfacing ladder after a rated practice — shared by
     /// `rep.rate` and `practice.quick_rate`.
     fn reschedule(&mut self, loop_id: LoopId, rating: Rating) -> Result<Resurfacing, String> {
-        let prev = self
-            .store
-            .all_resurfacing()
-            .err_str()?
-            .into_iter()
-            .find(|r| r.loop_id == loop_id);
+        let prev = self.store.resurfacing_by_loop(loop_id).err_str()?;
         let next = practice::schedule::next_state(prev, loop_id, rating, today_utc());
         self.store.upsert_resurfacing(next).err_str()?;
         Ok(next)
@@ -530,12 +525,20 @@ impl App {
 
     fn due_list(&mut self) -> Result<Value, String> {
         let items = self.store.all_resurfacing().err_str()?;
-        let mut out = Vec::new();
-        for id in practice::schedule::due(&items, today_utc()) {
-            if let Some(l) = self.store.loop_by_id(id).err_str()? {
-                out.push(json!({"loop_id": l.id, "name": l.name, "song_id": l.song_id}));
-            }
-        }
+        let due_ids = practice::schedule::due(&items, today_utc());
+        // One batched fetch instead of a loop_by_id per due loop (N+1).
+        let by_id: HashMap<LoopId, _> = self
+            .store
+            .loops_by_ids(&due_ids)
+            .err_str()?
+            .into_iter()
+            .map(|l| (l.id, l))
+            .collect();
+        let out: Vec<Value> = due_ids
+            .iter()
+            .filter_map(|id| by_id.get(id))
+            .map(|l| json!({"loop_id": l.id, "name": l.name, "song_id": l.song_id}))
+            .collect();
         Ok(Value::Array(out))
     }
 
@@ -703,18 +706,10 @@ impl App {
     }
 
     fn plan_row(&self, id: PlanId) -> Result<Plan, String> {
-        for song in self.store.list_songs().err_str()? {
-            if let Some(plan) = self
-                .store
-                .list_plans(song.id)
-                .err_str()?
-                .into_iter()
-                .find(|p| p.id == id)
-            {
-                return Ok(plan);
-            }
-        }
-        Err(format!("plan not found: {}", id.0))
+        self.store
+            .plan_by_id(id)
+            .err_str()?
+            .ok_or_else(|| format!("plan not found: {}", id.0))
     }
 
     fn plan_stop(&mut self) -> Result<Value, String> {
