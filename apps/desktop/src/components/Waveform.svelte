@@ -33,6 +33,7 @@
   import { hexToHue, labelColor } from "../lib/waveform-colors";
   import {
     adjustWindow,
+    followView,
     makePlayheadClock,
     secToX,
     snapToGrid,
@@ -60,6 +61,17 @@
   /** Lane span whose bounds currently drive the transport loop (clicked). */
   let activeSpan: { start: number; end: number } | null = $state(null);
 
+  // "lock viewport to playhead": while playing, scroll the window so the
+  // playhead stays within the centre dead-zone band. Ephemeral local state —
+  // off by default, reset on new song / workspace reset. A manual pan turns it
+  // off (the pointer handlers below); zoom stays follow-aware.
+  const FOLLOW_MARGIN = 0.2; // free-roam middle 60%, scroll past the edge 20%
+  let follow = $state(false);
+  // last playhead drawn — used as the zoom anchor while following so a zoom
+  // can't shove the playhead out of view (recomputing the smoothed clock here
+  // would perturb its interpolation, so reuse what draw() last produced).
+  let lastPlayhead = 0;
+
   // pointer interaction state
   type Drag =
     | { mode: "select"; anchorX: number; moved: boolean }
@@ -85,6 +97,7 @@
     if (open && open.song.id !== lastSongId) {
       lastSongId = open.song.id;
       activeSpan = null;
+      follow = false;
       fitToSong(open);
     }
   });
@@ -97,6 +110,7 @@
     if (n !== lastReset) {
       lastReset = n;
       activeSpan = null;
+      follow = false;
       const open = get(openSong);
       if (open) fitToSong(open);
     }
@@ -197,6 +211,14 @@
     if (!open) return; // empty state is the .wave-empty HTML overlay
 
     const playhead = tickPlayhead(playClock, get(position), performance.now());
+    lastPlayhead = playhead;
+    // lock viewport to playhead: shift the window before everything else reads
+    // `view` this frame, so the wave, lane and playhead all draw against the
+    // scrolled window. followView returns the same ref when no shift is needed.
+    if (follow && get(position).playing) {
+      const next = followView(view, playhead, duration(), FOLLOW_MARGIN);
+      if (next !== view) view = next;
+    }
     const playheadX = secToX(view, playhead);
     const mid = LANE_H + WAVE_H / 2;
     const peaks = open.peaks;
@@ -569,14 +591,19 @@
     if (!get(openSong)) return;
     e.preventDefault();
     if (e.shiftKey) {
-      // pan — same clamp as the scrollbar, via the shared window helper
+      // pan — same clamp as the scrollbar, via the shared window helper. A
+      // manual pan means the user is taking control → drop follow.
+      follow = false;
       const span = view.endSec - view.startSec;
       const shift = (e.deltaY / view.width) * span;
       const win = adjustWindow("pan", view.startSec + shift, view.endSec + shift, duration(), MIN_WIN);
       view = { ...view, ...win };
     } else {
+      // zoom stays follow-aware: anchor on the playhead while following so the
+      // zoom can't push it out of the window (else anchor on the cursor).
       const factor = e.deltaY > 0 ? 1.25 : 0.8;
-      view = zoom(view, xToSec(view, canvasX(e)), factor, duration());
+      const anchor = follow ? lastPlayhead : xToSec(view, canvasX(e));
+      view = zoom(view, anchor, factor, duration());
     }
   }
 
@@ -649,6 +676,7 @@
   }
   function onScrollDown(e: PointerEvent) {
     if (dur <= 0) return;
+    follow = false; // any scrollbar pan/resize/recenter is a manual override
     const w = scrollEl.clientWidth;
     const px = scrollPx(e);
     const x0 = (view.startSec / dur) * w;
@@ -766,6 +794,24 @@
       </span>
     </div>
   {/if}
+  {#if $openSong && (hoverPt || follow)}
+    <!-- lock viewport to playhead: hover-revealed, stays lit (cyan) while on -->
+    <button
+      class="follow-toggle"
+      class:on={follow}
+      style="top: {LANE_H + 4}px;"
+      onclick={() => (follow = !follow)}
+      title={follow ? "following playhead — click to unlock" : "lock viewport to playhead"}
+      aria-label="lock viewport to playhead"
+      aria-pressed={follow}
+      transition:fade={{ duration: 120 }}
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="5.5" />
+        <line x1="12" y1="2.5" x2="12" y2="21.5" />
+      </svg>
+    </button>
+  {/if}
   <div
     class="scrollbar"
     role="scrollbar"
@@ -875,6 +921,32 @@
     border-left: 1px solid var(--line);
     padding-left: 4px;
     margin-left: 1px;
+  }
+
+  .follow-toggle {
+    position: absolute;
+    right: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px;
+    line-height: 0;
+    background: color-mix(in srgb, var(--bg) 80%, transparent);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .follow-toggle svg {
+    width: 16px;
+    height: 16px;
+  }
+  .follow-toggle:hover {
+    color: var(--fg);
+  }
+  .follow-toggle.on {
+    color: var(--accent);
+    border-color: var(--accent-dim);
   }
 
   /* thin indeterminate bar across the top of the stage while a new song

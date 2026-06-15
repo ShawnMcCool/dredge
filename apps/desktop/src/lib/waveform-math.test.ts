@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   adjustWindow,
+  followView,
   makePlayheadClock,
   playheadSecs,
   secToX,
@@ -134,6 +135,51 @@ describe("zoom", () => {
   it("never moves the window start below zero", () => {
     const out = zoom({ startSec: 0, endSec: 20, width: 800 }, 1, 2, duration);
     expect(out.startSec).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("followView", () => {
+  const duration = 100;
+  // 20 s span; margin 0.2 → dead-zone band is [start+4, end-4]
+  const v: View = { startSec: 10, endSec: 30, width: 800 };
+
+  it("does not scroll while the playhead is inside the band", () => {
+    expect(followView(v, 15, duration, 0.2)).toBe(v); // just inside left edge
+    expect(followView(v, 25, duration, 0.2)).toBe(v); // just inside right edge
+    expect(followView(v, 20, duration, 0.2)).toBe(v); // centre
+  });
+
+  it("scrolls forward, pinning the playhead at the right boundary", () => {
+    const out = followView(v, 28, duration, 0.2); // past hi (26)
+    expect(out).not.toBe(v);
+    expect(out.endSec - out.startSec).toBeCloseTo(20, 9); // span preserved
+    // playhead now sits on the right dead-zone boundary (end - margin*span)
+    expect(out.endSec - 0.2 * 20).toBeCloseTo(28, 9);
+  });
+
+  it("scrolls backward (e.g. a loop wrap), pinning at the left boundary", () => {
+    const out = followView(v, 12, duration, 0.2); // before lo (14)
+    expect(out).not.toBe(v);
+    expect(out.startSec + 0.2 * 20).toBeCloseTo(12, 9);
+  });
+
+  it("clamps at song start without overscrolling", () => {
+    const near: View = { startSec: 2, endSec: 22, width: 800 };
+    const out = followView(near, 1, duration, 0.2); // would want start = -3
+    expect(out.startSec).toBe(0);
+    expect(out.endSec).toBeCloseTo(20, 9);
+  });
+
+  it("clamps at song end without overscrolling", () => {
+    const near: View = { startSec: 78, endSec: 98, width: 800 };
+    const out = followView(near, 99, duration, 0.2); // would push past the end
+    expect(out.endSec).toBeLessThanOrEqual(duration);
+    expect(out.startSec).toBeCloseTo(80, 9); // duration - span
+  });
+
+  it("never scrolls when the whole song already fits", () => {
+    const whole: View = { startSec: 0, endSec: 100, width: 800 };
+    expect(followView(whole, 90, duration, 0.2)).toBe(whole);
   });
 });
 

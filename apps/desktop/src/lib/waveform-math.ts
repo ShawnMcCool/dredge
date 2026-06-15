@@ -79,6 +79,30 @@ export function zoom(v: View, anchorSec: number, factor: number, duration: numbe
   return { startSec, endSec: startSec + newSpan, width: v.width };
 }
 
+/** Edge dead-zone follow: keep the playhead inside the centre band of the
+ *  viewport by shifting the window (span preserved), clamped to [0, duration].
+ *  `margin` is the fraction of the span reserved at each edge — 0.2 ⇒ the
+ *  playhead roams freely across the middle 60%, and the window only scrolls
+ *  once it crosses into a margin. Returns the SAME view object (===) when no
+ *  shift is needed, so callers can skip reassignment cheaply. */
+export function followView(
+  v: View,
+  playheadSec: number,
+  duration: number,
+  margin: number,
+): View {
+  const span = v.endSec - v.startSec;
+  const lo = v.startSec + margin * span; // left dead-zone boundary
+  const hi = v.endSec - margin * span; // right dead-zone boundary
+  let startSec: number;
+  if (playheadSec > hi) startSec = playheadSec - (1 - margin) * span;
+  else if (playheadSec < lo) startSec = playheadSec - margin * span;
+  else return v; // already in the band → no scroll
+  startSec = Math.min(Math.max(startSec, 0), Math.max(duration - span, 0));
+  if (startSec === v.startSec) return v; // clamped against an edge → no change
+  return { startSec, endSec: startSec + span, width: v.width };
+}
+
 export type GridSubdivision = "bar" | "beat" | "eighth";
 
 /** The grid times for a subdivision: bars = downbeats, beats = beats, eighths
