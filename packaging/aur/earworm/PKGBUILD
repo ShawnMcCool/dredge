@@ -1,0 +1,40 @@
+# Maintainer: Shawn McCool <shawn@mccool.email>
+pkgname=earworm
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Ear-first practice looper: loop sections, slow them down pitch-preserving, drill passages"
+arch=('x86_64')
+url="https://github.com/ShawnMcCool/earworm"
+license=('MIT')
+depends=('rubberband' 'pipewire' 'webkit2gtk-4.1' 'gtk3')
+makedepends=('rust' 'nodejs' 'pnpm' 'just' 'clang' 'pkgconf' 'git')
+optdepends=('uv: bootstrap the analyze/songformer ML venvs (beats, sections)'
+            'python: ML analysis runtime'
+            'demucs: 4-stem separation (vocals/drums/bass/other)')
+provides=('earworm')
+conflicts=('earworm-bin')
+source=("git+https://github.com/ShawnMcCool/earworm.git#tag=v${pkgver}")
+sha256sums=('SKIP')
+
+build() {
+  cd "${srcdir}/${pkgname}"
+  # Headless daemon.
+  cargo build -p server --release
+  # Desktop app — install frontend deps, then build without OS bundling
+  # (we install the raw binaries ourselves below).
+  cd apps/desktop
+  pnpm install --frozen-lockfile
+  pnpm tauri build --no-bundle
+}
+
+package() {
+  cd "${srcdir}/${pkgname}"
+  install -Dm755 target/release/earworm                       "${pkgdir}/usr/bin/earworm"
+  install -Dm755 target/release/earwormd                      "${pkgdir}/usr/bin/earwormd"
+  install -Dm755 scripts/analyze                              "${pkgdir}/usr/bin/earworm-analyze"
+  install -Dm755 scripts/earworm-enable-ml                    "${pkgdir}/usr/bin/earworm-enable-ml"
+  install -Dm644 scripts/analyze_impl.py                      "${pkgdir}/usr/lib/earworm/analyze_impl.py"
+  install -Dm644 scripts/songformer_impl.py                   "${pkgdir}/usr/lib/earworm/songformer_impl.py"
+  install -Dm644 earworm.desktop                              "${pkgdir}/usr/share/applications/earworm.desktop"
+  install -Dm644 apps/desktop/src-tauri/icons/128x128@2x.png  "${pkgdir}/usr/share/icons/hicolor/256x256/apps/earworm.png"
+}

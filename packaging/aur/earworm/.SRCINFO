@@ -1,0 +1,27 @@
+pkgbase = earworm
+	pkgdesc = Ear-first practice looper: loop sections, slow them down pitch-preserving, drill passages
+	pkgver = 0.1.0
+	pkgrel = 1
+	url = https://github.com/ShawnMcCool/earworm
+	arch = x86_64
+	license = MIT
+	makedepends = rust
+	makedepends = nodejs
+	makedepends = pnpm
+	makedepends = just
+	makedepends = clang
+	makedepends = pkgconf
+	makedepends = git
+	depends = rubberband
+	depends = pipewire
+	depends = webkit2gtk-4.1
+	depends = gtk3
+	optdepends = uv: bootstrap the analyze/songformer ML venvs (beats, sections)
+	optdepends = python: ML analysis runtime
+	optdepends = demucs: 4-stem separation (vocals/drums/bass/other)
+	provides = earworm
+	conflicts = earworm-bin
+	source = git+https://github.com/ShawnMcCool/earworm.git#tag=v0.1.0
+	sha256sums = SKIP
+
+pkgname = earworm
