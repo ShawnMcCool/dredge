@@ -22,6 +22,29 @@ daemon:
     @test -x target/release/earwormd || cargo build -p server --release
     target/release/earwormd
 
+# Cut a release: bump the canonical version + tag (CI builds the artifacts), e.g.:
+#   just release 0.2.0
+release version:
+    #!/usr/bin/env python3
+    import json, re, subprocess, sys
+    v = "{{version}}"
+    if not re.fullmatch(r"\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?", v):
+        sys.exit(f"not a semver: {v} (want MAJOR.MINOR.PATCH[-pre])")
+    if subprocess.run(["git", "diff", "--quiet"]).returncode or \
+       subprocess.run(["git", "diff", "--cached", "--quiet"]).returncode:
+        sys.exit("working tree not clean — commit or stash first")
+    conf = "apps/desktop/src-tauri/tauri.conf.json"
+    with open(conf) as f:
+        data = json.load(f)
+    data["version"] = v
+    with open(conf, "w") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+    subprocess.run(["git", "add", conf], check=True)
+    subprocess.run(["git", "commit", "-m", f"chore(release): v{v}"], check=True)
+    subprocess.run(["git", "tag", "-a", f"v{v}", "-m", f"earworm v{v}"], check=True)
+    print(f"tagged v{v} — push with: git push origin main --follow-tags")
+
 # All tests: cargo workspace + vitest
 test:
     cargo test --workspace
