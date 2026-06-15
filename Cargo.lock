@@ -871,6 +871,7 @@ version = "0.1.0"
 dependencies = [
  "arc-swap",
  "blake3",
+ "bytemuck",
  "dirs",
  "hound",
  "libspa",

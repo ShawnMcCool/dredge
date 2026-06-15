@@ -13,6 +13,10 @@ use spa::pod::Pod;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
+// The render fast-path casts f32 samples straight to F32LE output bytes; that is
+// only correct on a little-endian host.
+const _: () = assert!(cfg!(target_endian = "little"));
+
 /// Upper bound on frames per process callback we can render into.
 const MAX_QUANTUM_FRAMES: usize = 8192;
 
@@ -141,9 +145,12 @@ fn run(
                     }
                     None => out.fill(0.0),
                 }
-                for (i, s) in out.iter().enumerate() {
-                    slice[i * 4..i * 4 + 4].copy_from_slice(&s.to_le_bytes());
-                }
+                // The mapped buffer is F32LE (set below) and the host is
+                // little-endian (asserted at module load), so render_buf's bytes
+                // are already in destination layout — one bulk memcpy instead of
+                // a per-sample to_le_bytes loop (~2048 tiny copies per quantum).
+                let bytes: &[u8] = bytemuck::cast_slice(&out[..]);
+                slice[..bytes.len()].copy_from_slice(bytes);
                 n_frames
             } else {
                 0
