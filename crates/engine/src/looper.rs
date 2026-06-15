@@ -64,17 +64,21 @@ impl Looper {
         let total = self.set.frames();
         let frames_req = out.len() / CHANNELS;
         let mut info = ReadInfo::default();
-        for f in 0..frames_req {
+        while info.frames < frames_req {
+            let remaining = frames_req - info.frames;
+            let base = info.frames * CHANNELS;
             match self.region {
                 None => {
                     if self.pos >= total {
                         info.finished = true;
                         break;
                     }
-                    let (l, r) = self.set.frame(self.pos);
-                    out[f * CHANNELS] = l;
-                    out[f * CHANNELS + 1] = r;
-                    self.pos += 1;
+                    // contiguous run up to end-of-song
+                    let chunk = remaining.min(total - self.pos);
+                    self.set
+                        .mix_into(self.pos, &mut out[base..base + chunk * CHANNELS]);
+                    self.pos += chunk;
+                    info.frames += chunk;
                 }
                 Some((start, end)) => {
                     let len = end - start;
@@ -84,18 +88,26 @@ impl Looper {
                     }
                     let xfade = XFADE_FRAMES.min(len / 4);
                     let fade_start = end - xfade;
-                    if self.pos >= fade_start {
+                    if self.pos < fade_start {
+                        // contiguous non-crossfade run up to the fade boundary
+                        let chunk = remaining.min(fade_start - self.pos);
+                        self.set
+                            .mix_into(self.pos, &mut out[base..base + chunk * CHANNELS]);
+                        self.pos += chunk;
+                        info.frames += chunk;
+                    } else {
                         // blend tail with head (linear / equal-gain: the two
                         // sides are correlated material from the same song,
                         // so sum-to-one gains avoid a mid-fade level bulge
-                        // and keep the seam continuous)
+                        // and keep the seam continuous). One frame at a time —
+                        // the blend reads two source positions.
                         let k = self.pos - fade_start;
                         let t = (k as f32 + 0.5) / xfade.max(1) as f32;
                         let (g_out, g_in) = (1.0 - t, t);
                         let (tl, tr) = self.set.frame(self.pos);
                         let (hl, hr) = self.set.frame(start + k);
-                        out[f * CHANNELS] = tl * g_out + hl * g_in;
-                        out[f * CHANNELS + 1] = tr * g_out + hr * g_in;
+                        out[base] = tl * g_out + hl * g_in;
+                        out[base + 1] = tr * g_out + hr * g_in;
                         self.pos += 1;
                         info.frames += 1;
                         if self.pos >= end {
@@ -105,16 +117,9 @@ impl Looper {
                             // observes every wrap, even for tiny regions
                             return info;
                         }
-                        continue;
-                    } else {
-                        let (l, r) = self.set.frame(self.pos);
-                        out[f * CHANNELS] = l;
-                        out[f * CHANNELS + 1] = r;
-                        self.pos += 1;
                     }
                 }
             }
-            info.frames += 1;
         }
         info
     }

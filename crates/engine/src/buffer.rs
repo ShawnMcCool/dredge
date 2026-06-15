@@ -60,6 +60,22 @@ impl StemSet {
         }
         (l, r)
     }
+
+    /// Mix `out.len() / CHANNELS` contiguous frames starting at source frame
+    /// `start` into `out` (overwrites). Accumulates per stem over a contiguous
+    /// slice — autovectorizes, unlike the per-frame `frame()` inner loop — so
+    /// it's the fast path for the common no-crossfade portion of playback.
+    /// `start` and the run length must stay within `frames()`.
+    pub fn mix_into(&self, start: usize, out: &mut [f32]) {
+        out.fill(0.0);
+        let base = start * CHANNELS;
+        for (stem, &gain) in self.stems.iter().zip(&self.gains) {
+            let src = &stem.data[base..base + out.len()];
+            for (o, s) in out.iter_mut().zip(src) {
+                *o += s * gain;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -92,6 +108,25 @@ mod tests {
         let (l, r) = set.frame(3);
         assert!((l - 0.5).abs() < 1e-6, "l = {l}");
         assert!((r - 0.5).abs() < 1e-6, "r = {r}");
+    }
+
+    #[test]
+    fn mix_into_matches_per_frame_mix() {
+        let mut set = StemSet::new(vec![
+            SongBuffer {
+                data: (0..20).map(|i| i as f32).collect(), // 10 frames
+            },
+            SongBuffer {
+                data: (0..20).map(|i| (i * 2) as f32).collect(),
+            },
+        ]);
+        set.gains = vec![1.0, 0.5];
+        let mut out = vec![0.0f32; 6 * CHANNELS];
+        set.mix_into(2, &mut out); // frames 2..8
+        for (f, frame) in out.chunks_exact(CHANNELS).enumerate() {
+            let (l, r) = set.frame(2 + f);
+            assert!((frame[0] - l).abs() < 1e-6 && (frame[1] - r).abs() < 1e-6);
+        }
     }
 
     #[test]
