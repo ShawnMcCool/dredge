@@ -105,8 +105,15 @@
     return get(openSong)?.song.duration_secs ?? 0;
   }
 
-  function css(name: string): string {
-    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  // laneSpans is a pure function of the open song; memoize on the song object's
+  // identity so the per-redraw draw and the per-pointer-move hit-tests don't
+  // rebuild the array every call.
+  let laneSpansCache: { open: OpenSong; spans: LaneSpan[] } | null = null;
+  function spansFor(open: OpenSong): LaneSpan[] {
+    if (laneSpansCache?.open !== open) {
+      laneSpansCache = { open, spans: laneSpans(open) };
+    }
+    return laneSpansCache.spans;
   }
 
   function loopBounds(l: LoopRegion): { start: number; end: number } {
@@ -119,6 +126,45 @@
     return { start: l.start, end: l.end };
   }
 
+  // Demand-driven redraw: instead of an unconditional 60fps RAF (which repaints
+  // an identical canvas while paused/idle), schedule a single frame on demand
+  // and keep animating ONLY while playing (so the interpolated playhead stays
+  // smooth). Everything draw() reads reactively is wired to requestRedraw via
+  // the $effect below; the non-reactive `drag`/`pendingResize` are nudged from
+  // the pointer handlers.
+  let rafPending = false;
+  let rafId = 0;
+  function paint() {
+    rafPending = false;
+    draw();
+    if (get(position).playing) {
+      rafPending = true;
+      rafId = requestAnimationFrame(paint);
+    }
+  }
+  function requestRedraw() {
+    if (rafPending) return;
+    rafPending = true;
+    rafId = requestAnimationFrame(paint);
+  }
+
+  // Repaint whenever any reactive input to draw() changes. While playing,
+  // $position ticks keep arriving but the paint loop is already self-sustaining,
+  // so requestRedraw is a no-op; while paused, position is steady (server gates
+  // unchanged positions) so this settles to zero repaints.
+  $effect(() => {
+    void $openSong;
+    void $position;
+    void $selection;
+    void $currentLoop;
+    void $gridVisible;
+    void $gridLines;
+    void $gridSubdivision;
+    void view;
+    void activeSpan;
+    requestRedraw();
+  });
+
   function draw() {
     const ctx = canvas?.getContext("2d");
     if (!ctx) return;
@@ -127,17 +173,20 @@
     const w = view.width;
     const open = get(openSong);
 
-    // theme colors, read once per frame: draw runs ~60fps and some css() uses
-    // sit inside per-beat / per-section loops (getComputedStyle is not free).
+    // theme colors, read once per frame from a single getComputedStyle (each
+    // css() call is its own getComputedStyle, and some reads sit inside
+    // per-beat / per-section loops — keep it to one computed-style lookup).
+    const cs = getComputedStyle(document.documentElement);
+    const v = (name: string) => cs.getPropertyValue(name).trim();
     const c = {
-      bg: css("--bg"),
-      wave: css("--wave"),
-      muted: css("--muted"),
-      line: css("--line"),
-      accent: css("--accent"),
-      accentDim: css("--accent-dim"),
-      fg: css("--fg"),
-      mono: css("--mono"),
+      bg: v("--bg"),
+      wave: v("--wave"),
+      muted: v("--muted"),
+      line: v("--line"),
+      accent: v("--accent"),
+      accentDim: v("--accent-dim"),
+      fg: v("--fg"),
+      mono: v("--mono"),
     };
 
     ctx.fillStyle = c.bg;
@@ -274,7 +323,7 @@
     // suggestions dashed/dimmer/italic; clicked span gets a second fill pass.
     // Hues are derived from the live accent so the lane re-tints with the theme.
     const baseHue = hexToHue(c.accent);
-    for (const s of laneSpans(open)) {
+    for (const s of spansFor(open)) {
       const x0 = secToX(view, s.start);
       const x1 = secToX(view, s.end);
       if (x1 < 0 || x0 > w) continue;
@@ -316,13 +365,8 @@
   }
 
   onMount(() => {
-    let raf = 0;
-    const frame = () => {
-      draw();
-      raf = requestAnimationFrame(frame);
-    };
-    raf = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(raf);
+    requestRedraw(); // initial paint; subsequent ones are demand-driven
+    return () => cancelAnimationFrame(rafId);
   });
 
   // store-reading wrappers around the pure hit-testers in lib/waveform-hit.ts
@@ -356,13 +400,13 @@
   /** Lane span containing a time (used while dragging across headers). */
   function spanAtTime(sec: number): { start: number; end: number } | null {
     const open = get(openSong);
-    return open ? spanAt(laneSpans(open), sec) : null;
+    return open ? spanAt(spansFor(open), sec) : null;
   }
 
   /** Structure-lane span under a canvas point (lane y-band only). */
   function hitLaneSpan(x: number, y: number): LaneSpan | null {
     const open = get(openSong);
-    return open ? hitLane(laneSpans(open), view, x, y, LANE_H) : null;
+    return open ? hitLane(spansFor(open), view, x, y, LANE_H) : null;
   }
 
   function onPointerDown(e: PointerEvent) {
@@ -426,6 +470,7 @@
     }
     if (drag.mode === "zoom") {
       drag.curX = x;
+      requestRedraw(); // zoom preview box lives in non-reactive `drag`
       return;
     }
     if (drag.mode === "lane") {
@@ -444,6 +489,7 @@
     if (drag.mode === "resize") {
       if (drag.edge === "start") drag.start = Math.min(secs, drag.end - 0.05);
       else drag.end = Math.max(secs, drag.start + 0.05);
+      requestRedraw(); // resize bounds live in non-reactive `drag`
     } else {
       if (Math.abs(x - drag.anchorX) >= CLICK_PX) drag.moved = true;
       if (drag.moved) {
@@ -491,9 +537,11 @@
       if (d.start !== d.loop.start || d.end !== d.loop.end) {
         // pin the new bounds visually until the store reflects them, then release
         pendingResize = { id: d.loop.id, start: d.start, end: d.end };
+        requestRedraw(); // pinned bounds live in non-reactive `pendingResize`
         const id = d.loop.id;
         void actions.updateLoop(id, { start: d.start, end: d.end }).finally(() => {
           if (pendingResize?.id === id) pendingResize = null;
+          requestRedraw(); // repaint once the store round-trip releases the pin
         });
       }
     } else if (!d.moved) {
