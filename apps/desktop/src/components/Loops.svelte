@@ -1,6 +1,7 @@
 <script lang="ts">
   import { actions, currentLoop, openSong } from "../lib/stores";
   import Button from "../lib/ui/Button.svelte";
+  import EmptyState from "../lib/ui/EmptyState.svelte";
 
   let renamingId = $state<number | null>(null);
   let renameValue = $state("");
@@ -32,7 +33,7 @@
 
 <h2>loops</h2>
 {#if !$openSong}
-  <p class="empty">open a song first</p>
+  <EmptyState>open a song first</EmptyState>
 {:else}
   <ul>
     {#each $openSong.loops as l (l.id)}
@@ -85,10 +86,6 @@
 {/if}
 
 <style>
-  .empty {
-    font-size: 11px;
-    color: var(--muted);
-  }
 
   .row {
     display: flex;

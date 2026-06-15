@@ -10,6 +10,7 @@
     type AnalysisSection,
   } from "../lib/stores";
   import Button from "../lib/ui/Button.svelte";
+  import EmptyState from "../lib/ui/EmptyState.svelte";
   import Modal from "../lib/ui/Modal.svelte";
 
   interface Row {
@@ -165,7 +166,7 @@
 </div>
 
 {#if !$openSong}
-  <p class="empty-line">open a song first</p>
+  <EmptyState>open a song first</EmptyState>
 {:else}
   {#if metaParts.length}
     <div class="meta mono">
@@ -207,16 +208,17 @@
     </div>
     {#if $analysisError}<p class="error">{$analysisError}</p>{/if}
   {:else if rows.length === 0}
-    <div class="cta">
-      <div class="cta-title">not analyzed yet</div>
-      <p class="cta-sub">detect beats, bars, and song sections — the structure shows up here once it's done.</p>
-      {#if running}
-        <span class="analyzing mono">analyzing…</span>
-      {:else}
-        <Button accent onclick={() => void actions.prepare()}>Analyze track</Button>
-      {/if}
-      {#if $analysisError}<p class="error">{$analysisError}</p>{/if}
-    </div>
+    <EmptyState title="not analyzed yet">
+      detect beats, bars, and song sections — the structure shows up here once it's done.
+      {#snippet action()}
+        {#if running}
+          <span class="analyzing mono">analyzing…</span>
+        {:else}
+          <Button accent onclick={() => void actions.prepare()}>Analyze track</Button>
+        {/if}
+        {#if $analysisError}<p class="error">{$analysisError}</p>{/if}
+      {/snippet}
+    </EmptyState>
   {:else}
     <ol class="sections">
       {#each rows as row, i (i)}
@@ -511,34 +513,11 @@
     display: none;
   }
 
-  /* ===== empty / unanalyzed ===== */
-  .cta {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: calc(var(--space) * 1.5);
-    padding: var(--space) 0;
-  }
-  .cta-title {
-    font-size: 14px;
-    color: var(--fg);
-  }
-  .cta-sub {
-    font-size: 12px;
-    color: var(--muted);
-    line-height: 1.5;
-    max-width: 240px;
-    margin: 0;
-  }
+  /* ===== unanalyzed ===== */
   .analyzing {
     font-size: 11px;
     color: var(--muted);
     font-style: italic;
-  }
-
-  .empty-line {
-    font-size: 11px;
-    color: var(--muted);
   }
 
   .error {

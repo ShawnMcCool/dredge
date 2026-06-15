@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { actions, captureNodes, captureStatus } from "../lib/stores";
   import Button from "../lib/ui/Button.svelte";
+  import EmptyState from "../lib/ui/EmptyState.svelte";
 
   // "all" passes a huge window — the server clamps to what's buffered
   const GRABS = [
@@ -63,7 +64,7 @@
     <Button disabled={busy} onclick={refresh}>refresh apps</Button>
   </div>
   {#if $captureNodes.length === 0}
-    <p class="empty">no apps playing audio</p>
+    <EmptyState>no apps playing audio</EmptyState>
   {:else}
     <ul>
       {#each $captureNodes as n (n.id)}
@@ -89,10 +90,6 @@
     margin-bottom: var(--space);
   }
 
-  .empty {
-    font-size: 11px;
-    color: var(--muted);
-  }
 
   .node {
     display: flex;

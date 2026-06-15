@@ -1,5 +1,6 @@
 <script lang="ts">
   import { profiles, songs } from "../lib/stores";
+  import EmptyState from "../lib/ui/EmptyState.svelte";
 
   function songTitle(id?: number): string {
     if (id == null) return "";
@@ -13,7 +14,7 @@
 
 <h2>profiling</h2>
 {#if $profiles.length === 0}
-  <p class="empty">no runs yet</p>
+  <EmptyState>no runs yet</EmptyState>
 {:else}
   <ul>
     {#each $profiles as run, i (i)}
@@ -44,7 +45,6 @@
 {/if}
 
 <style>
-  .empty { font-size: 11px; color: var(--muted); }
   .run { padding: calc(var(--space) / 2) 0; border-bottom: 1px solid var(--bg-raised); }
   .head { display: flex; align-items: baseline; gap: var(--space); }
   .op { font-size: 12px; }

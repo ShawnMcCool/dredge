@@ -7,6 +7,7 @@
     type TempoCurve,
   } from "../lib/stores";
   import Button from "../lib/ui/Button.svelte";
+  import EmptyState from "../lib/ui/EmptyState.svelte";
 
   type StepType = PlanStep["step"];
   type CurveType = TempoCurve["curve"];
@@ -157,9 +158,9 @@
 
 <h2>plan builder</h2>
 {#if !$openSong}
-  <p class="empty">open a song first</p>
+  <EmptyState>open a song first</EmptyState>
 {:else if loops().length === 0}
-  <p class="empty">create loops first</p>
+  <EmptyState>create loops first</EmptyState>
 {:else}
   <div class="pick-lane">
     {#each loops() as l (l.id)}
@@ -242,10 +243,6 @@
 {/if}
 
 <style>
-  .empty {
-    font-size: 11px;
-    color: var(--muted);
-  }
 
   .pick-lane {
     display: flex;

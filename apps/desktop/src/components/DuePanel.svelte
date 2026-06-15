@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { actions, loopName, openSong, retention } from "../lib/stores";
+  import EmptyState from "../lib/ui/EmptyState.svelte";
 
   onMount(() => {
     void actions.refreshRetention();
@@ -9,9 +10,9 @@
 
 <h2>retention</h2>
 {#if !$openSong}
-  <p class="empty">open a song first</p>
+  <EmptyState>open a song first</EmptyState>
 {:else if $retention.length === 0}
-  <p class="empty">no retests yet</p>
+  <EmptyState>no retests yet</EmptyState>
 {:else}
   <table class="mono">
     <tbody>
@@ -29,10 +30,6 @@
 <p class="why">rotating sections and next-day retests feel worse and work better.</p>
 
 <style>
-  .empty {
-    font-size: 11px;
-    color: var(--muted);
-  }
 
   .muted {
     color: var(--muted);
