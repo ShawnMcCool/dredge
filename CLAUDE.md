@@ -88,25 +88,32 @@ Complex sub-objects (LoopKind, PlanStep arrays, analysis vectors) are stored as
 
 `apps/desktop/src`. **All UI state derives from dispatch responses + events —
 no second source of truth** (`lib/stores.ts` mirrors the wire shapes of
-`server::app::App`). `lib/ipc.ts` is the only place that touches Tauri: `cmd()`
-sends a request, `onEvent()` subscribes to the event channel. Pure logic
-(waveform math, fader math, zoom, colors) lives in `lib/*.ts` with colocated
+`server::app::App`). `lib/ipc.ts` is the main Tauri seam: `cmd()` sends a
+request, `onEvent()` subscribes to the event channel; `lib/zoom.ts`,
+`lib/window.ts`, `lib/file-picker.ts` and `lib/trace.ts` are the only other
+(thin, intentional) Tauri wrappers — components never import `@tauri-apps/*`
+directly. Pure logic (waveform math/hit-testing, fader math, zoom, colors,
+time formatting, error normalization) lives in `lib/*.ts` with colocated
 `*.test.ts` vitest files; `components/` are the Svelte views; `lib/ui/` is the
-shared widget kit.
+shared widget kit (`Box`, `Button`, `Fader`, `Modal`, `Group`, `Toolbar`,
+`HoverActions`, `EmptyState`, `NumberField`).
 
 **UI vocabulary** — names used in conversation and in code/CSS, so a spoken
 term maps to one thing. The three columns are **panes**:
 
 - **Library** (left, `aside.library`) — the song list.
 - **Stage** (center, `main.stage`) — the work surface. Down it sit the
-  **waveform**, then a stack of **boxes** (`<section class="box">`, label header
-  + body): the **controls box** (`Transport.svelte`), the **stems box**
-  (`StemMixer.svelte`), the **structure box** (`Analysis.svelte`), and the
-  **analyze box** (`AnalyzePrompt.svelte`, the CTA shown until a track has any
-  analysis/stems). Call them *boxes*, never "containers" or "panels".
+  **waveform**, the **controls box** (`Transport.svelte`), then a flowing row
+  of **boxes** built on the `Box` widget (`lib/ui/Box.svelte`, a label header
+  + body): the **stems box** (`StemMixer.svelte`) or, until a track has any
+  analysis/stems, the **analyze box** (`AnalyzePrompt.svelte`, a CTA), plus the
+  **tuner box** (`Tuner.svelte`, always present). Call them *boxes*, never
+  "containers" or "panels".
 - **Panel** (right, `aside.panels`) — its switchable views are **tabs**
-  (sections, loops, plan, capture, due, profile, settings, guide). Note the
-  *structure box* (center) and the *sections tab* (right) are different things.
+  (structure, loops, plan, capture, due, profile, settings, guide), wired
+  through the `TAB_VIEWS` registry in `App.svelte`. The **structure tab**
+  (`Sections.svelte`) owns song structure; there is no longer a center
+  "structure box".
 
 Some stage state is purely client-side and mirrored by no store — the
 waveform's zoom (`view`) and clicked active span live as local `$state` in
