@@ -574,8 +574,8 @@
           activeSpan = null; // multi-section: the selection box shows the range
         }
       } else if (!d.moved) {
-        // single click → play from the section start through the rest of the track
-        void playSection(d.anchor.start);
+        // single click → move the playhead to the section start (no auto-play)
+        void actions.seek(d.anchor.start);
       }
       // single-click drag (!double && moved): selection was set during the drag;
       // leave it for the user to loop/save by hand — no auto-loop.
@@ -623,15 +623,6 @@
       const anchor = follow ? lastPlayhead : xToSec(view, canvasX(e));
       view = zoom(view, anchor, factor, duration());
     }
-  }
-
-  /** Single-click a section header: play from its start through the rest of the
-   *  track — no loop (clears any active transport loop and selection). */
-  async function playSection(start: number) {
-    selection.set(null);
-    await actions.clearTransportLoop();
-    await actions.seek(start);
-    await actions.play();
   }
 
   /** Loop the selection: save it as a loop (or reuse a matching one), make it the

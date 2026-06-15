@@ -115,8 +115,11 @@ async function handle(e: KeyboardEvent): Promise<void> {
       await actions.setGridSnap(!get(gridSnap));
       break;
     case "d":
-      // arm / disarm the drill tempo trainer for the active loop
-      if (get(drillSpan)) await actions.toggleTrainer();
+      // reveal the tempo trainer for the active loop and arm/disarm it
+      if (get(drillSpan)) {
+        actions.showDrillTool("trainer");
+        await actions.toggleTrainer();
+      }
       break;
     case "m":
       // THE one-key move: mute the recorded bass, I play it

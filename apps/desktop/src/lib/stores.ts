@@ -268,6 +268,11 @@ export const drillRecall = writable<{ everyN: number | null; armNext: boolean }>
   everyN: null,
   armNext: false,
 });
+
+/** Which drill tools the user has opted into for the active loop. The box is
+ *  minimal by default — a fresh loop just plays; tools are added on demand and
+ *  reset (back to minimal) by seedDrill whenever the loop changes. */
+export const drillShow = writable({ trainer: false, recall: false, region: false });
 /** Bumped by `resetWorkspace()` — the waveform watches this to refit zoom and
  *  drop its local view/active-span state (which no store mirrors). */
 export const workspaceReset = writable(0);
@@ -657,7 +662,26 @@ export const actions = {
     drillHome.set(span);
     drillSpan.set(span);
     drillTrainer.update((t) => ({ ...t, armed: false, cycle: 0 }));
+    drillShow.set({ trainer: false, recall: false, region: false });
     void this.clearRecall();
+  },
+
+  /** Reveal a drill tool (opt-in; doesn't change playback by itself). */
+  showDrillTool(tool: "trainer" | "recall" | "region"): void {
+    drillShow.update((s) => ({ ...s, [tool]: true }));
+  },
+
+  /** Hide a drill tool and undo its effect, so the loop plays normally again. */
+  async hideDrillTool(tool: "trainer" | "recall" | "region"): Promise<void> {
+    drillShow.update((s) => ({ ...s, [tool]: false }));
+    if (tool === "trainer") {
+      this.disarmTrainer();
+      await this.resetRate();
+    } else if (tool === "recall") {
+      await this.clearRecall();
+    } else {
+      await this.drillResetSpan();
+    }
   },
 
   /** Set the scratch span and point the transport at it. */
