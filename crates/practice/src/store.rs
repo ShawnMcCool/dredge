@@ -610,6 +610,16 @@ impl Store {
         Ok(())
     }
 
+    /// Cheap presence check — avoids `get_analysis`'s full JSON parse of the
+    /// beats/downbeats/sections vectors when the caller only needs a yes/no.
+    pub fn has_analysis(&self, song_id: SongId) -> Result<bool> {
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT 1 FROM analysis WHERE song_id = ?1")?;
+        let exists = stmt.exists(params![song_id.0])?;
+        Ok(exists)
+    }
+
     pub fn get_analysis(&self, song_id: SongId) -> Result<Option<Analysis>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT bpm, beats_json, downbeats_json, sections_json, engine

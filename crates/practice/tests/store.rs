@@ -328,10 +328,12 @@ fn sample_analysis() -> Analysis {
 fn analysis_roundtrips_and_upserts() {
     let (store, song) = store_with_song();
     assert!(store.get_analysis(song.id).unwrap().is_none());
+    assert!(!store.has_analysis(song.id).unwrap());
 
     let a = sample_analysis();
     store.save_analysis(song.id, &a).unwrap();
     assert_eq!(store.get_analysis(song.id).unwrap(), Some(a.clone()));
+    assert!(store.has_analysis(song.id).unwrap());
 
     // re-analysis overwrites in place
     let b = Analysis {

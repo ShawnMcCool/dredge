@@ -1163,7 +1163,7 @@ impl App {
         }
         let p: P = from_params(p)?;
         let song = self.song_row(p.song_id)?;
-        if !p.force && self.store.get_analysis(p.song_id).err_str()?.is_some() {
+        if !p.force && self.store.has_analysis(p.song_id).err_str()? {
             return Ok(json!({"state": "cached"}));
         }
         if self.analyzing.contains(&p.song_id.0) {
@@ -1230,7 +1230,7 @@ impl App {
         let p: P = from_params(p)?;
         let state = if self.analyzing.contains(&p.song_id.0) {
             "running"
-        } else if self.store.get_analysis(p.song_id).err_str()?.is_some() {
+        } else if self.store.has_analysis(p.song_id).err_str()? {
             "cached"
         } else {
             "none"
