@@ -8,6 +8,8 @@
 
 **Tech Stack:** Rust (engine/practice/server crates, rusqlite, symphonia, rubato, bytemuck), Svelte 5 + Tauri frontend, vitest + cargo test.
 
+> **STATUS: COMPLETE (2026-06-15).** All workstreams landed across 12 commits (064030d…f46ac64), `just check` green. Task 4.2 (stable `{#each}` keys in Sections) was intentionally skipped — `Row` has no stable id and the edit list binds+reorders by index, so index keys are correct there. One item needs a human empirical check (see note under Task 1.2): confirm a paused, song-loaded app settles to **zero** canvas repaints on next `just dev` (verified by reasoning + svelte-check/vitest, not headless-runnable here).
+
 **Verification gate for every Rust task:** `just test` (cargo test --workspace + pnpm vitest) and `just lint` (clippy -D warnings, fmt, svelte-check) must pass. Commit on `main` (this repo's convention).
 
 ---
