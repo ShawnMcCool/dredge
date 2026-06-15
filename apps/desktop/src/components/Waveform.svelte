@@ -565,14 +565,14 @@
     }
     if (d.mode === "lane") {
       if (d.double) {
-        // double click (± drag across headers) → loop the section / selection
+        // double click (± drag across headers) → SELECT the section / span. No
+        // loop is created here; the ⟳ button on the selection does that.
         if (!d.moved) {
           selection.set({ start: d.anchor.start, end: d.anchor.end });
           activeSpan = { start: d.anchor.start, end: d.anchor.end };
         } else {
           activeSpan = null; // multi-section: the selection box shows the range
         }
-        void loopSelection();
       } else if (!d.moved) {
         // single click → play from the section start through the rest of the track
         void playSection(d.anchor.start);
