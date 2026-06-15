@@ -22,6 +22,38 @@ package: build
     cp "$deb" dist/
     echo "staged $(basename "$deb") -> dist/"
 
+# Portable binaries tarball into dist/ (relocatable /usr tree the AUR -bin
+# package and manual installs consume)
+tarball: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ver=$(python3 -c "import json;print(json.load(open('apps/desktop/src-tauri/tauri.conf.json'))['version'])")
+    name="earworm-${ver}-x86_64-linux"
+    stage="dist/${name}"
+    rm -rf "$stage"
+    install -Dm755 target/release/earworm                       "$stage/usr/bin/earworm"
+    install -Dm755 target/release/earwormd                      "$stage/usr/bin/earwormd"
+    install -Dm755 scripts/analyze                              "$stage/usr/bin/earworm-analyze"
+    install -Dm755 scripts/earworm-enable-ml                    "$stage/usr/bin/earworm-enable-ml"
+    install -Dm644 scripts/analyze_impl.py                      "$stage/usr/lib/earworm/analyze_impl.py"
+    install -Dm644 scripts/songformer_impl.py                   "$stage/usr/lib/earworm/songformer_impl.py"
+    install -Dm644 earworm.desktop                              "$stage/usr/share/applications/earworm.desktop"
+    install -Dm644 apps/desktop/src-tauri/icons/128x128@2x.png  "$stage/usr/share/icons/hicolor/256x256/apps/earworm.png"
+    tar -C dist -czf "dist/${name}.tar.gz" "$name"
+    rm -rf "$stage"
+    echo "built dist/${name}.tar.gz"
+
+# SHA256SUMS over everything staged in dist/ (.deb + .tar.gz)
+checksums:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd dist
+    sha256sum *.deb *.tar.gz > SHA256SUMS
+    cat SHA256SUMS
+
+# Full release artifact set into dist/: .deb + tarball + SHA256SUMS (CI uses this)
+artifacts: package tarball checksums
+
 # Run the release desktop app (builds if missing)
 run:
     @test -x target/release/earworm || just build
