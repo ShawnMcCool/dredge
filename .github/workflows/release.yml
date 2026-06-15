@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libxdo-dev \
+            libayatana-appindicator3-dev libssl-dev \
+            librubberband-dev libpipewire-0.3-dev libspa-0.2-dev \
+            clang pkg-config build-essential
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+
+      - uses: extractions/setup-just@v2
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install frontend dependencies
+        run: cd apps/desktop && pnpm install --frozen-lockfile
+
+      - name: Build release artifacts (.deb + tarball + SHA256SUMS)
+        run: just artifacts
+
+      # The real Debian regression catch: install the .deb on a clean Ubuntu,
+      # which forces apt to resolve every declared runtime dependency.
+      - name: Smoke-test the .deb
+        run: |
+          sudo apt-get install -y ./dist/earworm_*_amd64.deb
+          command -v earworm
+          test -x /usr/bin/earwormd
+          test -x /usr/bin/earworm-analyze
+          test -x /usr/bin/earworm-enable-ml
+          test -f /usr/lib/earworm/analyze_impl.py
+          test -f /usr/lib/earworm/songformer_impl.py
+          echo "deb installs cleanly and lays out the expected files"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.deb
+            dist/*.tar.gz
+            dist/SHA256SUMS
+          generate_release_notes: true
