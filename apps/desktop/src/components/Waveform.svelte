@@ -408,11 +408,11 @@
     }
 
     // playhead — 1 px white line (its own colour, not the accent, so it reads
-    // apart from the loop/selection), full height. Drawn before the structure
-    // lane so the section headings paint over it in the lane.
+    // apart from the loop/selection). Spans only the waveform body: it starts at
+    // the bottom of the section-header lane and never runs up into it.
     if (playheadX >= 0 && playheadX <= w) {
       ctx.fillStyle = c.playhead;
-      ctx.fillRect(Math.round(playheadX), 0, 1, LANE_H + WAVE_H);
+      ctx.fillRect(Math.round(playheadX), LANE_H, 1, WAVE_H);
     }
 
     // structure lane — label-colored spans: saved sections solid, analysis
