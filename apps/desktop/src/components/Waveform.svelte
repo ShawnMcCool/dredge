@@ -397,8 +397,16 @@
       ctx.fillStyle = accent;
       ctx.fillRect(x0, LANE_H, x1 - x0, WAVE_H);
       ctx.globalAlpha = 1;
+      // just the two vertical edges (a "gate"), matching the loop look — no
+      // top/bottom border.
       ctx.strokeStyle = c.fg;
-      ctx.strokeRect(x0 + 0.5, LANE_H + 0.5, x1 - x0 - 1, WAVE_H - 1);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x0 + 0.5, LANE_H);
+      ctx.lineTo(x0 + 0.5, LANE_H + WAVE_H);
+      ctx.moveTo(x1 - 0.5, LANE_H);
+      ctx.lineTo(x1 - 0.5, LANE_H + WAVE_H);
+      ctx.stroke();
     }
 
     // middle-drag zoom preview — dashed accent box over the range to zoom into
