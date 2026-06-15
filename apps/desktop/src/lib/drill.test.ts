@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { bisect, nextGrid, nudgeEdge, runUp, type Span } from "./drill";
+import { bisect, nextGrid, nudgeEdge, rateForRep, runUp, type Span } from "./drill";
+import type { TempoCurve } from "./stores";
 
 const span = (start: number, end: number): Span => ({ start, end });
 
@@ -77,5 +78,35 @@ describe("runUp", () => {
   });
   it("falls back to ~2s/bar with no downbeats", () => {
     expect(runUp(span(6, 8), 1, [], 10)).toEqual(span(4, 8));
+  });
+});
+
+describe("rateForRep (mirrors practice::tempo)", () => {
+  it("dwell is constant", () => {
+    const c: TempoCurve = { curve: "dwell", rate: 0.9 };
+    expect(rateForRep(c, 0)).toBe(0.9);
+    expect(rateForRep(c, 99)).toBe(0.9);
+  });
+  it("ladder climbs and clamps at target", () => {
+    const c: TempoCurve = { curve: "ladder", start: 0.6, step: 0.1, target: 0.9 };
+    expect(rateForRep(c, 0)).toBeCloseTo(0.6);
+    expect(rateForRep(c, 2)).toBeCloseTo(0.8);
+    expect(rateForRep(c, 3)).toBeCloseTo(0.9);
+    expect(rateForRep(c, 50)).toBeCloseTo(0.9);
+  });
+  it("oscillate touches high every period", () => {
+    const c: TempoCurve = { curve: "oscillate", low: 0.7, high: 1.0, period: 3 };
+    expect(rateForRep(c, 0)).toBe(0.7);
+    expect(rateForRep(c, 1)).toBe(0.7);
+    expect(rateForRep(c, 2)).toBe(1.0);
+    expect(rateForRep(c, 5)).toBe(1.0);
+  });
+  it("oscillate period zero is treated as one", () => {
+    const c: TempoCurve = { curve: "oscillate", low: 0.7, high: 1.0, period: 0 };
+    expect(rateForRep(c, 0)).toBe(1.0);
+  });
+  it("clamps to [0.25, 2.0]", () => {
+    expect(rateForRep({ curve: "dwell", rate: 5 }, 0)).toBe(2.0);
+    expect(rateForRep({ curve: "dwell", rate: 0.01 }, 0)).toBe(0.25);
   });
 });

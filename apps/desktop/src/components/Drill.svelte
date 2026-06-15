@@ -1,11 +1,18 @@
 <script lang="ts">
   // The drill box — a live practice workbench for the active loop. It edits an
   // ephemeral scratch span (drillSpan), never the saved loop. Shown only while a
-  // loop is active (App gates on $currentLoop). Phase 2: shell + span readout;
-  // the trainer / region toys / recall land in later phases.
-  import { actions, currentLoop, drillSpan } from "../lib/stores";
+  // loop is active (App gates on $currentLoop).
+  //
+  // Spine: the step-up tempo trainer — a ramp recipe that autopilots the global
+  // playback rate across loop cycles (no second tempo). Region toys + recall
+  // land in later phases.
+  import { get } from "svelte/store";
+  import { actions, currentLoop, drillSpan, drillTrainer, position } from "../lib/stores";
+  import type { TempoCurve } from "../lib/stores";
   import { fmtClock } from "../lib/format";
   import Box from "../lib/ui/Box.svelte";
+  import Button from "../lib/ui/Button.svelte";
+  import NumberField from "../lib/ui/NumberField.svelte";
 
   let saved = $derived($currentLoop);
   let span = $derived($drillSpan);
@@ -13,6 +20,34 @@
     !!(saved && span && (span.start !== saved.start || span.end !== saved.end)),
   );
   let length = $derived(span ? span.end - span.start : 0);
+
+  // Recipe editor — local primitives per curve so each field binds cleanly;
+  // the derived recipe is pushed to the store (which re-applies the rate when
+  // armed). Seed from the trainer's current recipe once.
+  const init = get(drillTrainer).recipe;
+  let kind = $state<TempoCurve["curve"]>(init.curve);
+  let dwellRate = $state(init.curve === "dwell" ? init.rate : 0.9);
+  let ladderStart = $state(init.curve === "ladder" ? init.start : 0.7);
+  let ladderStep = $state(init.curve === "ladder" ? init.step : 0.05);
+  let ladderTarget = $state(init.curve === "ladder" ? init.target : 1.0);
+  let oscLow = $state(init.curve === "oscillate" ? init.low : 0.7);
+  let oscHigh = $state(init.curve === "oscillate" ? init.high : 1.0);
+  let oscPeriod = $state(init.curve === "oscillate" ? init.period : 3);
+
+  let recipe = $derived<TempoCurve>(
+    kind === "dwell"
+      ? { curve: "dwell", rate: dwellRate }
+      : kind === "ladder"
+        ? { curve: "ladder", start: ladderStart, step: ladderStep, target: ladderTarget }
+        : { curve: "oscillate", low: oscLow, high: oscHigh, period: oscPeriod },
+  );
+  $effect(() => {
+    void actions.setTrainerRecipe(recipe);
+  });
+
+  let armed = $derived($drillTrainer.armed);
+  let cycle = $derived($drillTrainer.cycle);
+  let ratePct = $derived(Math.round($position.rate * 100));
 </script>
 
 <Box label="drill" wide>
@@ -34,6 +69,42 @@
       </span>
     {/if}
   </div>
+
+  <section class="trainer">
+    <div class="row">
+      <span class="cap">tempo trainer</span>
+      <div class="picker">
+        <Button variant="chip" active={kind === "dwell"} onclick={() => (kind = "dwell")}>dwell</Button>
+        <Button variant="chip" active={kind === "ladder"} onclick={() => (kind = "ladder")}>ladder</Button>
+        <Button variant="chip" active={kind === "oscillate"} onclick={() => (kind = "oscillate")}>oscillate</Button>
+      </div>
+    </div>
+
+    <div class="row params">
+      {#if kind === "dwell"}
+        <NumberField label="rate" bind:value={dwellRate} step={0.05} min={0.25} max={2} />
+      {:else if kind === "ladder"}
+        <NumberField label="start" bind:value={ladderStart} step={0.05} min={0.25} max={2} />
+        <NumberField label="step" bind:value={ladderStep} step={0.01} min={0} max={1} />
+        <NumberField label="target" bind:value={ladderTarget} step={0.05} min={0.25} max={2} />
+      {:else}
+        <NumberField label="low" bind:value={oscLow} step={0.05} min={0.25} max={2} />
+        <NumberField label="high" bind:value={oscHigh} step={0.05} min={0.25} max={2} />
+        <NumberField label="every" bind:value={oscPeriod} step={1} min={1} max={16} />
+      {/if}
+    </div>
+
+    <div class="row controls">
+      <Button accent={armed} onclick={() => (armed ? actions.disarmTrainer() : actions.armTrainer())}>
+        {armed ? "disarm" : "arm"}
+      </Button>
+      <span class="readout">
+        <span class="rate">{ratePct}%</span>
+        {#if armed}<span class="cyc">cycle {cycle}</span>{/if}
+      </span>
+      <Button variant="chip" onclick={() => actions.resetRate()} title="return the global rate to 100%">reset rate</Button>
+    </div>
+  </section>
 </Box>
 
 <style>
@@ -57,5 +128,51 @@
   }
   .len {
     opacity: 0.8;
+  }
+
+  .trainer {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: var(--space);
+    flex-wrap: wrap;
+  }
+  .cap {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .picker {
+    display: flex;
+    gap: 4px;
+  }
+  .params {
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .controls {
+    justify-content: flex-start;
+  }
+  .readout {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-family: var(--mono);
+  }
+  .rate {
+    font-size: 15px;
+    color: var(--fg);
+  }
+  .cyc {
+    font-size: 11px;
+    color: var(--accent);
   }
 </style>

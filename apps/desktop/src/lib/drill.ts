@@ -3,9 +3,32 @@
 // touching the saved LoopRegion. Edges snap to a supplied grid (beats/downbeats)
 // when one exists, else step by a fixed number of seconds.
 
+import type { TempoCurve } from "./stores";
+
 export interface Span {
   start: number;
   end: number;
+}
+
+/** Playback rate for a 0-based loop-cycle index, clamped to [0.25, 2.0]. A
+ *  faithful port of `practice::tempo::TempoCurve::rate_for_rep` so the live
+ *  trainer and authored plans agree on what a curve means. */
+export function rateForRep(curve: TempoCurve, rep: number): number {
+  let raw: number;
+  switch (curve.curve) {
+    case "dwell":
+      raw = curve.rate;
+      break;
+    case "ladder":
+      raw = Math.min(curve.start + curve.step * rep, curve.target);
+      break;
+    case "oscillate": {
+      const period = Math.max(1, curve.period);
+      raw = (rep + 1) % period === 0 ? curve.high : curve.low;
+      break;
+    }
+  }
+  return Math.min(2.0, Math.max(0.25, raw));
 }
 
 /** Smallest scratch span we allow, in seconds. */

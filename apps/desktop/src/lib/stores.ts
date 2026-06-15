@@ -5,7 +5,7 @@ import { get, writable } from "svelte/store";
 import { cmd, initialSong, onEvent } from "./ipc";
 import { trace } from "./trace";
 import { subdivisionTimes, type GridSubdivision } from "./waveform-math";
-import { bisect, nudgeEdge, runUp, type Span } from "./drill";
+import { bisect, nudgeEdge, rateForRep, runUp, type Span } from "./drill";
 
 // --- wire types ----------------------------------------------------------
 
@@ -238,6 +238,21 @@ export const drillSpan = writable<Span | null>(null);
 // Reseed/clear the scratch span whenever the active loop changes — fires no
 // matter who set currentLoop (loops tab, waveform click, plan, reset).
 currentLoop.subscribe((l) => drillSpan.set(l ? { start: l.start, end: l.end } : null));
+
+/** Step-up tempo trainer for the drill box: a ramp recipe (a `TempoCurve`) that
+ *  autopilots the *global* playback rate across loop cycles. No second tempo —
+ *  it animates `position.rate`. `cycle` is the 0-based loop-wrap count since
+ *  arming. The recipe persists across loops; arming resets the cycle. */
+export interface DrillTrainer {
+  recipe: TempoCurve;
+  armed: boolean;
+  cycle: number;
+}
+export const drillTrainer = writable<DrillTrainer>({
+  recipe: { curve: "ladder", start: 0.7, step: 0.05, target: 1.0 },
+  armed: false,
+  cycle: 0,
+});
 /** Bumped by `resetWorkspace()` — the waveform watches this to refit zoom and
  *  drop its local view/active-span state (which no store mirrors). */
 export const workspaceReset = writable(0);
@@ -645,6 +660,31 @@ export const actions = {
     if (l) await this.applyDrillSpan({ start: l.start, end: l.end });
   },
 
+  // --- drill box: step-up tempo trainer ---
+
+  /** Arm the trainer: reset the cycle and apply the recipe's rep-0 rate now;
+   *  each subsequent loop wrap advances it (see the `loop_wrapped` handler). */
+  async armTrainer(): Promise<void> {
+    drillTrainer.update((t) => ({ ...t, armed: true, cycle: 0 }));
+    await this.setRate(rateForRep(get(drillTrainer).recipe, 0));
+  },
+
+  disarmTrainer(): void {
+    drillTrainer.update((t) => ({ ...t, armed: false }));
+  },
+
+  /** Edit the ramp recipe; re-apply at the current cycle if already armed. */
+  async setTrainerRecipe(recipe: TempoCurve): Promise<void> {
+    drillTrainer.update((t) => ({ ...t, recipe }));
+    const t = get(drillTrainer);
+    if (t.armed) await this.setRate(rateForRep(recipe, t.cycle));
+  },
+
+  /** Return the global rate to 100% (the trainer leaves it where it landed). */
+  async resetRate(): Promise<void> {
+    await this.setRate(1.0);
+  },
+
   /** Reset the stage to a clean slate: stop playback, refit the waveform zoom,
    *  drop the selection, the clicked active span, the active loop, return the
    *  playhead to the start, and restore speed to 100% and pitch to 0 — without
@@ -1033,9 +1073,21 @@ export async function initEvents(): Promise<() => void> {
       case "position":
         position.set({ ...(ev.data as Omit<Position, "at">), at: performance.now() });
         break;
-      case "loop_wrapped":
-        if (get(planStatus)) repsThisPlan += 1;
+      case "loop_wrapped": {
+        if (get(planStatus)) {
+          repsThisPlan += 1;
+          break;
+        }
+        // drill trainer: advance the cycle and let the global rate follow the
+        // recipe. Gated off while a plan runs (the plan drives rate itself).
+        const t = get(drillTrainer);
+        if (t.armed) {
+          const cycle = t.cycle + 1;
+          drillTrainer.set({ ...t, cycle });
+          void actions.setRate(rateForRep(t.recipe, cycle));
+        }
         break;
+      }
       case "rep_changed": {
         const prev = get(planStatus);
         if (prev) planStatus.set({ ...(ev.data as RepStatus), plan_id: prev.plan_id });
