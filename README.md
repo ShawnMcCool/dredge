@@ -76,20 +76,52 @@ not locked in.
 
 ## Installation
 
-Earworm is **Linux-only** and built from source — there's no prebuilt binary or
-package. The audio engine is PipeWire-native (output *and* capture), so a
-PipeWire audio stack is mandatory; there is no ALSA/PulseAudio fallback.
+Earworm is **Linux-only**. The audio engine is PipeWire-native (output *and*
+capture), so a **PipeWire** audio stack is mandatory — there is no
+ALSA/PulseAudio fallback. Pick the install path for your distro; each one puts
+`earworm` (desktop app) and `earwormd` (headless daemon) on your `PATH`. Audio
+**decoding** is pure-Rust (symphonia: mp3/flac/ogg/wav/aac/m4a) and SQLite is
+bundled — no ffmpeg, no system SQLite.
 
-### 1. System dependencies
-
-The core app links four native libraries at runtime and needs a small build
-toolchain to compile. On **Arch**:
+### Arch / Arch-based (AUR)
 
 ```bash
-# runtime + build libraries
-sudo pacman -S rubberband pipewire webkit2gtk-4.1 gtk3
-# build toolchain
-sudo pacman -S rust nodejs pnpm just clang pkgconf base-devel
+yay -S earworm-bin      # prebuilt — no toolchain, just the runtime libs
+# …or build from source:
+yay -S earworm
+```
+
+`earworm-bin` is the fast path; both pull the runtime deps
+(`rubberband pipewire webkit2gtk-4.1 gtk3`) automatically.
+
+### Debian / Ubuntu (.deb)
+
+Download the latest `earworm_*_amd64.deb` from the
+[releases page](https://github.com/ShawnMcCool/earworm/releases), then:
+
+```bash
+sudo apt install ./earworm_*_amd64.deb
+```
+
+Needs **Ubuntu 22.04+ / Debian 12+** (for `libwebkit2gtk-4.1-0` and a PipeWire
+stack); `apt` resolves the runtime deps (`librubberband2`, `libpipewire-0.3-0`,
+`libwebkit2gtk-4.1-0`, `libgtk-3-0`).
+
+### Build from source
+
+Install the native libraries + build toolchain. On **Arch**:
+
+```bash
+sudo pacman -S rubberband pipewire webkit2gtk-4.1 gtk3        # runtime libs
+sudo pacman -S rust nodejs pnpm just clang pkgconf base-devel # toolchain
+```
+
+On **Debian/Ubuntu**:
+
+```bash
+sudo apt install librubberband-dev libpipewire-0.3-dev libspa-0.2-dev \
+  libwebkit2gtk-4.1-dev libgtk-3-dev clang pkg-config build-essential
+# plus rustup, Node + pnpm, and just
 ```
 
 | Dependency | Why it's needed |
@@ -101,56 +133,39 @@ sudo pacman -S rust nodejs pnpm just clang pkgconf base-devel
 | `pkgconf`, `base-devel` | `pkg-config` + a C compiler/linker for the FFI crates |
 | `rust`, `nodejs`, `pnpm`, `just` | build the Rust workspace and the Svelte/Tauri frontend |
 
-> **Debian/Ubuntu** (package names approximate): `librubberband-dev
-> libpipewire-0.3-dev libspa-0.2-dev libwebkit2gtk-4.1-dev libgtk-3-dev clang
-> pkg-config build-essential`, plus `rustup`, Node + `pnpm`, and `just`.
-
-Audio **decoding** is pure-Rust (symphonia: mp3/flac/ogg/wav/aac/m4a) and SQLite
-is bundled into the binary — no ffmpeg and no system SQLite required.
-
-### 2. Build the binaries
+Then build:
 
 ```bash
-git clone <repo-url> earworm && cd earworm
-just build         # desktop app -> target/release/earworm
-                   # headless daemon -> target/release/earwormd
+git clone https://github.com/ShawnMcCool/earworm.git && cd earworm
+just build         # daemon -> target/release/earwormd, then desktop app +
+                   # .deb bundle -> target/release/{earworm,bundle/deb/}
 ```
 
-`just build` runs `pnpm tauri build` (which installs frontend deps and bundles
-the Svelte UI into the `earworm` binary) followed by `cargo build -p server
---release` for the daemon. Tauri OS bundling is disabled, so the output is the
-raw executables under `target/release/` — copy `earworm` onto your `PATH` if you
-want it installed system-wide.
+`just build` compiles the daemon, then `pnpm tauri build` (installs frontend
+deps, bundles the Svelte UI into `earworm`, and emits a `.deb`). `just package`
+stages just the `.deb` into `dist/`; `just artifacts` adds a portable tarball +
+`SHA256SUMS`. Copy `earworm`/`earwormd` onto your `PATH`, or `sudo apt install`
+the `.deb`.
 
-### 3. Optional ML features
+### Enable the optional ML features
 
-Both are **off by default** and self-bootstrap on first use — the app runs fine
-without them, you simply don't get that feature. Both want an NVIDIA GPU with
-CUDA (they fall back to CPU, just much slower) and several GB of disk for the
-PyTorch venvs and downloaded model weights.
+Beat/section **analyze** and **stem** separation are **off by default** and
+self-bootstrap on first use — the app runs fine without them. One command sets
+them up ahead of time:
 
-- **Analyze** (beats / downbeats / BPM / sections) needs [`uv`](https://docs.astral.sh/uv/)
-  on `PATH`. The first analysis bootstraps `~/.local/share/earworm/analyze-venv`
-  (python 3.12, beat_this + torch) automatically. For the higher-quality
-  SongFormer section labels, additionally create the SongFormer venv (the
-  wrapper prefers it when present and falls back to a novelty detector
-  otherwise; SongFormer wants ~8 GB of free VRAM):
+```bash
+earworm-enable-ml all        # analyze + songformer + stems
+# …or individually:
+earworm-enable-ml analyze    # beats / downbeats / BPM + novelty sections
+earworm-enable-ml songformer # higher-quality section labels (wants ~8 GB VRAM)
+earworm-enable-ml stems      # 4-stem separation (vocals/drums/bass/other, demucs)
+```
 
-  ```bash
-  uv venv --python 3.11 ~/.local/share/earworm/songformer-venv
-  uv pip install --python ~/.local/share/earworm/songformer-venv/bin/python \
-    torch==2.4.0 torchaudio==2.4.0 "numpy<2" transformers==4.51.1 librosa \
-    soundfile ema-pytorch loguru omegaconf tqdm safetensors muq x-transformers \
-    msaf einops huggingface_hub
-  ```
-
-- **Stems** (vocals / drums / bass / other separation) needs a `demucs` binary
-  on `PATH`:
-
-  ```bash
-  uv tool install demucs --with torchcodec   # PyTorch ~2.5 GB; torchcodec is
-                                             # required by torchaudio 2.9+ to save stems
-  ```
+Needs [`uv`](https://docs.astral.sh/uv/) on `PATH`. An NVIDIA GPU is optional
+(CPU works, just much slower); several GB of disk go to the PyTorch venvs and
+downloaded model weights. The `analyze` wrapper also self-bootstraps its venv on
+the first real analysis if you skip this. From a source checkout the helper is
+`scripts/earworm-enable-ml`.
 
 ## Usage
 
@@ -200,7 +215,7 @@ live in the gear menu (`,`) and persist in the practice DB.
 | Control socket | `$XDG_RUNTIME_DIR/earworm.sock` | `--socket` (daemon) |
 | Analyze venv | `~/.local/share/earworm/analyze-venv` | `EARWORM_ANALYZE_VENV` |
 | SongFormer venv | `~/.local/share/earworm/songformer-venv` | `EARWORM_SONGFORMER_VENV` |
-| Analyze wrapper | repo `scripts/analyze` | `EARWORM_ANALYZE` |
+| Analyze wrapper | repo `scripts/analyze`, or `earworm-analyze` on `PATH` (packages install it; impls under `/usr/lib/earworm`) | `EARWORM_ANALYZE` |
 
 Everything the UI can do is also reachable over the JSON-lines control socket —
 see [Socket quick taste](#socket-quick-taste) below.
@@ -208,7 +223,7 @@ see [Socket quick taste](#socket-quick-taste) below.
 ## Development
 
 The system + toolchain dependencies are the same as
-[Installation](#1-system-dependencies) above (Rust, Node, pnpm, `just`, clang,
+[Build from source](#build-from-source) above (Rust, Node, pnpm, `just`, clang,
 and the native dev libraries). No extra runtime is needed for the dev loop;
 clippy, rustfmt, and `svelte-check` ship with the toolchains. Rust edition 2021,
 recent stable Rust; Tauri 2 + Svelte 5, Vite, pnpm (not npm) for the frontend.

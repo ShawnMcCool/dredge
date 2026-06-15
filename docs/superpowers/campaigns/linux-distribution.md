@@ -242,7 +242,29 @@ that reference it). Commit per phase on `main`. `just check` is the floor gate;
 packaging phases add their own artifact-inspection gates, and Phase 3 is where
 the `.deb` gets a real install smoke-test on Ubuntu.
 
-**STATUS (2026-06-16): NOT STARTED** — campaign authored, awaiting Phase 0.
+**STATUS (2026-06-16): Phases 0–6 implemented + committed on `main`; live
+GitHub gates pending.** What's done and locally verified:
+
+- **Phase 0** — relocatable `earworm.desktop`; `just release X.Y.Z`. ✓
+- **Phase 1** — `.deb` bundling. Built + inspected (`ar`/`tar`): Depends
+  `librubberband2, libpipewire-0.3-0, libwebkit2gtk-4.1-0, libgtk-3-0`,
+  Recommends `uv, demucs`, ships `/usr/bin/{earworm,earwormd,earworm-analyze,
+  earworm-enable-ml}` + `/usr/lib/earworm/*.py`. ✓
+- **Phase 2** — `just tarball`/`checksums`/`artifacts`; tarball tree + `sha256sum
+  -c` verified. ✓
+- **Phase 3** — `ci.yml` + `release.yml` (Ubuntu 22.04, `.deb` install
+  smoke-test, Release publish). YAML validated; **live run pends a push/tag.** ⏳
+- **Phase 4** — AUR `earworm-bin` + `earworm` PKGBUILDs + `.SRCINFO`; `bash -n`
+  + `--printsrcinfo` validated. **Full `makepkg` pends a published v0.1.0
+  release.** ⏳
+- **Phase 5** — `scripts/earworm-enable-ml` (shellcheck-clean, idempotent). ✓
+- **Phase 6** — README rewritten to distro-first install + ML helper. ✓ (6.3
+  in-app AnalyzePrompt hint left as the flagged stretch, not done.)
+
+**Remaining (needs the maintainer / outward-facing):** push `main` to trigger
+`ci.yml`; push a tag (`v0.1.0` or an `-rc` first) to trigger `release.yml` and
+produce the first GitHub Release; then publish the two PKGBUILDs to the AUR
+(set `earworm-bin` `sha256sums` from the release `SHA256SUMS`).
 
 ## Self-review notes
 
