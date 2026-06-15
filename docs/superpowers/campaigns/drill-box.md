@@ -176,6 +176,17 @@ pending in `just dev` (the Tauri webview can't be driven headlessly here).
 **Phase 7 (count-in) NOT STARTED** — it's the engine DSP work and was scoped as
 the stretch/separate effort; awaiting a go-ahead.
 
+**Trigger revision (2026-06-15, post first run).** First cut tried to summon the
+box for *transient* selection-loops too; that left a persistent waveform band the
+cursor couldn't clear (a transient loop has no `currentLoop`, so click-away
+didn't dismiss it) and made casual looping feel sticky. Reverted. Final model,
+per user steer: the selection's **loop** action (⟳ / `l` / a section row) now
+**saves** the span as a loop (deduping matching bounds), selects it, and plays —
+so the drill box rides the existing loop select/deselect (click a loop → opens;
+click away → `currentLoop` clears → closes). The separate **save** (🖫) chip and
+the `saveLoop` action were removed. So "a loop is active" = a saved loop is
+selected; there is no transient-loop-summons-drill path.
+
 ## Self-review notes
 - Every brainstorm decision maps to a phase: scratch span (1), appearance/wide
   box (2), trainer-as-spine borrowing global rate (3), nudge/isolate/run-up (4),
