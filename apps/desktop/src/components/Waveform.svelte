@@ -321,6 +321,13 @@
       ctx.setLineDash([]);
     }
 
+    // playhead — 1 px accent line, full height. Drawn before the structure lane
+    // so the section headings paint over it in the lane.
+    if (playheadX >= 0 && playheadX <= w) {
+      ctx.fillStyle = accent;
+      ctx.fillRect(Math.round(playheadX), 0, 1, LANE_H + WAVE_H);
+    }
+
     // structure lane — label-colored spans: saved sections solid, analysis
     // suggestions dashed/dimmer/italic; clicked span gets a second fill pass.
     // Hues are derived from the live accent so the lane re-tints with the theme.
@@ -331,6 +338,11 @@
       if (x1 < 0 || x0 > w) continue;
       const { fill, edge } = labelColor(s.name, baseHue);
       const active = activeSpan?.start === s.start && activeSpan?.end === s.end;
+      // translucent backing so the box dims (but doesn't fully hide) the
+      // playhead passing behind it; the tint below is only ~16% opaque.
+      ctx.globalAlpha = 0.8;
+      ctx.fillStyle = c.bg;
+      ctx.fillRect(x0, 2, x1 - x0 - 1, LANE_H - 4);
       ctx.globalAlpha = s.suggested && !active ? 0.6 : 1;
       ctx.fillStyle = fill;
       ctx.fillRect(x0, 2, x1 - x0 - 1, LANE_H - 4);
@@ -348,12 +360,6 @@
       const lpad = 4;
       const lx = Math.min(Math.max(x0 + lpad, lpad), x1 - lpad);
       ctx.fillText(s.name, lx, LANE_H - 8, Math.max(x1 - lx - lpad, 0));
-    }
-
-    // playhead — 1 px accent line
-    if (playheadX >= 0 && playheadX <= w) {
-      ctx.fillStyle = accent;
-      ctx.fillRect(Math.round(playheadX), 0, 1, LANE_H + WAVE_H);
     }
   }
 
