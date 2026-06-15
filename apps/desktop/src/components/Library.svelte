@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { open } from "@tauri-apps/plugin-dialog";
   import { onMount } from "svelte";
+  import { errMsg } from "../lib/errors";
+  import { pickAudioFile } from "../lib/file-picker";
   import { fmtDur } from "../lib/format";
   import { actions, openingSong, openSong, songs } from "../lib/stores";
   import Button from "../lib/ui/Button.svelte";
@@ -14,15 +15,12 @@
 
   async function importSong() {
     error = "";
-    const path = await open({
-      multiple: false,
-      filters: [{ name: "audio", extensions: ["mp3", "flac", "ogg", "wav", "m4a"] }],
-    });
-    if (typeof path !== "string") return;
+    const path = await pickAudioFile();
+    if (!path) return;
     try {
       await actions.importSong(path);
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errMsg(e);
     }
   }
 
@@ -31,7 +29,7 @@
     try {
       await actions.openSong(id);
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errMsg(e);
     }
   }
 
@@ -53,7 +51,7 @@
       await actions.updateSong(renaming, renameTitle.trim(), renameArtist.trim() || null);
       renaming = null;
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errMsg(e);
     }
   }
 
@@ -62,7 +60,7 @@
     try {
       await actions.deleteSong(id);
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errMsg(e);
     }
     confirmDelete = null;
   }

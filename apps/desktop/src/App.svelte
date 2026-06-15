@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, type Component } from "svelte";
   import AnalyzePrompt from "./components/AnalyzePrompt.svelte";
   import Capture from "./components/Capture.svelte";
   import DuePanel from "./components/DuePanel.svelte";
@@ -42,6 +42,17 @@
   type Tab = (typeof ALL_TABS)[number];
   // the practice-routine tabs — concealed unless "practice tools" is on in settings
   const PRACTICE_TABS: Tab[] = ["plan", "due"];
+  // one panel view per tab — the nav and the body both drive off this map
+  const TAB_VIEWS: Record<Tab, Component> = {
+    structure: Sections,
+    loops: Loops,
+    plan: PlanBuilder,
+    capture: Capture,
+    due: DuePanel,
+    profile: ProfilingPanel,
+    settings: SettingsPanel,
+    guide: Guide,
+  };
   // practice tools are off by default; the routine tabs only appear once enabled
   let practiceOn = $derived($settings[PRACTICE_TOOLS] === true);
   let tabs = $derived(ALL_TABS.filter((t) => practiceOn || !PRACTICE_TABS.includes(t)));
@@ -145,24 +156,9 @@
         {/each}
       </nav>
       {#key tab}
+        {@const View = TAB_VIEWS[tab]}
         <div class="fade-in">
-          {#if tab === "structure"}
-            <Sections />
-          {:else if tab === "loops"}
-            <Loops />
-          {:else if tab === "plan"}
-            <PlanBuilder />
-          {:else if tab === "capture"}
-            <Capture />
-          {:else if tab === "due"}
-            <DuePanel />
-          {:else if tab === "profile"}
-            <ProfilingPanel />
-          {:else if tab === "settings"}
-            <SettingsPanel />
-          {:else}
-            <Guide />
-          {/if}
+          <View />
         </div>
       {/key}
       {/if}
