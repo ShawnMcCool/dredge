@@ -961,13 +961,19 @@ impl App {
                 }),
             }
         }
-        // only the final Position per tick is broadcast (throttling)
-        if let Some((secs, rate, playing)) = last_pos {
-            self.last_position = Some((secs, rate, playing));
-            events.push(Event {
-                event: "position".into(),
-                data: json!({"secs": secs, "rate": rate, "playing": playing}),
-            });
+        // Only the final Position per tick is broadcast (throttling), and only
+        // when it actually changed since the last broadcast — a paused song
+        // keeps emitting an identical Position every callback, so without this
+        // the pump would serialize+broadcast a no-op ~20x/sec while idle.
+        if let Some(next) = last_pos {
+            if self.last_position != Some(next) {
+                self.last_position = Some(next);
+                let (secs, rate, playing) = next;
+                events.push(Event {
+                    event: "position".into(),
+                    data: json!({"secs": secs, "rate": rate, "playing": playing}),
+                });
+            }
         }
         events
     }
