@@ -7,7 +7,15 @@
   // playback rate across loop cycles (no second tempo). Region toys + recall
   // land in later phases.
   import { get } from "svelte/store";
-  import { actions, currentLoop, drillSpan, drillTrainer, openSong, position } from "../lib/stores";
+  import {
+    actions,
+    currentLoop,
+    drillRecall,
+    drillSpan,
+    drillTrainer,
+    openSong,
+    position,
+  } from "../lib/stores";
   import type { TempoCurve } from "../lib/stores";
   import { fmtClock } from "../lib/format";
   import Box from "../lib/ui/Box.svelte";
@@ -49,6 +57,14 @@
   let cycle = $derived($drillTrainer.cycle);
   let ratePct = $derived(Math.round($position.rate * 100));
   let hasGrid = $derived(!!$openSong?.analysis?.downbeats?.length);
+
+  let everyN = $derived($drillRecall.everyN);
+  let armNext = $derived($drillRecall.armNext);
+  // cycle the every-Nth recall: off → 2 → 3 → 4 → off
+  function cycleEveryN() {
+    const cur = everyN;
+    void actions.setRecallEveryN(cur === null ? 2 : cur >= 4 ? null : cur + 1);
+  }
 </script>
 
 <Box label="drill" wide>
@@ -133,6 +149,24 @@
       <Button variant="chip" onclick={() => actions.resetRate()} title="return the global rate to 100%">reset rate</Button>
     </div>
   </section>
+
+  <section class="recall">
+    <div class="row">
+      <span class="cap">recall</span>
+      <Button
+        active={armNext}
+        onclick={() => actions.armRecallNext()}
+        title="mute the recording for the next pass — play it from memory"
+      >next pass silent</Button>
+      <Button
+        variant="chip"
+        active={everyN !== null}
+        onclick={cycleEveryN}
+        title="silence every Nth pass"
+      >every {everyN ?? "off"}</Button>
+      {#if armNext}<span class="flag">next pass: from memory</span>{/if}
+    </div>
+  </section>
 </Box>
 
 <style>
@@ -159,13 +193,19 @@
   }
 
   .toys,
-  .trainer {
+  .trainer,
+  .recall {
     margin-top: 10px;
     padding-top: 10px;
     border-top: 1px solid var(--line);
     display: flex;
     flex-direction: column;
     gap: 8px;
+  }
+  .flag {
+    font-size: 11px;
+    color: var(--accent);
+    font-family: var(--mono);
   }
   .grp {
     display: inline-flex;

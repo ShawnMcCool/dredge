@@ -253,6 +253,15 @@ export const drillTrainer = writable<DrillTrainer>({
   armed: false,
   cycle: 0,
 });
+
+/** Mute-to-recall for the drill box: play a pass "from memory" by muting the
+ *  recording (the engine keeps the position advancing, so the loop stays in
+ *  time). `armNext` silences the next pass; `everyN` silences every Nth. Recall
+ *  drives the engine mute only while active, and restores audio when cleared. */
+export const drillRecall = writable<{ everyN: number | null; armNext: boolean }>({
+  everyN: null,
+  armNext: false,
+});
 /** Bumped by `resetWorkspace()` — the waveform watches this to refit zoom and
  *  drop its local view/active-span state (which no store mirrors). */
 export const workspaceReset = writable(0);
@@ -390,6 +399,10 @@ function takePrepareWaiter(
 let dueAtPlanStart = new Set<number>();
 let repsThisPlan = 0;
 let stepsThisPlan = 0;
+/** Drill-box recall bookkeeping: loop-wrap counter and whether the *recall*
+ *  feature (not the user's speaker toggle) currently owns the engine mute. */
+let drillPass = 0;
+let recallMuted = false;
 
 /** Debounce handle for the volume fader's settings write-through. */
 let volumeSaveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -683,6 +696,35 @@ export const actions = {
   /** Return the global rate to 100% (the trainer leaves it where it landed). */
   async resetRate(): Promise<void> {
     await this.setRate(1.0);
+  },
+
+  // --- drill box: mute-to-recall ---
+
+  /** Silence the next loop pass (play it from memory). */
+  armRecallNext(): void {
+    drillRecall.update((r) => ({ ...r, armNext: true }));
+  },
+
+  /** Silence every Nth pass (null disables). Resets the pass counter. */
+  async setRecallEveryN(n: number | null): Promise<void> {
+    drillPass = 0;
+    drillRecall.update((r) => ({ ...r, everyN: n }));
+    if (n === null) await this.maybeUnmuteRecall();
+  },
+
+  /** Fully clear recall and hand the mute back (used on teardown). */
+  async clearRecall(): Promise<void> {
+    drillRecall.set({ everyN: null, armNext: false });
+    drillPass = 0;
+    await this.maybeUnmuteRecall();
+  },
+
+  /** Restore audio iff recall (not the user) was holding the mute. */
+  async maybeUnmuteRecall(): Promise<void> {
+    if (recallMuted) {
+      recallMuted = false;
+      await this.mute(false);
+    }
   },
 
   /** Reset the stage to a clean slate: stop playback, refit the waveform zoom,
@@ -1085,6 +1127,17 @@ export async function initEvents(): Promise<() => void> {
           const cycle = t.cycle + 1;
           drillTrainer.set({ ...t, cycle });
           void actions.setRate(rateForRep(t.recipe, cycle));
+        }
+        // recall: decide whether the pass that just began plays from memory.
+        const r = get(drillRecall);
+        if (r.everyN != null || r.armNext) {
+          drillPass += 1;
+          const silent = r.armNext || (r.everyN != null && drillPass % r.everyN === 0);
+          if (silent !== recallMuted) {
+            recallMuted = silent;
+            void actions.mute(silent);
+          }
+          if (r.armNext) drillRecall.set({ ...r, armNext: false });
         }
         break;
       }
