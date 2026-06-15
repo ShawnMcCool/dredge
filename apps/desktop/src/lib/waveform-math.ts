@@ -23,6 +23,51 @@ export function playheadSecs(
   return pos.secs + ((now - pos.at) / 1000) * pos.rate;
 }
 
+/** Stateful playhead smoother. `playheadSecs` re-anchors to each position event,
+ *  and tick/IPC arrival jitter (~50 ms cadence) makes those re-anchors nudge the
+ *  rendered position a few ms each way — a visible frame-to-frame sawtooth. This
+ *  free-runs the display clock at the true `rate` and gently low-passes toward
+ *  the server truth, snapping only on seeks / loop wraps / resume. */
+export interface PlayheadClock {
+  display: number;
+  lastNow: number;
+  inited: boolean;
+}
+
+export const makePlayheadClock = (): PlayheadClock => ({
+  display: 0,
+  lastNow: 0,
+  inited: false,
+});
+
+/** Advance `clock` to `now` and return the smoothed playhead seconds. */
+export function tickPlayhead(
+  clock: PlayheadClock,
+  pos: { secs: number; rate: number; playing: boolean; at: number },
+  now: number,
+): number {
+  const target = playheadSecs(pos, now);
+  // Paused (or first frame, or a resume/stall gap): lock straight to truth.
+  const elapsed = (now - clock.lastNow) / 1000;
+  clock.lastNow = now;
+  if (!pos.playing || !clock.inited || elapsed > 0.1 || elapsed < 0) {
+    clock.display = target;
+    clock.inited = true;
+    return clock.display;
+  }
+  // Constant-velocity motion between events…
+  clock.display += elapsed * pos.rate;
+  const delta = target - clock.display;
+  // …snap on seeks / loop wraps (large or backward jumps), else nudge toward
+  // truth so small per-event corrections are absorbed instead of jumping.
+  if (delta < -0.02 || delta > 0.25) {
+    clock.display = target;
+  } else {
+    clock.display += delta * 0.15;
+  }
+  return clock.display;
+}
+
 /** Zoom around an anchor (e.g. cursor), clamped to [0, duration] and a 2 s minimum span. */
 export function zoom(v: View, anchorSec: number, factor: number, duration: number): View {
   const span = v.endSec - v.startSec;

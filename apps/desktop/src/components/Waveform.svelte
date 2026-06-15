@@ -33,10 +33,11 @@
   import { hexToHue, labelColor } from "../lib/waveform-colors";
   import {
     adjustWindow,
-    playheadSecs,
+    makePlayheadClock,
     secToX,
     snapToGrid,
     subdivisionTimes,
+    tickPlayhead,
     visibleBuckets,
     xToSec,
     zoom,
@@ -134,6 +135,7 @@
   // the pointer handlers.
   let rafPending = false;
   let rafId = 0;
+  const playClock = makePlayheadClock();
   function paint() {
     rafPending = false;
     draw();
@@ -194,7 +196,7 @@
 
     if (!open) return; // empty state is the .wave-empty HTML overlay
 
-    const playhead = playheadSecs(get(position), performance.now());
+    const playhead = tickPlayhead(playClock, get(position), performance.now());
     const playheadX = secToX(view, playhead);
     const mid = LANE_H + WAVE_H / 2;
     const peaks = open.peaks;

@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   adjustWindow,
+  makePlayheadClock,
   playheadSecs,
   secToX,
   snapToGrid,
   subdivisionTimes,
+  tickPlayhead,
   visibleBuckets,
   xToSec,
   zoom,
@@ -52,6 +54,56 @@ describe("playheadSecs", () => {
   it("freezes when paused", () => {
     const pos = { secs: 10, rate: 0.75, playing: false, at: 5000 };
     expect(playheadSecs(pos, 9000)).toBe(10);
+  });
+});
+
+describe("tickPlayhead", () => {
+  it("returns the exact position when paused", () => {
+    const c = makePlayheadClock();
+    const pos = { secs: 12, rate: 1, playing: false, at: 1000 };
+    expect(tickPlayhead(c, pos, 1000)).toBe(12);
+    expect(tickPlayhead(c, pos, 2000)).toBe(12);
+  });
+
+  it("locks to truth on the first playing frame", () => {
+    const c = makePlayheadClock();
+    const pos = { secs: 10, rate: 1, playing: true, at: 1000 };
+    // at == now → target is exactly secs
+    expect(tickPlayhead(c, pos, 1000)).toBeCloseTo(10, 9);
+  });
+
+  it("advances at rate across smooth frames (no jitter sawtooth)", () => {
+    const c = makePlayheadClock();
+    const pos = { secs: 10, rate: 1, playing: true, at: 1000 };
+    tickPlayhead(c, pos, 1000); // init
+    // step 16ms frames; display should track real time closely and monotonically
+    let prev = c.display;
+    for (let t = 1016; t <= 1300; t += 16) {
+      const v = tickPlayhead(c, pos, t);
+      expect(v).toBeGreaterThanOrEqual(prev); // monotonic, never steps back
+      prev = v;
+    }
+    // ~0.3 s of wall time at rate 1 ≈ +0.3 s
+    expect(c.display).toBeCloseTo(10.3, 1);
+  });
+
+  it("snaps backward on a loop wrap", () => {
+    const c = makePlayheadClock();
+    let pos = { secs: 10, rate: 1, playing: true, at: 1000 };
+    tickPlayhead(c, pos, 1000);
+    tickPlayhead(c, pos, 1050);
+    // loop wraps back to 2.0
+    pos = { secs: 2, rate: 1, playing: true, at: 1060 };
+    expect(tickPlayhead(c, pos, 1060)).toBeCloseTo(2, 2);
+  });
+
+  it("resyncs after a stall / resume gap", () => {
+    const c = makePlayheadClock();
+    const pos = { secs: 10, rate: 1, playing: true, at: 1000 };
+    tickPlayhead(c, pos, 1000);
+    // a >100ms gap (tab was hidden / just resumed) snaps instead of lurching
+    const pos2 = { secs: 30, rate: 1, playing: true, at: 5000 };
+    expect(tickPlayhead(c, pos2, 5000)).toBeCloseTo(30, 2);
   });
 });
 
