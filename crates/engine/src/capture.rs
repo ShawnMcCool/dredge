@@ -285,7 +285,13 @@ fn run_capture(
                     .chunks_exact(4)
                     .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])),
             );
-            if let Ok(mut ring) = state.ring.lock() {
+            // This runs on PipeWire's RT thread (RT_PROCESS). Never *block* on
+            // the lock — a blocking acquire here risks priority inversion / an
+            // xrun if the control thread is mid-snapshot. try_lock and drop this
+            // buffer on the rare contention instead (the control thread only
+            // holds the lock briefly at grab time, and a dropped buffer during a
+            // grab is samples past the grab point anyway).
+            if let Ok(mut ring) = state.ring.try_lock() {
                 ring.push(&state.scratch);
             }
         })
