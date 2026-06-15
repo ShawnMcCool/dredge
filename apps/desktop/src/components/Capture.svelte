@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { asyncAction } from "../lib/async-action.svelte";
   import { actions, captureNodes, captureStatus } from "../lib/stores";
   import Button from "../lib/ui/Button.svelte";
   import EmptyState from "../lib/ui/EmptyState.svelte";
@@ -12,8 +13,7 @@
     { label: "all", secs: 1_000_000 },
   ];
 
-  let busy = $state(false);
-  let error = $state<string | null>(null);
+  const act = asyncAction();
 
   onMount(() => {
     void actions.refreshCaptureNodes();
@@ -23,22 +23,10 @@
     return () => clearInterval(timer);
   });
 
-  async function run(fn: () => Promise<unknown>) {
-    busy = true;
-    error = null;
-    try {
-      await fn();
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    } finally {
-      busy = false;
-    }
-  }
-
-  const refresh = () => run(() => actions.refreshCaptureNodes());
-  const start = (id: number) => run(() => actions.startCapture(id));
-  const stop = () => run(() => actions.stopCapture());
-  const grab = (secs: number) => run(() => actions.grabCapture(secs));
+  const refresh = () => act.run(() => actions.refreshCaptureNodes());
+  const start = (id: number) => act.run(() => actions.startCapture(id));
+  const stop = () => act.run(() => actions.stopCapture());
+  const grab = (secs: number) => act.run(() => actions.grabCapture(secs));
 </script>
 
 <h2>capture</h2>
@@ -53,15 +41,15 @@
   {/if}
   <div class="grabs">
     {#each GRABS as g (g.label)}
-      <Button disabled={busy} onclick={() => grab(g.secs)}>{g.label}</Button>
+      <Button disabled={act.busy} onclick={() => grab(g.secs)}>{g.label}</Button>
     {/each}
   </div>
   <div class="bar">
-    <Button disabled={busy} onclick={stop}>stop capture</Button>
+    <Button disabled={act.busy} onclick={stop}>stop capture</Button>
   </div>
 {:else}
   <div class="bar">
-    <Button disabled={busy} onclick={refresh}>refresh apps</Button>
+    <Button disabled={act.busy} onclick={refresh}>refresh apps</Button>
   </div>
   {#if $captureNodes.length === 0}
     <EmptyState>no apps playing audio</EmptyState>
@@ -69,7 +57,7 @@
     <ul>
       {#each $captureNodes as n (n.id)}
         <li>
-          <button class="node" disabled={busy} onclick={() => start(n.id)}>
+          <button class="node" disabled={act.busy} onclick={() => start(n.id)}>
             <strong>{n.app}</strong>
             {#if n.media}<span class="muted">{n.media}</span>{/if}
           </button>
@@ -79,8 +67,8 @@
   {/if}
 {/if}
 
-{#if error}
-  <p class="error">{error}</p>
+{#if act.error}
+  <p class="error">{act.error}</p>
 {/if}
 
 <p class="why">tap an app, let it roll, grab what just played.</p>

@@ -6,6 +6,7 @@
     type PlanStep,
     type TempoCurve,
   } from "../lib/stores";
+  import { asyncAction } from "../lib/async-action.svelte";
   import Button from "../lib/ui/Button.svelte";
   import EmptyState from "../lib/ui/EmptyState.svelte";
   import NumberField from "../lib/ui/NumberField.svelte";
@@ -17,7 +18,7 @@
   let steps = $state<PlanStep[]>([]);
   let addType = $state<StepType>("listen_first");
   let picked = $state<number[]>([]); // loop ids for "suggested plan" / rotation
-  let error = $state("");
+  const act = asyncAction();
   let lastSongId: number | null = null;
 
   $effect(() => {
@@ -26,7 +27,7 @@
       lastSongId = open?.song.id ?? null;
       steps = [];
       picked = [];
-      error = "";
+      act.clear();
     }
   });
 
@@ -108,22 +109,12 @@
     if (name === "practice") name = "suggested";
   }
 
-  async function save() {
-    error = "";
-    try {
-      await actions.savePlan(name, $state.snapshot(steps) as PlanStep[]);
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
+  function save() {
+    return act.run(() => actions.savePlan(name, $state.snapshot(steps) as PlanStep[]));
   }
 
-  async function start(planId: number) {
-    error = "";
-    try {
-      await actions.startPlan(planId);
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
+  function start(planId: number) {
+    return act.run(() => actions.startPlan(planId));
   }
 </script>
 
@@ -228,7 +219,7 @@
     <Button accent disabled={steps.length === 0} onclick={save}>save</Button>
   </div>
 
-  {#if error}<p class="error">{error}</p>{/if}
+  {#if act.error}<p class="error">{act.error}</p>{/if}
 
   {#if $openSong.plans.length > 0}
     <h2 class="existing">plans</h2>

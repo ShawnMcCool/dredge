@@ -7,6 +7,7 @@
     tunerReading,
     type CaptureNode,
   } from "../lib/stores";
+  import { asyncAction } from "../lib/async-action.svelte";
   import { hzToReading } from "../lib/tuner-math";
   import Box from "../lib/ui/Box.svelte";
   import MeterGauge from "./MeterGauge.svelte";
@@ -16,7 +17,7 @@
   const LOCK_MS = 500;
 
   let gearOpen = $state(false);
-  let error = $state<string | null>(null);
+  const act = asyncAction();
   let lockedSince = $state<number | null>(null);
   let locked = $state(false);
 
@@ -44,35 +45,19 @@
     return () => clearTimeout(t);
   });
 
-  async function togglePower() {
-    error = null;
-    try {
-      if ($tunerOn) await actions.tunerPowerOff();
-      else await actions.tunerPowerOn();
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
+  function togglePower() {
+    return act.run(() => ($tunerOn ? actions.tunerPowerOff() : actions.tunerPowerOn()));
   }
 
-  async function openGear() {
+  function openGear() {
     gearOpen = !gearOpen;
     if (!gearOpen) return;
-    error = null;
-    try {
-      await actions.refreshTunerInputs();
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
+    return act.run(() => actions.refreshTunerInputs());
   }
 
-  async function pick(node: CaptureNode) {
+  function pick(node: CaptureNode) {
     gearOpen = false;
-    error = null;
-    try {
-      await actions.setTunerInput(node);
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
+    return act.run(() => actions.setTunerInput(node));
   }
 </script>
 
@@ -94,8 +79,8 @@
   {/if}
 
   <div class="tuner-body">
-    {#if error}
-      <div class="err">{error}</div>
+    {#if act.error}
+      <div class="error">{act.error}</div>
     {:else}
       <button
         class="power"
@@ -180,7 +165,7 @@
     font-size: 0.85rem;
   }
 
-  .err {
+  .error {
     color: var(--miss);
     font-size: 0.85rem;
   }
