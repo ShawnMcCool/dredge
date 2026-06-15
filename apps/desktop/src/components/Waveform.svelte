@@ -20,6 +20,16 @@
     type OpenSong,
   } from "../lib/stores";
   import HoverActions from "../lib/ui/HoverActions.svelte";
+  import {
+    hitLaneSpan as hitLane,
+    hitLoopBody as hitBody,
+    hitLoopEdge as hitEdge,
+    laneSpans,
+    nearestLoopEdge as nearestEdge,
+    spanAtTime as spanAt,
+    type LaneSpan,
+    type LoopEdge,
+  } from "../lib/waveform-hit";
   import { hexToHue, labelColor } from "../lib/waveform-colors";
   import {
     adjustWindow,
@@ -48,27 +58,6 @@
   let lastSongId: number | null = null;
   /** Lane span whose bounds currently drive the transport loop (clicked). */
   let activeSpan: { start: number; end: number } | null = $state(null);
-
-  /** One row in the structure lane: saved sections when any exist, analysis
-   *  suggestions otherwise (never both — the Sections tab shows the rest). */
-  interface LaneSpan {
-    name: string;
-    start: number;
-    end: number;
-    suggested: boolean;
-  }
-
-  function laneSpans(open: OpenSong): LaneSpan[] {
-    if (open.sections.length > 0) {
-      return open.sections.map((s) => ({ ...s, suggested: false }));
-    }
-    return (open.analysis?.sections ?? []).map((s) => ({
-      name: s.label,
-      start: s.start,
-      end: s.end,
-      suggested: true,
-    }));
-  }
 
   // pointer interaction state
   type Drag =
@@ -323,44 +312,24 @@
     return () => cancelAnimationFrame(raf);
   });
 
+  // store-reading wrappers around the pure hit-testers in lib/waveform-hit.ts
   /** Topmost loop whose body is under a canvas point (below the lane). */
   function hitLoopBody(x: number, y: number): LoopRegion | null {
-    if (y < LANE_H) return null;
     const open = get(openSong);
-    if (!open) return null;
-    const sec = xToSec(view, x);
-    for (let i = open.loops.length - 1; i >= 0; i--) {
-      const l = open.loops[i];
-      if (sec >= l.start && sec <= l.end) return l;
-    }
-    return null;
+    return open ? hitBody(open.loops, view, x, y, LANE_H) : null;
   }
 
-  function hitLoopEdge(x: number): { loop: LoopRegion; edge: "start" | "end" } | null {
+  function hitLoopEdge(x: number): LoopEdge | null {
     const open = get(openSong);
-    if (!open) return null;
-    for (const l of open.loops) {
-      if (Math.abs(secToX(view, l.start) - x) <= EDGE_PX) return { loop: l, edge: "start" };
-      if (Math.abs(secToX(view, l.end) - x) <= EDGE_PX) return { loop: l, edge: "end" };
-    }
-    return null;
+    return open ? hitEdge(open.loops, view, x, EDGE_PX) : null;
   }
 
   /** The loop edge (across all loops) nearest to canvas x. Right-drag grabs this
    *  from anywhere — like Hyprland's super+right-drag snapping to the nearest
    *  tile border instead of requiring a pixel-perfect hit. */
-  function nearestLoopEdge(x: number): { loop: LoopRegion; edge: "start" | "end" } | null {
+  function nearestLoopEdge(x: number): LoopEdge | null {
     const open = get(openSong);
-    if (!open) return null;
-    let best: { loop: LoopRegion; edge: "start" | "end" } | null = null;
-    let bestDist = Infinity;
-    for (const l of open.loops) {
-      const ds = Math.abs(secToX(view, l.start) - x);
-      if (ds < bestDist) ((bestDist = ds), (best = { loop: l, edge: "start" }));
-      const de = Math.abs(secToX(view, l.end) - x);
-      if (de < bestDist) ((bestDist = de), (best = { loop: l, edge: "end" }));
-    }
-    return best;
+    return open ? nearestEdge(open.loops, view, x) : null;
   }
 
   function canvasX(e: MouseEvent): number {
@@ -374,18 +343,13 @@
   /** Lane span containing a time (used while dragging across headers). */
   function spanAtTime(sec: number): { start: number; end: number } | null {
     const open = get(openSong);
-    if (!open) return null;
-    const s = laneSpans(open).find((sp) => sec >= sp.start && sec <= sp.end);
-    return s ? { start: s.start, end: s.end } : null;
+    return open ? spanAt(laneSpans(open), sec) : null;
   }
 
   /** Structure-lane span under a canvas point (lane y-band only). */
   function hitLaneSpan(x: number, y: number): LaneSpan | null {
-    if (y >= LANE_H) return null;
     const open = get(openSong);
-    if (!open) return null;
-    const sec = xToSec(view, x);
-    return laneSpans(open).find((s) => sec >= s.start && sec <= s.end) ?? null;
+    return open ? hitLane(laneSpans(open), view, x, y, LANE_H) : null;
   }
 
   function onPointerDown(e: PointerEvent) {
