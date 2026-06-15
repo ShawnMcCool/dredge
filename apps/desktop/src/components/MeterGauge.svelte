@@ -37,6 +37,7 @@
   .head { display: flex; align-items: baseline; gap: 12px; }
   .note { font-size: 1.9rem; font-weight: 600; line-height: 1; color: var(--fg); }
   .oct { font-size: 0.9rem; color: var(--muted); }
+  /* theme-ok:start tuner pitch state is semantic, not the theme accent: cyan = off-pitch, green (--solid) = in-tune */
   .cents { font-size: 0.85rem; color: var(--cyan, #4fc3d4); }
   .bar { position: relative; height: 16px; background: var(--bg-raised); border-radius: 8px; }
   .mid { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: var(--muted); }
@@ -44,6 +45,7 @@
   .mk.idle { left: 50%; background: var(--muted); }
   .intune .cents, .intune .note { color: var(--solid, #5fd38a); }
   .intune .mk { background: var(--solid, #5fd38a); box-shadow: 0 0 8px var(--solid, #5fd38a); }
+  /* theme-ok:end */
   .scale { display: flex; justify-content: space-between; font-size: 0.65rem; color: var(--muted); }
   .locked .mk { animation: pulse 0.4s ease-out; }
   @keyframes pulse { 0% { transform: translateX(-50%) scale(1.6); } 100% { transform: translateX(-50%) scale(1); } }

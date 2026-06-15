@@ -1,0 +1,68 @@
+#!/usr/bin/env node
+// Guardrail: component <style> blocks must color UI from the theme accent
+// (var(--accent)/var(--accent-dim)), not from fixed hues. The color theme is a
+// free accent (presets or a custom hex applied to --accent via lib/theme.ts), so
+// a hardcoded hex or the legacy --cyan token ignores the user's chosen theme —
+// e.g. an "on" toggle styled var(--cyan) stays cyan under every theme.
+//
+// Flags, inside <style> only:
+//   * var(--cyan)            — legacy fixed accent; use var(--accent)
+//   * #rgb / #rrggbb[aa]     — raw hex color literal; use a token
+// Suppress a genuinely-semantic use (e.g. tuner in-tune green) with a same-line
+//   /* theme-ok: <reason> */
+// comment, or wrap a contiguous block with
+//   /* theme-ok:start <reason> */ ... /* theme-ok:end */
+// Run by `just lint`.
+
+const fs = require("fs");
+const path = require("path");
+
+const ROOT = path.resolve(__dirname, "..", "apps", "desktop", "src");
+const HEX = /#[0-9a-fA-F]{3,8}\b/;
+const CYAN = /var\(\s*--cyan\b/;
+const SUPPRESS = /theme-ok/;
+
+function svelteFiles(dir) {
+  const out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...svelteFiles(p));
+    else if (entry.name.endsWith(".svelte")) out.push(p);
+  }
+  return out;
+}
+
+const violations = [];
+for (const file of svelteFiles(ROOT)) {
+  const src = fs.readFileSync(file, "utf8");
+  // line ranges that sit inside a <style> block
+  let inStyle = false;
+  let suppressRegion = false;
+  src.split("\n").forEach((line, i) => {
+    if (/<style\b/.test(line)) inStyle = true;
+    if (/theme-ok:start/.test(line)) suppressRegion = true;
+    if (!inStyle) return;
+    if (!suppressRegion && !SUPPRESS.test(line)) {
+      if (CYAN.test(line)) {
+        violations.push({ file, line: i + 1, text: line.trim(), why: "var(--cyan) — use var(--accent)" });
+      } else if (HEX.test(line)) {
+        violations.push({ file, line: i + 1, text: line.trim(), why: "raw hex color — use a theme token" });
+      }
+    }
+    if (/theme-ok:end/.test(line)) suppressRegion = false;
+    if (/<\/style>/.test(line)) inStyle = false;
+  });
+}
+
+if (violations.length) {
+  console.error("theme-color guardrail: components must use theme tokens, not fixed hues\n");
+  for (const v of violations) {
+    const rel = path.relative(path.resolve(__dirname, ".."), v.file);
+    console.error(`  ${rel}:${v.line}  ${v.why}`);
+    console.error(`      ${v.text}`);
+  }
+  console.error(`\n${violations.length} violation(s). Use var(--accent)/var(--accent-dim), or mark a semantic use with /* theme-ok: reason */.`);
+  process.exit(1);
+}
+
+console.log("theme-color guardrail: ok");

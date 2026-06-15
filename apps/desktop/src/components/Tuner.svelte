@@ -129,7 +129,7 @@
     background: var(--bg-raised);
   }
   .dev.sel {
-    border-color: var(--cyan);
+    border-color: var(--accent);
   }
 
   /* power + readout centred in the box, both axes */
@@ -156,7 +156,7 @@
     color: var(--fg);
   }
   .power.on {
-    color: var(--cyan);
+    color: var(--accent);
   }
 
   .hint {

@@ -27,11 +27,12 @@ test:
     cargo test --workspace
     cd apps/desktop && pnpm vitest run
 
-# Lint gate: clippy, rustfmt check, svelte-check
+# Lint gate: clippy, rustfmt check, svelte-check, theme-color guardrail
 lint:
     cargo clippy --workspace --all-targets -- -D warnings
     cargo fmt --check
     cd apps/desktop && pnpm exec svelte-check --tsconfig ./tsconfig.json
+    ./scripts/check-theme-colors
 
 # Format rust code
 fmt:
