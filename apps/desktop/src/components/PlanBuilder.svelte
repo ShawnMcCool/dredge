@@ -8,6 +8,7 @@
   } from "../lib/stores";
   import Button from "../lib/ui/Button.svelte";
   import EmptyState from "../lib/ui/EmptyState.svelte";
+  import NumberField from "../lib/ui/NumberField.svelte";
 
   type StepType = PlanStep["step"];
   type CurveType = TempoCurve["curve"];
@@ -136,15 +137,15 @@
     <option value="oscillate">oscillate</option>
   </select>
   {#if step.curve.curve === "dwell"}
-    <label>rate <input type="number" step="0.05" min="0.25" max="2" bind:value={step.curve.rate} /></label>
+    <NumberField label="rate" step={0.05} min={0.25} max={2} bind:value={step.curve.rate} />
   {:else if step.curve.curve === "ladder"}
-    <label>start <input type="number" step="0.05" bind:value={step.curve.start} /></label>
-    <label>step <input type="number" step="0.01" bind:value={step.curve.step} /></label>
-    <label>target <input type="number" step="0.05" bind:value={step.curve.target} /></label>
+    <NumberField label="start" step={0.05} bind:value={step.curve.start} />
+    <NumberField label="step" step={0.01} bind:value={step.curve.step} />
+    <NumberField label="target" step={0.05} bind:value={step.curve.target} />
   {:else}
-    <label>low <input type="number" step="0.05" bind:value={step.curve.low} /></label>
-    <label>high <input type="number" step="0.05" bind:value={step.curve.high} /></label>
-    <label>period <input type="number" step="1" min="2" bind:value={step.curve.period} /></label>
+    <NumberField label="low" step={0.05} bind:value={step.curve.low} />
+    <NumberField label="high" step={0.05} bind:value={step.curve.high} />
+    <NumberField label="period" step={1} min={2} bind:value={step.curve.period} />
   {/if}
 {/snippet}
 
@@ -188,10 +189,10 @@
         <div class="fields">
           {#if step.step === "listen_first"}
             {@render loopSelect(step)}
-            <label>reps <input type="number" min="1" bind:value={step.reps} /></label>
+            <NumberField label="reps" min={1} bind:value={step.reps} />
           {:else if step.step === "play_reps"}
             {@render loopSelect(step)}
-            <label>reps <input type="number" min="1" bind:value={step.reps} /></label>
+            <NumberField label="reps" min={1} bind:value={step.reps} />
             {@render curveEditor(step)}
           {:else if step.step === "rotation"}
             <select multiple bind:value={step.loop_ids} size={Math.min(loops().length, 4)}>
@@ -199,13 +200,13 @@
                 <option value={l.id}>{l.name}</option>
               {/each}
             </select>
-            <label>rounds <input type="number" min="1" bind:value={step.rounds} /></label>
-            <label>reps/visit <input type="number" min="1" bind:value={step.reps_per_visit} /></label>
+            <NumberField label="rounds" min={1} bind:value={step.rounds} />
+            <NumberField label="reps/visit" min={1} bind:value={step.reps_per_visit} />
             {@render curveEditor(step)}
           {:else}
             {@render loopSelect(step)}
-            <label>alternations <input type="number" min="1" bind:value={step.alternations} /></label>
-            <label>rate <input type="number" step="0.05" min="0.25" max="2" bind:value={step.rate} /></label>
+            <NumberField label="alternations" min={1} bind:value={step.alternations} />
+            <NumberField label="rate" step={0.05} min={0.25} max={2} bind:value={step.rate} />
           {/if}
         </div>
       </li>
@@ -294,18 +295,6 @@
     gap: calc(var(--space) / 2);
     font-size: 11px;
     color: var(--muted);
-  }
-
-  .fields label {
-    display: flex;
-    align-items: center;
-    gap: 3px;
-  }
-
-  .fields input[type="number"] {
-    width: 3.8em;
-    font-size: 11px;
-    padding: 1px 3px;
   }
 
   .fields select {
