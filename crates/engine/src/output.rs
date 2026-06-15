@@ -91,15 +91,17 @@ fn run(
             };
 
             // Song swap detection: compare the slot against the buffer the
-            // current pipeline was built from.
-            let song = state.song_slot.load_full();
-            let swapped = match (&song, &state.current_song) {
+            // current pipeline was built from. `load()` gives a guard (no
+            // refcount clone) for the common no-swap path; only clone the Arc
+            // out when an actual swap happened.
+            let guard = state.song_slot.load();
+            let swapped = match (guard.as_ref(), state.current_song.as_ref()) {
                 (Some(a), Some(b)) => !Arc::ptr_eq(a, b),
-                (Some(_), None) => true,
-                (None, Some(_)) => true,
+                (Some(_), None) | (None, Some(_)) => true,
                 (None, None) => false,
             };
             if swapped {
+                let song = (*guard).clone();
                 // StemSet clone is cheap: a Vec of Arcs + gains. Seed the fresh
                 // pipeline with the current user volume so song swaps don't reset
                 // it back to the Pipeline default.

@@ -40,11 +40,17 @@ impl RollingRing {
         // a push larger than capacity: only the tail can survive
         let skip = frames.saturating_sub(self.capacity_frames);
         let src = &interleaved[skip * CHANNELS..frames * CHANNELS];
-        for frame in src.chunks_exact(CHANNELS) {
-            let dst = self.write_frame * CHANNELS;
-            self.data[dst..dst + CHANNELS].copy_from_slice(frame);
-            self.write_frame = (self.write_frame + 1) % self.capacity_frames;
+        let n = src.len() / CHANNELS; // <= capacity_frames after skip
+                                      // Write in at most two bulk copies: from the head to the buffer end,
+                                      // then the wrapped remainder to the front (instead of per-frame).
+        let first = (self.capacity_frames - self.write_frame).min(n);
+        let dst = self.write_frame * CHANNELS;
+        self.data[dst..dst + first * CHANNELS].copy_from_slice(&src[..first * CHANNELS]);
+        let rest = n - first;
+        if rest > 0 {
+            self.data[..rest * CHANNELS].copy_from_slice(&src[first * CHANNELS..]);
         }
+        self.write_frame = (self.write_frame + n) % self.capacity_frames;
         self.filled_frames = (self.filled_frames + frames).min(self.capacity_frames);
     }
 
@@ -107,6 +113,14 @@ mod tests {
         let mut r = RollingRing::with_secs(3.0 / SAMPLE_RATE as f64); // 3 frames
         r.push(&frames(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]));
         assert_eq!(firsts(&r.snapshot_last(1.0)), vec![5.0, 6.0, 7.0]);
+    }
+
+    #[test]
+    fn push_wrapping_across_two_calls_stays_chronological() {
+        let mut r = RollingRing::with_secs(4.0 / SAMPLE_RATE as f64); // 4 frames
+        r.push(&frames(&[1.0, 2.0, 3.0])); // write head now at frame 3
+        r.push(&frames(&[4.0, 5.0, 6.0])); // 1 frame to the end, 2 wrap to front
+        assert_eq!(firsts(&r.snapshot_last(10.0)), vec![3.0, 4.0, 5.0, 6.0]);
     }
 
     #[test]
