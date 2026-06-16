@@ -2,7 +2,6 @@
 
 pub mod analysis;
 pub mod app;
-pub mod capture_control;
 pub mod control;
 pub mod logging;
 mod profile;

@@ -139,6 +139,7 @@ export interface Position {
   at: number;
 }
 
+/** An audio input device (mic / interface) for the tuner. */
 export interface CaptureNode {
   id: number;
   /** object.serial — what the engine targets; registry ids don't link on modern PipeWire. */
@@ -146,13 +147,6 @@ export interface CaptureNode {
   app: string;
   /** media.name — often the song title currently playing. */
   media: string;
-}
-
-export interface CaptureStatus {
-  running: boolean;
-  filled_secs?: number;
-  app?: string;
-  media?: string;
 }
 
 export interface TunerReading {
@@ -249,8 +243,6 @@ export const bassFocus = writable(false);
 export const muted = writable(false);
 /** User playback volume 0..1.5 — engine multiplier, persisted as a setting. */
 export const playbackVolume = writable(1.0);
-export const captureNodes = writable<CaptureNode[]>([]);
-export const captureStatus = writable<CaptureStatus>({ running: false });
 /** Input devices (mics / interfaces) for the tuner; CaptureNode shape. */
 export const tunerInputs = writable<CaptureNode[]>([]);
 /** Latest pitch reading while the tuner is on; null when off. */
@@ -288,7 +280,6 @@ export const vram = writable<{ used: number[]; peak: number; min: number; total:
 /** Known keys in the server-side `settings` table. */
 export const UI_SCALE = "ui_scale";
 export const GRID_SNAP_DEFAULT = "grid_snap_default";
-export const CAPTURE_BUFFER_SECS = "capture_buffer_secs";
 export const PLAYBACK_VOLUME = "playback_volume";
 export const ANALYSIS_DEVICE = "analysis_device";
 export const LIBRARY_COLLAPSED = "library_collapsed";
@@ -842,35 +833,6 @@ export const actions = {
     await this.refreshLoops();
   },
 
-  // --- capture ---
-
-  async refreshCaptureNodes(): Promise<void> {
-    captureNodes.set(await cmd<CaptureNode[]>("capture.nodes"));
-  },
-
-  async refreshCaptureStatus(): Promise<void> {
-    captureStatus.set(await cmd<CaptureStatus>("capture.status"));
-  },
-
-  async startCapture(nodeId: number): Promise<void> {
-    const buffer = Number(get(settings)[CAPTURE_BUFFER_SECS] ?? 180);
-    await cmd("capture.start", { node_id: nodeId, buffer_secs: buffer });
-    await this.refreshCaptureStatus();
-  },
-
-  async stopCapture(): Promise<void> {
-    await cmd("capture.stop");
-    captureStatus.set({ running: false });
-  },
-
-  /** Snapshot the last N seconds to a WAV, import it, and open it. */
-  async grabCapture(lastSecs: number): Promise<Song> {
-    const song = await cmd<Song>("capture.grab", { last_secs: lastSecs });
-    await this.refreshSongs();
-    await this.openSong(song.id);
-    return song;
-  },
-
   // --- tuner ---
 
   async refreshTunerInputs(): Promise<void> {
@@ -1144,7 +1106,7 @@ export async function initEvents(): Promise<() => void> {
         actions.recordProfile(ev.data as ProfileRun);
         break;
       case "library_changed":
-        // socket-driven imports (incl. capture.grab) land in the sidebar
+        // socket-driven imports land in the sidebar
         void actions.refreshSongs();
         break;
     }

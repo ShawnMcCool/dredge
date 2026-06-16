@@ -4,7 +4,6 @@
 
 use practice::store::Store;
 use server::app::App;
-use server::capture_control::RealCapture;
 use server::socket::{default_socket_path, serve};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -67,7 +66,6 @@ fn main() {
     let app = Arc::new(Mutex::new(App::new(
         store,
         Box::new(engine),
-        Box::new(RealCapture::default()),
         Arc::new(server::stems::DemucsSeparator::default()),
     )));
     let _handle = match serve(app, &socket_path, |_| {}) {

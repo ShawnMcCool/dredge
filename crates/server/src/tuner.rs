@@ -1,7 +1,7 @@
 //! Tuner control: owns a short-buffer input capture + a sampler thread that
 //! detects pitch every ~50 ms and sends readings over a channel. `App::tick()`
-//! drains them into `tuner_pitch` events. Trait + Real/Mock mirror
-//! `capture_control` for testability.
+//! drains them into `tuner_pitch` events. A `TunerControl` trait with Real/Mock
+//! implementations keeps it testable.
 
 use engine::capture::{CaptureNode, CaptureSession};
 use engine::ring::RollingRing;

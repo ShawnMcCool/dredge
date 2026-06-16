@@ -2,7 +2,6 @@ use engine::pipeline::EngineEvent;
 use practice::store::Store;
 use serde_json::Value;
 use server::app::App;
-use server::capture_control::MockCapture;
 use server::control::MockEngine;
 use server::socket::serve;
 use server::stems::FakeSeparator;
@@ -24,7 +23,6 @@ fn start_server(
     let app = App::new(
         Store::open_in_memory().unwrap(),
         Box::new(mock.clone()),
-        Box::new(MockCapture::default()),
         Arc::new(FakeSeparator),
     );
     let handle = serve(Arc::new(Mutex::new(app)), &path, |_| {}).unwrap();
@@ -87,7 +85,6 @@ fn on_events_hook_receives_tick_events() {
     let app = App::new(
         Store::open_in_memory().unwrap(),
         Box::new(mock.clone()),
-        Box::new(MockCapture::default()),
         Arc::new(FakeSeparator),
     );
     let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));

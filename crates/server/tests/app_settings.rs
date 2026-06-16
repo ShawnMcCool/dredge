@@ -2,7 +2,6 @@ use engine::pipeline::EngineCmd;
 use practice::store::Store;
 use serde_json::{json, Value};
 use server::app::App;
-use server::capture_control::MockCapture;
 use server::control::MockEngine;
 use server::protocol::Request;
 use server::stems::FakeSeparator;
@@ -12,7 +11,6 @@ fn test_app() -> App {
     App::new(
         Store::open_in_memory().unwrap(),
         Box::new(MockEngine::default()),
-        Box::new(MockCapture::default()),
         Arc::new(FakeSeparator),
     )
 }
@@ -61,7 +59,6 @@ fn volume_dispatches_set_volume_to_the_engine() {
     let mut app = App::new(
         Store::open_in_memory().unwrap(),
         Box::new(mock.clone()),
-        Box::new(MockCapture::default()),
         Arc::new(FakeSeparator),
     );
     req(&mut app, "volume", json!({"value": 0.8}));

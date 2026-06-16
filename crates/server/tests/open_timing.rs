@@ -11,7 +11,6 @@
 use practice::store::Store;
 use serde_json::{json, Value};
 use server::app::App;
-use server::capture_control::MockCapture;
 use server::control::MockEngine;
 use server::socket::serve;
 use server::stems::{FakeSeparator, STEM_NAMES};
@@ -84,7 +83,6 @@ fn time_song_open() {
     let mut app = App::new(
         Store::open(&dir.path().join("earworm.db")).unwrap(),
         Box::new(MockEngine::default()),
-        Box::new(MockCapture::default()),
         Arc::new(FakeSeparator),
     );
     let stems_dir = dir.path().join("stems");

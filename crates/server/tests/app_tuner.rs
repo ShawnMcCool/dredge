@@ -2,7 +2,6 @@ use engine::capture::CaptureNode;
 use practice::store::Store;
 use serde_json::Value;
 use server::app::App;
-use server::capture_control::MockCapture;
 use server::control::MockEngine;
 use server::stems::FakeSeparator;
 use std::sync::Arc;
@@ -11,7 +10,6 @@ fn make_app() -> App {
     App::new(
         Store::open_in_memory().unwrap(),
         Box::new(MockEngine::default()),
-        Box::new(MockCapture::default()),
         Arc::new(FakeSeparator),
     )
 }

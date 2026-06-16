@@ -5,7 +5,6 @@ use practice::store::Store;
 use serde_json::{json, Value};
 use server::analysis::{fake_analysis, Analyzer, FakeAnalyzer};
 use server::app::App;
-use server::capture_control::MockCapture;
 use server::control::MockEngine;
 use server::protocol::Request;
 use server::stems::FakeSeparator;
@@ -46,7 +45,6 @@ fn setup(analyzer: Arc<dyn Analyzer>) -> Ctx {
     let mut app = App::new(
         Store::open_in_memory().unwrap(),
         Box::new(Arc::new(Mutex::new(MockEngine::default()))),
-        Box::new(MockCapture::default()),
         Arc::new(FakeSeparator),
     );
     app.set_analyzer(analyzer);

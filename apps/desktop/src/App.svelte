@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount, type Component } from "svelte";
   import AnalyzePrompt from "./components/AnalyzePrompt.svelte";
-  import Capture from "./components/Capture.svelte";
   import Drill from "./components/Drill.svelte";
   import Export from "./components/Export.svelte";
   import Guide from "./components/Guide.svelte";
@@ -31,13 +30,12 @@
     settingsOpen,
   } from "./lib/stores";
 
-  const ALL_TABS = ["structure", "loops", "capture", "export", "profile", "settings", "guide"] as const;
+  const ALL_TABS = ["structure", "loops", "export", "profile", "settings", "guide"] as const;
   type Tab = (typeof ALL_TABS)[number];
   // one panel view per tab — the nav and the body both drive off this map
   const TAB_VIEWS: Record<Tab, Component> = {
     structure: Sections,
     loops: Loops,
-    capture: Capture,
     export: Export,
     profile: ProfilingPanel,
     settings: SettingsPanel,

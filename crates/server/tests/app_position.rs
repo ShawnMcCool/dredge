@@ -1,7 +1,6 @@
 use engine::pipeline::EngineEvent;
 use practice::store::Store;
 use server::app::App;
-use server::capture_control::MockCapture;
 use server::control::MockEngine;
 use server::stems::FakeSeparator;
 use std::sync::{Arc, Mutex};
@@ -13,7 +12,6 @@ fn app() -> (App, SharedMock) {
     let app = App::new(
         Store::open_in_memory().unwrap(),
         Box::new(mock.clone()),
-        Box::new(MockCapture::default()),
         Arc::new(FakeSeparator),
     );
     (app, mock)

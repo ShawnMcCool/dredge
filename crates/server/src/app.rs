@@ -1,5 +1,4 @@
 use crate::analysis::Analyzer;
-use crate::capture_control::CaptureControl;
 use crate::control::AudioControl;
 use crate::protocol::{Event, Request, Response};
 use crate::sampler::{SharedWork, WorkReporter, WorkSample};
@@ -41,16 +40,15 @@ fn pitch_scale_factor(semitones: f64, cents: f64, octave_up: bool) -> f64 {
 // --- shared dispatch (lock-phased heavy commands) ---------------------------
 
 /// Dispatch that holds the App lock only for state work — known-heavy
-/// commands (`song.open`, `song.import`, `capture.grab`) run their decode/
-/// hash/IO phase outside the lock, so the tick pump and other clients never
-/// wait behind a multi-second decode. Everything else takes the lock once
-/// and delegates to `App::dispatch` (which inlines the same phases).
+/// commands (`song.open`, `song.import`) run their decode/hash/IO phase
+/// outside the lock, so the tick pump and other clients never wait behind a
+/// multi-second decode. Everything else takes the lock once and delegates to
+/// `App::dispatch` (which inlines the same phases).
 pub fn dispatch_shared(app: &Arc<Mutex<App>>, req: Request) -> Response {
     let id = req.id;
     let phased = match req.cmd.as_str() {
         "song.open" => open_phased(app, req.params),
         "song.import" => import_phased(app, req.params),
-        "capture.grab" => grab_phased(app, req.params),
         _ => return app.lock().unwrap().dispatch(req),
     };
     match phased {
@@ -76,18 +74,6 @@ fn import_phased(app: &Arc<Mutex<App>>, p: Value) -> Result<Value, String> {
     app.lock().unwrap().import_prepared(prep)
 }
 
-fn grab_phased(app: &Arc<Mutex<App>>, p: Value) -> Result<Value, String> {
-    let p: GrabParams = from_params(p)?;
-    let snap = app.lock().unwrap().grab_snapshot(p.last_secs)?;
-    let (path, title) = grab_write_wav(&snap)?;
-    let hash = engine::decode::file_hash(&path).err_str()?;
-    if let Some(existing) = app.lock().unwrap().import_lookup(&hash)? {
-        return serde_json::to_value(existing).err_str();
-    }
-    let prep = import_decode(path.to_string_lossy().into_owned(), Some(title), hash)?;
-    app.lock().unwrap().import_prepared(prep)
-}
-
 #[derive(Deserialize)]
 struct OpenParams {
     song_id: SongId,
@@ -97,11 +83,6 @@ struct OpenParams {
 struct ImportParams {
     path: String,
     title: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct GrabParams {
-    last_secs: f64,
 }
 
 /// Lock-free product of `song.open`'s slow phase: engine-ready audio,
@@ -253,46 +234,10 @@ fn import_decode(
     })
 }
 
-/// Lock-phase product of `capture.grab`: the raw snapshot + naming context.
-struct GrabSnapshot {
-    samples: Vec<f32>,
-    node: engine::capture::CaptureNode,
-    dir: PathBuf,
-}
-
-/// Slow phase of `capture.grab` (no lock): write the snapshot WAV and name
-/// it after the captured app/media.
-fn grab_write_wav(snap: &GrabSnapshot) -> Result<(PathBuf, String), String> {
-    let node = &snap.node;
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let stem = if node.media.is_empty() {
-        format!("{}-{ts}", sanitize_filename(&node.app))
-    } else {
-        format!(
-            "{}-{}-{ts}",
-            sanitize_filename(&node.app),
-            sanitize_filename(&node.media)
-        )
-    };
-    let path = snap.dir.join(format!("{stem}.wav"));
-    engine::capture::write_wav(&path, &snap.samples).err_str()?;
-    let title = if node.media.is_empty() {
-        node.app.clone()
-    } else {
-        format!("{} — {}", node.app, node.media)
-    };
-    Ok((path, title))
-}
-
 pub struct App {
     store: Store,
     audio: Box<dyn AudioControl>,
-    capture: Box<dyn CaptureControl>,
     separator: Arc<dyn StemSeparator>,
-    captures_dir: PathBuf,
     stems_dir: PathBuf,
     open_song: Option<OpenSong>,
     last_position: Option<(f64, f64, bool)>, // secs, rate, playing
@@ -336,7 +281,6 @@ impl App {
     pub fn new(
         store: Store,
         audio: Box<dyn AudioControl>,
-        capture: Box<dyn CaptureControl>,
         separator: Arc<dyn StemSeparator>,
     ) -> Self {
         let (job_tx, job_rx) = mpsc::channel();
@@ -347,9 +291,7 @@ impl App {
         Self {
             store,
             audio,
-            capture,
             separator,
-            captures_dir: default_captures_dir(),
             stems_dir: default_stems_dir(),
             open_song: None,
             last_position: None,
@@ -370,11 +312,6 @@ impl App {
             tuner_tx,
             tuner_rx,
         }
-    }
-
-    /// Override where grabbed captures are written (tests use a tempdir).
-    pub fn set_captures_dir(&mut self, dir: PathBuf) {
-        self.captures_dir = dir;
     }
 
     /// Swap the analyzer (tests use `FakeAnalyzer`).
@@ -450,14 +387,6 @@ impl App {
             "mute" => self.mute(p),
             "pitch" => self.pitch(p),
             "status" => self.status(),
-            "capture.nodes" => serde_json::to_value(self.capture.list_nodes()?).err_str(),
-            "capture.start" => self.capture_start(p),
-            "capture.stop" => {
-                self.capture.stop();
-                Ok(Value::Null)
-            }
-            "capture.status" => self.capture_status(),
-            "capture.grab" => self.capture_grab(p),
             "tuner.inputs" => serde_json::to_value(self.tuner.list_inputs()?).err_str(),
             "tuner.start" => self.tuner_start(p),
             "tuner.stop" => {
@@ -1081,47 +1010,7 @@ impl App {
         serde_json::to_value(self.store.get_analysis(p.song_id).err_str()?).err_str()
     }
 
-    // --- capture -----------------------------------------------------------
-
-    fn capture_start(&mut self, p: Value) -> Result<Value, String> {
-        #[derive(Deserialize)]
-        struct P {
-            node_id: u32,
-            buffer_secs: Option<f64>,
-        }
-        let p: P = from_params(p)?;
-        self.capture
-            .start(p.node_id, p.buffer_secs.unwrap_or(180.0))?;
-        Ok(Value::Null)
-    }
-
-    fn capture_status(&mut self) -> Result<Value, String> {
-        Ok(match self.capture.status() {
-            Some((filled, node)) => json!({
-                "running": true,
-                "filled_secs": filled,
-                "app": node.app,
-                "media": node.media,
-            }),
-            None => json!({ "running": false }),
-        })
-    }
-
-    /// Snapshot the last `last_secs` of the rolling capture to a WAV under
-    /// `captures_dir`, then funnel it through the `song.import` phases
-    /// (hash, sidecar, peaks all reused). `dispatch_shared` runs the same
-    /// phases with the WAV/hash/decode work outside the lock.
-    fn capture_grab(&mut self, p: Value) -> Result<Value, String> {
-        let p: GrabParams = from_params(p)?;
-        let snap = self.grab_snapshot(p.last_secs)?;
-        let (path, title) = grab_write_wav(&snap)?;
-        let hash = engine::decode::file_hash(&path).err_str()?;
-        if let Some(existing) = self.import_lookup(&hash)? {
-            return serde_json::to_value(existing).err_str();
-        }
-        let prep = import_decode(path.to_string_lossy().into_owned(), Some(title), hash)?;
-        self.import_prepared(prep)
-    }
+    // --- tuner -------------------------------------------------------------
 
     fn tuner_start(&mut self, p: Value) -> Result<Value, String> {
         #[derive(Deserialize)]
@@ -1131,20 +1020,6 @@ impl App {
         let p: P = from_params(p)?;
         self.tuner.start(p.node_id, self.tuner_tx.clone())?;
         Ok(Value::Null)
-    }
-
-    /// `capture.grab` phase 1 (needs the lock): snapshot the rolling buffer.
-    fn grab_snapshot(&mut self, last_secs: f64) -> Result<GrabSnapshot, String> {
-        let (_, node) = self.capture.status().ok_or("no capture running")?;
-        let samples = self.capture.snapshot(last_secs)?;
-        if samples.is_empty() {
-            return Err("capture buffer is empty".into());
-        }
-        Ok(GrabSnapshot {
-            samples,
-            node,
-            dir: self.captures_dir.clone(),
-        })
     }
 
     // --- library ---------------------------------------------------------
@@ -1254,8 +1129,7 @@ impl App {
         if let Some(sc) = &prep.sidecar {
             self.restore_sidecar(song.id, sc)?;
         }
-        // socket-driven imports (incl. capture.grab) refresh every client's
-        // library on the next tick
+        // socket-driven imports refresh every client's library on the next tick
         let _ = self.job_tx.send(Event {
             event: "library_changed".into(),
             data: Value::Null,
@@ -1688,13 +1562,6 @@ impl App {
     }
 }
 
-fn default_captures_dir() -> PathBuf {
-    // ~/music, matching this user's lowercase dirs (XDG parsing not worth it)
-    dirs::home_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("music/earworm-captures")
-}
-
 /// Decode `src` to a canonical 48k stereo WAV in a fresh temp dir, returning
 /// the dir (kept alive by the caller; auto-removes on drop) and the WAV path.
 /// External tools (analysis, Demucs) read this instead of the original file, so
@@ -1718,21 +1585,3 @@ fn default_stems_dir() -> PathBuf {
         .join("earworm/stems")
 }
 
-/// Keep filenames boring: alphanumerics, dash, underscore, dot survive;
-/// everything else becomes a dash (collapsed).
-fn sanitize_filename(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.') {
-            out.push(c);
-        } else if !out.ends_with('-') {
-            out.push('-');
-        }
-    }
-    let trimmed = out.trim_matches('-');
-    if trimmed.is_empty() {
-        "capture".into()
-    } else {
-        trimmed.into()
-    }
-}

@@ -5,7 +5,6 @@
   import {
     actions,
     ANALYSIS_DEVICE,
-    CAPTURE_BUFFER_SECS,
     COLOR_THEME,
     GRID_SNAP_DEFAULT,
     gridSnap,
@@ -19,15 +18,12 @@
   import { applyDecorations } from "../lib/window";
   import { getZoom, setZoom } from "../lib/zoom";
 
-  const BUFFERS = [60, 120, 180, 300];
-
   let scale = $derived(Number($settings[UI_SCALE] ?? getZoom()));
   // live preview while dragging; zoom is only applied on release (a full
   // webview re-zoom + DB write is too heavy to run on every pixel)
   let preview = $state<number | null>(null);
   let shownScale = $derived(preview ?? scale);
   let snapDefault = $derived($settings[GRID_SNAP_DEFAULT] !== false);
-  let bufferSecs = $derived(Number($settings[CAPTURE_BUFFER_SECS] ?? 180));
   let device = $derived(($settings[ANALYSIS_DEVICE] as string) ?? "auto");
   // default on: only an explicit false hides the frame
   let decorations = $derived($settings[WINDOW_DECORATIONS] !== false);
@@ -124,22 +120,7 @@
 </section>
 
 <section class="group">
-  <h3 class="group-head">capture &amp; analysis</h3>
-
-  <div class="setting stacked">
-    <div class="text"><span class="name">capture buffer</span></div>
-    <div class="chips">
-      {#each BUFFERS as b (b)}
-        <Button
-          variant="chip"
-          active={bufferSecs === b}
-          onclick={() => void actions.setSetting(CAPTURE_BUFFER_SECS, b)}
-        >
-          {b}s
-        </Button>
-      {/each}
-    </div>
-  </div>
+  <h3 class="group-head">analysis</h3>
 
   <div class="setting stacked">
     <div class="text">

@@ -53,7 +53,6 @@ fn main() {
     let app = Arc::new(Mutex::new(App::new(
         store,
         Box::new(engine),
-        Box::new(server::capture_control::RealCapture::default()),
         Arc::new(server::stems::DemucsSeparator::default()),
     )));
 

@@ -85,7 +85,7 @@
     ["desktop host", "Rust + Tauri 2. The UI is just another client of one JSON command dispatcher."],
     [
       "audio engine",
-      "Rust real-time core: Symphonia decode · Rubber Band R3 pitch-preserving time-stretch · PipeWire output & capture · lock-free rtrb ring buffers between the audio and control threads.",
+      "Rust real-time core: Symphonia decode · Rubber Band R3 pitch-preserving time-stretch · PipeWire output & input · lock-free rtrb ring buffers between the audio and control threads.",
     ],
     [
       "practice core",

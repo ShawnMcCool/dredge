@@ -1,7 +1,6 @@
 use practice::store::Store;
 use serde_json::{json, Value};
 use server::app::App;
-use server::capture_control::MockCapture;
 use server::control::MockEngine;
 use server::protocol::{Request, Response};
 use server::stems::FakeSeparator;
@@ -29,7 +28,6 @@ fn test_app() -> App {
     App::new(
         Store::open_in_memory().unwrap(),
         Box::new(MockEngine::default()),
-        Box::new(MockCapture::default()),
         Arc::new(FakeSeparator),
     )
 }
