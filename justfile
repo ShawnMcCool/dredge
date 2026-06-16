@@ -35,6 +35,7 @@ tarball: build
     install -Dm755 target/release/earwormd                      "$stage/usr/bin/earwormd"
     install -Dm755 scripts/analyze                              "$stage/usr/bin/earworm-analyze"
     install -Dm755 scripts/earworm-enable-ml                    "$stage/usr/bin/earworm-enable-ml"
+    install -Dm755 scripts/earworm-doctor                       "$stage/usr/bin/earworm-doctor"
     install -Dm644 scripts/analyze_impl.py                      "$stage/usr/lib/earworm/analyze_impl.py"
     install -Dm644 scripts/songformer_impl.py                   "$stage/usr/lib/earworm/songformer_impl.py"
     install -Dm644 earworm.desktop                              "$stage/usr/share/applications/earworm.desktop"

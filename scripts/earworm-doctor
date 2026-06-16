@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# earworm-doctor — report which optional external tools are installed, and how
+# to install the ones that aren't. The core looper (load a track, loop, stretch,
+# the tempo trainer, the tuner) needs none of these; each tool below unlocks one
+# optional feature. The desktop app shows the same status under
+# Settings -> capabilities; this is the headless / daemon equivalent.
+#
+# The checks mirror the engine's own (a PATH lookup, or `ffmpeg -version`).
+# Exit status: 0 when every optional tool is present, 1 when any is missing.
+set -uo pipefail   # not -e: every check must run even when one fails
+
+# Colour only on a terminal.
+if [ -t 1 ]; then G=$'\033[32m'; Y=$'\033[33m'; DIM=$'\033[2m'; RST=$'\033[0m'
+else G=''; Y=''; DIM=''; RST=''; fi
+
+# System-package installer for this distro (used for ffmpeg).
+if command -v pacman >/dev/null 2>&1; then
+  ffmpeg_fix="sudo pacman -S ffmpeg"
+elif command -v apt >/dev/null 2>&1; then
+  ffmpeg_fix="sudo apt install ffmpeg"
+else
+  ffmpeg_fix="install ffmpeg with your package manager"
+fi
+
+ready=0 total=0
+report() { # name  enabled(0|1)  feature  fix
+  total=$((total + 1))
+  if [ "$2" -eq 0 ]; then
+    printf '  %s●%s %-16s %sready%s\n' "$G" "$RST" "$1" "$DIM" "$RST"
+    ready=$((ready + 1))
+  else
+    printf '  %s○%s %-16s %smissing%s — %s\n' "$Y" "$RST" "$1" "$Y" "$RST" "$3"
+    printf '       %sfix:%s %s\n' "$DIM" "$RST" "$4"
+  fi
+}
+
+echo "earworm — optional tool check"
+echo
+
+# ffmpeg: MP3 export, containers symphonia can't demux, and demucs stem export.
+ffmpeg -version >/dev/null 2>&1
+report "ffmpeg" "$?" "MP3 export · mkv/webm · stem export" "$ffmpeg_fix"
+
+# analysis: the earworm-analyze wrapper ($EARWORM_ANALYZE, else on PATH). The
+# wrapper ships with the package; it self-bootstraps its PyTorch venv on first
+# use, which earworm-enable-ml does up front.
+if { [ -n "${EARWORM_ANALYZE:-}" ] && [ -x "${EARWORM_ANALYZE}" ]; } \
+   || command -v earworm-analyze >/dev/null 2>&1; then
+  analyze_rc=0
+else
+  analyze_rc=1
+fi
+report "earworm-analyze" "$analyze_rc" "beat + section analysis" \
+  "earworm-enable-ml analyze   (from a source checkout: scripts/analyze)"
+
+# stems: the demucs CLI on PATH.
+command -v demucs >/dev/null 2>&1
+report "demucs" "$?" "stem separation (vocals/drums/bass/other)" \
+  "earworm-enable-ml stems"
+
+echo
+if [ "$ready" -eq "$total" ]; then
+  echo "${G}full capability${RST} — every optional feature is available."
+  exit 0
+elif [ "$ready" -eq 0 ]; then
+  echo "${Y}core only${RST} — the looper, stretch and tuner work; the tools above are missing."
+  exit 1
+else
+  echo "${Y}partial capability${RST} — $ready of $total optional features available."
+  exit 1
+fi

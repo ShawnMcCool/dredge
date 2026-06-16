@@ -52,6 +52,7 @@
           "/usr/bin/earwormd": "../../../target/release/earwormd",
           "/usr/bin/earworm-analyze": "../../../scripts/analyze",
           "/usr/bin/earworm-enable-ml": "../../../scripts/earworm-enable-ml",
+          "/usr/bin/earworm-doctor": "../../../scripts/earworm-doctor",
           "/usr/lib/earworm/analyze_impl.py": "../../../scripts/analyze_impl.py",
           "/usr/lib/earworm/songformer_impl.py": "../../../scripts/songformer_impl.py"
         }
