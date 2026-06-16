@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en" data-accent="amber">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>earworm · export tab — direction mockups</title>
+<style>
+  :root {
+    --bg: #101014;
+    --bg-raised: #16161c;
+    --fg: #e8e6e3;
+    --accent: #e0a458;
+    --accent-dim: #8a6a3f;
+    --muted: #6b7280;
+    --wave: #3f4250;
+    --line: #26262e;
+    --solid: #6fae6f;
+    --space: 8px;
+    --radius: 2px;
+    --control-h: 28px;
+    --mono: ui-monospace, "JetBrains Mono", "Fira Code", monospace;
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    line-height: 1.4;
+    color: var(--fg);
+    background: var(--bg);
+    color-scheme: dark;
+  }
+  :root[data-accent="cyan"] { --accent: #4fc3d4; --accent-dim: #3a8a94; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 32px; background: var(--bg); }
+  .mono { font-family: var(--mono); }
+  .readout { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  h1.page { font: 600 13px/1.4 system-ui; letter-spacing: .04em; color: var(--fg); margin: 0 0 4px; }
+  p.sub { color: var(--muted); font-size: 12px; margin: 0 0 28px; max-width: 70ch; }
+  .toolbar { display:flex; gap:16px; align-items:center; margin-bottom:28px; font-size:12px; color:var(--muted); }
+  .toolbar button { font: inherit; color: var(--fg); background: var(--bg-raised); border: 1px solid var(--line); border-radius: var(--radius); padding: 4px 10px; cursor: pointer; }
+  .toolbar button.on { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+
+  .row { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
+  .col { display: flex; flex-direction: column; gap: 10px; width: 340px; }
+  .caption { font-size: 12px; color: var(--muted); }
+  .caption b { color: var(--fg); font-weight: 600; }
+
+  /* ---- the panel chrome (right pane) ---- */
+  .panel {
+    width: 340px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .tabs { display: flex; gap: 2px; padding: 6px 8px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .tab {
+    font: inherit; font-size: 11px; letter-spacing: .03em;
+    color: var(--muted); background: none; border: none; border-radius: var(--radius);
+    padding: 3px 7px; cursor: pointer;
+  }
+  .tab.active { color: var(--bg); background: var(--accent); }
+  .body { padding: calc(var(--space) * 1.5); display: flex; flex-direction: column; }
+
+  h2.title { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 var(--space); }
+
+  .group { margin-bottom: calc(var(--space) * 2); }
+  .group:last-child { margin-bottom: 0; }
+  .group-head {
+    margin: 0 0 calc(var(--space) / 2); padding-bottom: 6px;
+    border-bottom: 1px solid var(--line);
+    font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+  }
+
+  .setting { display:flex; align-items:center; justify-content:space-between; gap: var(--space); padding: 7px 0; }
+  .setting.stacked { flex-direction: column; align-items: stretch; gap: 7px; }
+  .name { font-size: 13px; color: var(--fg); }
+  .desc { font-size: 11px; color: var(--muted); }
+
+  /* radios */
+  .radio { display:flex; align-items:center; gap:10px; padding: 6px 0; cursor: pointer; }
+  .radio .dot { width:13px; height:13px; border-radius:50%; border:1px solid var(--muted); flex:0 0 auto; position:relative; }
+  .radio.sel .dot { border-color: var(--accent); }
+  .radio.sel .dot::after { content:""; position:absolute; inset:3px; border-radius:50%; background: var(--accent); }
+  .radio .lbl { font-size: 13px; color: var(--fg); flex:1; }
+  .radio .meta { font-size: 11px; color: var(--muted); }
+  .radio.disabled { cursor: default; }
+  .radio.disabled .lbl, .radio.disabled .meta { color: #41434c; }
+  .radio.disabled .dot { border-color: #33353d; }
+
+  /* chips */
+  .chips { display:flex; gap: 4px; }
+  .chip { font: inherit; font-size:12px; color: var(--fg); background: var(--bg-raised); border:1px solid var(--line); border-radius: var(--radius); padding: 4px 12px; cursor:pointer; }
+  .chip.on { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+  .chip.disabled { color:#41434c; cursor:default; }
+  .chip .hint { font-size:10px; color: var(--muted); margin-left: 5px; }
+
+  /* fields */
+  .field { display:flex; flex-direction:column; gap:4px; margin: 6px 0; }
+  .field label { font-size: 11px; color: var(--muted); }
+  input.txt { font: inherit; font-size: 13px; color: var(--fg); background: var(--bg); border:1px solid var(--line); border-radius: var(--radius); padding: 6px 8px; width:100%; }
+  .dirrow { display:flex; gap:4px; }
+  .dirrow input { flex:1; }
+  .pickbtn { font: inherit; color: var(--fg); background: var(--bg-raised); border:1px solid var(--line); border-radius: var(--radius); padding: 0 10px; cursor:pointer; }
+
+  /* the big export button */
+  .export-btn { font: inherit; font-size:13px; width:100%; color: var(--bg); background: var(--accent); border:1px solid var(--accent); border-radius: var(--radius); padding: 9px; cursor:pointer; margin-top: 10px; font-weight:600; }
+  .export-btn:hover { filter: brightness(1.08); }
+
+  /* the bake summary block (A) */
+  .bake { font-size: 12px; color: var(--fg); line-height: 1.7; }
+  .bake .vol { color: var(--muted); font-size: 11px; }
+  .bake .accentword { color: var(--accent); }
+
+  /* receipt card (B) */
+  .receipt {
+    border: 1px solid var(--accent-dim);
+    border-radius: var(--radius);
+    background: var(--bg-raised);
+    padding: 12px 14px;
+    margin-bottom: calc(var(--space) * 1.5);
+  }
+  .receipt .head { display:flex; align-items:baseline; gap:10px; margin-bottom:8px; }
+  .receipt .dur { font-family: var(--mono); font-size: 20px; color: var(--fg); }
+  .receipt .fmt { font-size: 12px; color: var(--accent); letter-spacing:.04em; }
+  .receipt .size { font-size: 12px; color: var(--muted); margin-left:auto; }
+  .receipt .bakeline { font-size: 12px; color: var(--fg); line-height:1.6; }
+  .receipt .bakeline .mut { color: var(--muted); }
+
+  /* compact caption (C) */
+  .bakecap { font-size: 11px; color: var(--muted); margin: 12px 0 0; font-family: var(--mono); }
+
+  /* states */
+  .state { width: 340px; }
+  .progress { height: 6px; background: var(--bg-raised); border:1px solid var(--line); border-radius: 99px; overflow:hidden; margin: 10px 0; }
+  .progress > i { display:block; height:100%; width:62%; background: var(--accent); }
+  .doneicon { color: var(--solid); }
+  .linkbtn { font: inherit; font-size:12px; color: var(--fg); background: var(--bg-raised); border:1px solid var(--line); border-radius: var(--radius); padding: 5px 12px; cursor:pointer; }
+  .ghostbtn { font: inherit; font-size:12px; color: var(--muted); background:none; border:1px solid var(--line); border-radius: var(--radius); padding: 5px 12px; cursor:pointer; }
+</style>
+</head>
+<body>
+  <h1 class="page">earworm · export tab — three structural directions</h1>
+  <p class="sub">All three wear the real panel skin (amber accent, JetBrains-Mono readouts, SettingsPanel spacing). They differ only in <b>where the “what you’ll get” confidence info lives</b> and the overall flow. Use the toggle to preview the cyan accent. Below the three: the shared rendering + done states.</p>
+
+  <div class="toolbar">
+    <span>accent:</span>
+    <button class="on" id="amberBtn" onclick="document.documentElement.setAttribute('data-accent','amber');this.classList.add('on');cyanBtn.classList.remove('on')">amber</button>
+    <button id="cyanBtn" onclick="document.documentElement.setAttribute('data-accent','cyan');this.classList.add('on');amberBtn.classList.remove('on')">cyan</button>
+  </div>
+
+  <div class="row">
+
+    <!-- ============ DIRECTION A ============ -->
+    <div class="col">
+      <div class="caption"><b>A — Settings-form.</b> Mirrors SettingsPanel exactly; read top-down, commit at bottom. Summary is a quiet group above the action.</div>
+      <div class="panel">
+        <div class="tabs">
+          <button class="tab">structure</button>
+          <button class="tab">loops</button>
+          <button class="tab">capture</button>
+          <button class="tab">profile</button>
+          <button class="tab">settings</button>
+          <button class="tab">guide</button>
+          <button class="tab active">export</button>
+        </div>
+        <div class="body">
+          <h2 class="title">export</h2>
+
+          <div class="group">
+            <div class="group-head">scope</div>
+            <div class="radio sel"><span class="dot"></span><span class="lbl">whole song</span><span class="meta readout">3:48</span></div>
+            <div class="radio"><span class="dot"></span><span class="lbl">active loop <span class="meta">· verse 2</span></span><span class="meta readout">0:24</span></div>
+            <div class="radio disabled"><span class="dot"></span><span class="lbl">current selection</span><span class="meta">none</span></div>
+          </div>
+
+          <div class="group">
+            <div class="group-head">format</div>
+            <div class="chips"><span class="chip on">WAV</span><span class="chip">MP3</span></div>
+          </div>
+
+          <div class="group">
+            <div class="group-head">destination</div>
+            <div class="field"><label>file name</label><input class="txt" value="song — 0.75x — drumless" /></div>
+            <div class="field"><label>folder</label><div class="dirrow"><input class="txt" value="~/Music/earworm" /><button class="pickbtn">…</button></div></div>
+          </div>
+
+          <div class="group">
+            <div class="group-head">baking in</div>
+            <div class="bake">
+              <span class="accentword">0.75×</span> speed · <span class="accentword">−2</span> st · bass focus <span class="accentword">on</span><br/>
+              stems: drums muted, bass +3<br/>
+              <span class="vol">master volume not applied</span>
+            </div>
+          </div>
+
+          <button class="export-btn">Export</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ DIRECTION B ============ -->
+    <div class="col">
+      <div class="caption"><b>B — Receipt-first (recommended).</b> Leads with a live “you’ll get” card: duration · format · est. size · baked settings. Controls serve the receipt below.</div>
+      <div class="panel">
+        <div class="tabs">
+          <button class="tab">structure</button>
+          <button class="tab">loops</button>
+          <button class="tab">capture</button>
+          <button class="tab">profile</button>
+          <button class="tab">settings</button>
+          <button class="tab">guide</button>
+          <button class="tab active">export</button>
+        </div>
+        <div class="body">
+          <h2 class="title">export</h2>
+
+          <div class="receipt">
+            <div class="head">
+              <span class="dur">3:48</span>
+              <span class="fmt">WAV</span>
+              <span class="size readout">~39 MB</span>
+            </div>
+            <div class="bakeline">
+              <span class="accentword" style="color:var(--accent)">0.75×</span> speed · <span style="color:var(--accent)">−2</span> st · bass focus<br/>
+              <span class="mut">drums muted · bass +3 · volume not applied</span>
+            </div>
+          </div>
+
+          <div class="group">
+            <div class="group-head">scope</div>
+            <div class="radio sel"><span class="dot"></span><span class="lbl">whole song</span><span class="meta readout">3:48</span></div>
+            <div class="radio"><span class="dot"></span><span class="lbl">active loop <span class="meta">· verse 2</span></span><span class="meta readout">0:24</span></div>
+            <div class="radio disabled"><span class="dot"></span><span class="lbl">current selection</span><span class="meta">none</span></div>
+          </div>
+
+          <div class="group">
+            <div class="group-head">format</div>
+            <div class="chips"><span class="chip on">WAV</span><span class="chip">MP3</span></div>
+          </div>
+
+          <div class="group">
+            <div class="group-head">destination</div>
+            <div class="field"><label>file name</label><input class="txt" value="song — 0.75x — drumless" /></div>
+            <div class="field"><label>folder</label><div class="dirrow"><input class="txt" value="~/Music/earworm" /><button class="pickbtn">…</button></div></div>
+          </div>
+
+          <button class="export-btn">Export</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ DIRECTION C ============ -->
+    <div class="col">
+      <div class="caption"><b>C — Compact.</b> Tightest stack; the bake line is the caption directly above the button — the last thing you read before clicking is what you get.</div>
+      <div class="panel">
+        <div class="tabs">
+          <button class="tab">structure</button>
+          <button class="tab">loops</button>
+          <button class="tab">capture</button>
+          <button class="tab">profile</button>
+          <button class="tab">settings</button>
+          <button class="tab">guide</button>
+          <button class="tab active">export</button>
+        </div>
+        <div class="body">
+          <h2 class="title">export</h2>
+
+          <div class="group">
+            <div class="group-head">scope</div>
+            <div class="radio sel"><span class="dot"></span><span class="lbl">whole song</span><span class="meta readout">3:48</span></div>
+            <div class="radio"><span class="dot"></span><span class="lbl">active loop</span><span class="meta readout">0:24</span></div>
+            <div class="radio disabled"><span class="dot"></span><span class="lbl">current selection</span><span class="meta">none</span></div>
+          </div>
+
+          <div class="setting" style="padding-top:2px;">
+            <span class="name">format</span>
+            <div class="chips"><span class="chip on">WAV</span><span class="chip">MP3</span></div>
+          </div>
+
+          <div class="field"><label>file name</label><input class="txt" value="song — 0.75x — drumless" /></div>
+          <div class="field"><label>folder</label><div class="dirrow"><input class="txt" value="~/Music/earworm" /><button class="pickbtn">…</button></div></div>
+
+          <p class="bakecap">baking: 0.75× · −2 st · bass · drumless</p>
+          <button class="export-btn">Export</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ============ SHARED STATES ============ -->
+  <h1 class="page" style="margin-top:40px;">shared states (all three)</h1>
+  <div class="row" style="margin-top:12px;">
+    <div class="col">
+      <div class="caption"><b>Rendering</b> — multi-second, cancellable.</div>
+      <div class="panel state">
+        <div class="tabs"><button class="tab active" style="margin-left:auto;">export</button></div>
+        <div class="body">
+          <h2 class="title">export</h2>
+          <div style="font-size:13px;color:var(--fg);">rendering <span class="readout" style="color:var(--muted)">verse 2 · WAV</span></div>
+          <div class="progress"><i></i></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span class="readout" style="font-size:12px;color:var(--muted)">62%</span>
+            <button class="ghostbtn">cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="caption"><b>Done</b> — file written; reveal or export again.</div>
+      <div class="panel state">
+        <div class="tabs"><button class="tab active" style="margin-left:auto;">export</button></div>
+        <div class="body">
+          <h2 class="title">export</h2>
+          <div style="font-size:13px;color:var(--fg);margin-bottom:4px;"><span class="doneicon">✓</span> exported</div>
+          <div class="readout" style="font-size:12px;color:var(--muted);margin-bottom:12px;">song — 0.75x — drumless.wav · 39 MB</div>
+          <div style="display:flex;gap:6px;">
+            <button class="linkbtn">reveal in folder</button>
+            <button class="ghostbtn">export again</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="caption"><b>MP3 unavailable</b> — encoder missing, chip disabled with a note.</div>
+      <div class="panel state">
+        <div class="tabs"><button class="tab active" style="margin-left:auto;">export</button></div>
+        <div class="body">
+          <h2 class="title">export</h2>
+          <div class="group-head">format</div>
+          <div class="chips"><span class="chip on">WAV</span><span class="chip disabled">MP3</span></div>
+          <p class="desc" style="margin-top:8px;">MP3 needs ffmpeg — not found on this system. WAV always works.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

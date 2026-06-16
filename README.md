@@ -32,6 +32,11 @@ and a practice engine.
   it yourself. No cloud, ever.
 - **Bass focus** (`b`): octave-up + low-pass — the transcriber's trick for
   hearing buried bass lines.
+- **Export**: render the *current mix* to disk — your stem balance, speed,
+  pitch and bass focus baked in (master volume excluded), for the whole song,
+  the active loop, or the current selection. The export tab leads with a live
+  "you'll get" receipt (duration · format · est. size · what's baked in) so
+  there are no surprises; WAV always, MP3 when ffmpeg is present.
 - **Instrument tuner** (v6): a chromatic tuner box in the stage — power it on
   (⏻), pick your audio input once (remembered across sessions, behind the gear),
   and tune by note + cents with a hold-to-lock "in tune" confirm. Always

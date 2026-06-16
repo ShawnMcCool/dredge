@@ -111,7 +111,7 @@ term maps to one thing. The three columns are **panes**:
   **tuner box** (`Tuner.svelte`, always present). Call them *boxes*, never
   "containers" or "panels".
 - **Panel** (right, `aside.panels`) — its switchable views are **tabs**
-  (structure, loops, capture, profile, settings, guide), wired
+  (structure, loops, capture, export, profile, settings, guide), wired
   through the `TAB_VIEWS` registry in `App.svelte`. The **structure tab**
   (`Sections.svelte`) owns song structure; there is no longer a center
   "structure box".
