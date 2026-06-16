@@ -1584,4 +1584,3 @@ fn default_stems_dir() -> PathBuf {
         .unwrap_or_else(std::env::temp_dir)
         .join("earworm/stems")
 }
-
