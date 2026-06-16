@@ -126,6 +126,7 @@ pub(crate) fn find_in_path(binary: &str, path_var: &std::ffi::OsStr) -> Option<P
 /// mid-run never orphans the analyzer / Demucs process that's holding CPU, GPU
 /// and VRAM. PR_SET_PDEATHSIG is preserved across the analyze wrapper's `exec`
 /// into python, so it reaches the real worker, not just the shell.
+#[cfg(target_os = "linux")]
 pub(crate) fn die_with_parent(cmd: &mut std::process::Command) {
     use std::os::unix::process::CommandExt;
     // SAFETY: only async-signal-safe calls (prctl/getppid) run in the child
@@ -144,6 +145,12 @@ pub(crate) fn die_with_parent(cmd: &mut std::process::Command) {
         });
     }
 }
+
+/// macOS / other: PR_SET_PDEATHSIG has no portable equivalent. Best-effort
+/// no-op — a child orphaned by an abrupt parent exit is acceptable here
+/// (analyzer / Demucs runs are short-lived and bounded).
+#[cfg(not(target_os = "linux"))]
+pub(crate) fn die_with_parent(_cmd: &mut std::process::Command) {}
 
 /// Replace a stem WAV with `interleaved` at the engine's 48 kHz —
 /// write-to-tmp + rename so a crash never leaves a truncated cache entry.
