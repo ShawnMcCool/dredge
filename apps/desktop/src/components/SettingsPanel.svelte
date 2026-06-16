@@ -15,8 +15,32 @@
   import { ACCENTS, applyTheme } from "../lib/theme";
   import Button from "../lib/ui/Button.svelte";
   import Fader from "../lib/ui/Fader.svelte";
+  import { cmd } from "../lib/ipc";
   import { applyDecorations } from "../lib/window";
   import { getZoom, setZoom } from "../lib/zoom";
+  import { onMount } from "svelte";
+
+  // Optional external tools that gate features. The backend `caps` command
+  // probes for each; we show which features are live and a full/partial summary.
+  type Caps = { mp3: boolean; stems: boolean; analysis: boolean };
+  const FEATURES: { key: keyof Caps; label: string; dep: string }[] = [
+    { key: "stems", label: "stem separation", dep: "demucs" },
+    { key: "analysis", label: "structure analysis", dep: "analyze (PyTorch)" },
+    { key: "mp3", label: "MP3 export", dep: "ffmpeg" },
+  ];
+  let caps = $state<Caps>({ mp3: false, stems: false, analysis: false });
+  let ready = $derived(FEATURES.filter((f) => caps[f.key]).length);
+  let capSummary = $derived(
+    ready === FEATURES.length
+      ? "full capability — every optional feature is available"
+      : ready === 0
+        ? "core only — looping, stretch & tuner work; optional tools are missing"
+        : `partial capability — ${ready} of ${FEATURES.length} optional features available`,
+  );
+
+  onMount(() => {
+    void cmd<Caps>("caps").then((c) => (caps = c));
+  });
 
   let scale = $derived(Number($settings[UI_SCALE] ?? getZoom()));
   // live preview while dragging; zoom is only applied on release (a full
@@ -146,6 +170,27 @@
   </div>
 </section>
 
+<section class="group">
+  <h3 class="group-head">capabilities</h3>
+
+  <div class="cap-summary" class:full={ready === FEATURES.length}>
+    <span class="cap-dot" class:on={ready === FEATURES.length}></span>
+    {capSummary}
+  </div>
+
+  {#each FEATURES as f (f.key)}
+    <div class="setting">
+      <div class="text">
+        <span class="name">{f.label}</span>
+        <span class="desc">needs <code>{f.dep}</code></span>
+      </div>
+      <span class="cap-status" class:ok={caps[f.key]}>
+        {caps[f.key] ? "ready" : "missing"}
+      </span>
+    </div>
+  {/each}
+</section>
+
 <style>
   .group {
     margin-bottom: calc(var(--space) * 2.5);
@@ -252,5 +297,50 @@
     margin-left: 2px;
     font-size: 11px;
     color: var(--muted);
+  }
+
+  /* capabilities: a status pill per optional tool + a full/partial summary */
+  .cap-summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 0;
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--muted);
+  }
+  .cap-summary.full {
+    color: var(--fg);
+  }
+  .cap-dot {
+    flex: 0 0 auto;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    opacity: 0.5;
+  }
+  .cap-dot.on {
+    background: var(--accent);
+    opacity: 1;
+  }
+  .cap-status {
+    flex: 0 0 auto;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 1px 7px;
+  }
+  .cap-status.ok {
+    color: var(--accent);
+    border-color: var(--accent-dim);
+  }
+  .desc code {
+    font-family: var(--mono, ui-monospace, monospace);
+    font-size: 10.5px;
+    color: var(--fg);
   }
 </style>
