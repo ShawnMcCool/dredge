@@ -14,8 +14,7 @@ optdepends=('uv: bootstrap the analyze/songformer ML venvs (beats, sections)'
 provides=('earworm')
 conflicts=('earworm')
 source=("https://github.com/ShawnMcCool/earworm/releases/download/v${pkgver}/${_appname}-${pkgver}-x86_64-linux.tar.gz")
-# Replace with the value from the release's SHA256SUMS before publishing.
-sha256sums=('SKIP')
+sha256sums=('110cac015a04d93d8817586f422871964edf0206f0ccb8982724221bc6270f03')
 
 package() {
   # The tarball is a relocatable /usr tree (see `just tarball`).

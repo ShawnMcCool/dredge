@@ -261,10 +261,18 @@ GitHub gates pending.** What's done and locally verified:
 - **Phase 6** — README rewritten to distro-first install + ML helper. ✓ (6.3
   in-app AnalyzePrompt hint left as the flagged stretch, not done.)
 
-**Remaining (needs the maintainer / outward-facing):** push `main` to trigger
-`ci.yml`; push a tag (`v0.1.0` or an `-rc` first) to trigger `release.yml` and
-produce the first GitHub Release; then publish the two PKGBUILDs to the AUR
-(set `earworm-bin` `sha256sums` from the release `SHA256SUMS`).
+**Shipped (2026-06-16):** `main` pushed; `ci.yml` green on ubuntu-24.04; tag
+`v0.1.0` pushed → `release.yml` published the **v0.1.0 GitHub Release** (`.deb` +
+tarball + `SHA256SUMS`, `.deb` install-smoke-tested on the runner). `earworm-bin`
+PKGBUILD stamped with the real tarball checksum and **validated end-to-end with
+`makepkg`** (downloads the release tarball, builds, correct /usr tree).
+
+**Remaining (needs the maintainer's AUR account):** publish the two PKGBUILDs to
+the AUR — blocked here only because AUR SSH isn't configured on this box (host
+key + registered key). `earworm-bin` is publish-ready; the source `earworm`
+PKGBUILD is `bash -n`/`--printsrcinfo` clean but not yet `makepkg`-built (a full
+from-source build). The optional in-app AnalyzePrompt hint (6.3) is still a
+flagged stretch.
 
 ## Self-review notes
 
