@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://github.com/ShawnMcCool/earworm/releases">Releases</a> ·
   <a href="#install">Install</a> ·
-  <a href="#build-from-source">Build from source</a>
+  <a href="DEVELOPMENT.md">Build &amp; develop</a>
 </p>
 
 ---
@@ -71,23 +71,9 @@ earworm-enable-ml all        # analyze + songformer + stems (demucs)
 
 A GPU is optional — CPU works, just slower. The PyTorch venvs and model weights take several GB of disk.
 
-## Build from source
+---
 
-```bash
-# Debian / Ubuntu native deps:
-sudo apt install librubberband-dev libpipewire-0.3-dev libspa-0.2-dev \
-  libwebkit2gtk-4.1-dev libgtk-3-dev clang pkg-config build-essential
-# Arch: pacman -S rubberband pipewire webkit2gtk-4.1 gtk3 clang pkgconf base-devel
-# plus the toolchain: rustup, Node + pnpm, and just
-
-git clone https://github.com/ShawnMcCool/earworm.git && cd earworm
-just build      # -> target/release/{earworm, earwormd} + a .deb bundle
-just dev        # hot-reload dev app
-just check      # tests + lint
-```
-
-Audio decoding is pure-Rust (symphonia); awkward video containers fall back to `ffmpeg` when it's on your `PATH`. Architecture notes and the full command list live in [`CLAUDE.md`](CLAUDE.md); the design spec and the research behind the practice model are under [`docs/superpowers/`](docs/superpowers/).
-
-## License
-
-MIT.
+Built with Rust, Tauri 2, and Svelte 5; the practice model is grounded in
+motor-learning research (the spec is under [`docs/superpowers/`](docs/superpowers/)).
+Building from source or hacking on it? See **[DEVELOPMENT.md](DEVELOPMENT.md)**.
+MIT licensed.
