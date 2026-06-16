@@ -980,9 +980,7 @@
     >
       <button class="sa-btn" onclick={saveWorkingLoop} title="save loop" aria-label="save working loop">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M5 4h11l3 3v13H5z" />
-          <path d="M8 4v5h7" />
-          <path d="M8 20v-6h8v6" />
+          <path d="M7 4h10v16l-5-3.5-5 3.5z" />
         </svg>
       </button>
       <button class="sa-btn" onclick={playWorkingLoop} title="play loop" aria-label="play working loop">⟳</button>
