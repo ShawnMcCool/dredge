@@ -13,11 +13,17 @@ Designed 2026-06-16 (brainstorm in-thread). Work directly on `main`.
 
 Earworm's Rust decoder is **symphonia**, compiled with `isomp4` + `aac`
 (`crates/engine/Cargo.toml:8`). Symphonia is probe-based, not
-extension-based (`decode.rs:27`): it sniffs the container, takes the
-**default audio track**, and ignores any video track. Waveform peaks are
-computed purely from decoded PCM (`peaks.rs`), so they're already
-format-agnostic. **MP4/MOV with an AAC audio track therefore decode today with
-zero engine changes** — the only thing stopping it is a UI allowlist.
+extension-based (`decode.rs:27`): it sniffs the container and decodes a track.
+Waveform peaks are computed purely from decoded PCM (`peaks.rs`), so they're
+already format-agnostic.
+
+> **Premise correction (found during Phase 4 verification):** the original plan
+> assumed MP4/MOV "decode today with zero engine changes." **False.**
+> `decode_file` selected `format.default_track()`, and in a video container the
+> *default* track is the video track — symphonia then tried to build an h264
+> decoder and failed with `unsupported codec`. The fix (Phase 1.5 below) is to
+> select the first track the **audio** codec registry can decode, skipping
+> video. Empirical import of an h264+AAC mp4 confirmed both the bug and the fix.
 
 The real subtlety is the **out-of-process Python tools** (beat/section analysis
 via librosa + SongFormer; Demucs stems). They don't see our decoded PCM — they
@@ -84,6 +90,18 @@ Opus) is explicitly **out of scope** — it would need a new symphonia feature
   count == 2; sample count > 0).
 - [ ] **Gate:** `cargo test -p engine` green. **Commit:**
   `feat(engine): decode_to_wav — canonical WAV for external tools`.
+
+## Phase 1.5 — Select the audio track, not the default track (Rust) ✅
+
+**Found necessary during verification — see premise correction above.**
+
+- [x] In `decode_file` (`decode.rs:36`), replace `format.default_track()` with
+  "first track the audio codec registry (`get_codecs()`) can decode," so video
+  tracks in mp4/mov are skipped. Audio-only files are unaffected (their audio
+  track is still chosen).
+- [x] Committed fixture `crates/engine/tests/fixtures/video_with_audio.mp4`
+  (14 KB, h264 + AAC) + test `decodes_audio_track_from_a_video_container` —
+  decodes without ffmpeg at test time.
 
 ## Phase 2 — Route analysis + stems through a decoded WAV (Rust)
 

@@ -80,8 +80,10 @@ Earworm is **Linux-only**. The audio engine is PipeWire-native (output *and*
 capture), so a **PipeWire** audio stack is mandatory — there is no
 ALSA/PulseAudio fallback. Pick the install path for your distro; each one puts
 `earworm` (desktop app) and `earwormd` (headless daemon) on your `PATH`. Audio
-**decoding** is pure-Rust (symphonia: mp3/flac/ogg/wav/aac/m4a) and SQLite is
-bundled — no ffmpeg, no system SQLite.
+**decoding** is pure-Rust (symphonia: mp3/flac/ogg/wav/aac/m4a, plus the audio
+track of mp4/mov video files — loaded for their waveform only, never played
+back) and SQLite is bundled — no ffmpeg, no system SQLite. External analysis and
+stem separation receive a Rust-decoded WAV, so they need no ffmpeg either.
 
 ### Arch / Arch-based (AUR)
 
