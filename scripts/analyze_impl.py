@@ -56,7 +56,12 @@ def beat_grid(audio_path):
     import torch
     from beat_this.inference import File2Beats
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    if torch.cuda.is_available():
+        device = "cuda"
+    elif getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+        device = "mps"
+    else:
+        device = "cpu"
     log(f"beat_this on {device}")
     f2b = File2Beats(checkpoint_path="final0", device=device, dbn=False)
     beats, downbeats = f2b(audio_path)
