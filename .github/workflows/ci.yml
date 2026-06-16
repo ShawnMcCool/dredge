@@ -43,5 +43,10 @@ jobs:
       - name: Install frontend dependencies
         run: cd apps/desktop && pnpm install --frozen-lockfile
 
+      # cargo test/clippy compile the desktop crate, whose
+      # tauri::generate_context! asserts frontendDist (apps/desktop/dist) exists.
+      - name: Build frontend
+        run: cd apps/desktop && pnpm build
+
       - name: Test + lint
         run: just check
