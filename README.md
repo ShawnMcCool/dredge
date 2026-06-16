@@ -103,8 +103,8 @@ Download the latest `earworm_*_amd64.deb` from the
 sudo apt install ./earworm_*_amd64.deb
 ```
 
-Needs **Ubuntu 22.04+ / Debian 12+** (for `libwebkit2gtk-4.1-0` and a PipeWire
-stack); `apt` resolves the runtime deps (`librubberband2`, `libpipewire-0.3-0`,
+Needs **Ubuntu 24.04+ / Debian 13+** (PipeWire 1.0+, plus `libwebkit2gtk-4.1-0`);
+`apt` resolves the runtime deps (`librubberband2`, `libpipewire-0.3-0`,
 `libwebkit2gtk-4.1-0`, `libgtk-3-0`).
 
 ### Build from source

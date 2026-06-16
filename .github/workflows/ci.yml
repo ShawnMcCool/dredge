@@ -7,7 +7,9 @@ on:
 
 jobs:
   check:
-    runs-on: ubuntu-22.04
+    # 24.04, not 22.04: the libspa-sys 0.10 bindings need PipeWire 1.0+ headers
+    # (22.04's libspa is too old — missing spa_meta_region_is_valid etc.).
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 

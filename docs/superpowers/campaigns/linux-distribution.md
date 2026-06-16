@@ -280,6 +280,15 @@ produce the first GitHub Release; then publish the two PKGBUILDs to the AUR
   lookup (`stems.rs:113`); the only code-ish edits are config (`tauri.conf.json`),
   the relocatable `.desktop`, `justfile` recipes, CI YAML, PKGBUILDs, and one
   shell helper.
-- **Key risk:** the Debian dependency floor. Mitigated by building the `.deb` on
-  Ubuntu 22.04 in CI (3.2) with an install smoke-test, not on the maintainer's
-  Arch box — the failure mode Approach A would have hidden.
+- **Key risk:** the Debian dependency floor. Mitigated by building the `.deb` in
+  CI (3.2) with an install smoke-test, not on the maintainer's Arch box — the
+  failure mode Approach A would have hidden.
+- **Build floor correction (2026-06-16, first CI run).** The plan assumed
+  Ubuntu **22.04** for an old glibc/webkit floor, but CI caught the opposite
+  constraint: `libspa-sys` 0.10 generates bindings against the *system* libspa
+  headers, and 22.04's PipeWire (0.3.48) is too old — missing
+  `spa_meta_region_is_valid` / `spa_video_info_raw.flags`, so the build fails
+  with E0425/E0560. The libspa bindings dictate a **newer** floor than glibc
+  would. Both workflows moved to **ubuntu-24.04** (PipeWire 1.0+); documented
+  floor is now Ubuntu 24.04+ / Debian 13+. Exactly the regression Approach B's
+  CI build was meant to surface.
