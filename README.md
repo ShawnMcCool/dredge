@@ -24,9 +24,6 @@ and a practice engine.
     rehearse the entrance — all on a scratch span, your saved loop is untouched
   - *Recall*: mute the recording for a pass (or every Nth pass) so you play it
     from memory while the loop stays in time
-- **Capture anything** (v2): tap any app's PipeWire node — Spotify, Firefox,
-  whatever — into a rolling 3-minute buffer and *grab what just played* as a
-  loopable song.
 - **Local stems** (v3): 4-stem separation (vocals/drums/**bass**/other) via
   Demucs, per-stem faders, one key (`m`) to mute the recorded bass and play
   it yourself. No cloud, ever.
@@ -40,8 +37,8 @@ and a practice engine.
 - **Instrument tuner** (v6): a chromatic tuner box in the stage — power it on
   (⏻), pick your audio input once (remembered across sessions, behind the gear),
   and tune by note + cents with a hold-to-lock "in tune" confirm. Always
-  available, even with no song open. Listens to a mic or interface via the same
-  PipeWire capture path; detection is pure-Rust (YIN), no cloud.
+  available, even with no song open. Listens to a mic or interface via
+  PipeWire; detection is pure-Rust (YIN), no cloud.
 - **Analyze** (v4): one **PREPARE** button (`a`) runs analysis then stem
   separation with a progress modal — beats/downbeats/BPM (beat_this) plus
   suggested sections (SongFormer, novelty fallback). Beat ticks on the
@@ -57,8 +54,7 @@ and a practice engine.
 - **Playback volume** (v5): a compact transport fader (0–150%, click-free
   ramped in the engine, separate from mute/pause), persisted across sessions.
 - **Durable settings** (`,` or the gear button): UI scale, grid-snap default,
-  capture buffer length, playback volume — stored server-side in the
-  practice DB.
+  playback volume — stored server-side in the practice DB.
 - **Escape asks before quitting**: `esc` walks back quick-prompt → selection →
   an exit confirmation (`enter`/`y` exits, `esc`/`n` stays).
 - **Scriptable**: a JSON-lines control socket at `$XDG_RUNTIME_DIR/earworm.sock`
@@ -69,7 +65,7 @@ and a practice engine.
 
 ```
 crates/practice   pure domain logic: model, loop naming, store, sidecar
-crates/engine     audio: decode, loop, stretch, filter, PipeWire out + capture
+crates/engine     audio: decode, loop, stretch, filter, PipeWire out + mic in
 crates/server     App dispatcher, control socket, earwormd headless binary
 apps/desktop      Tauri 2 + Svelte 5 UI
 docs/superpowers  design spec + the six implementation plans
@@ -131,9 +127,12 @@ tempo trainer, and the tuner all work with nothing else installed.
 
 Notes:
 
+- **Not sure what you have? Run `earworm-doctor`.** It checks each optional tool,
+  shows what's installed, and prints the command to install whatever's missing —
+  the headless equivalent of the desktop app's Settings → **capabilities**.
 - **`ffmpeg`** — recent `.deb`s list it as a *recommended* dependency, so a
   default `apt install` already pulls it in; run the command above only if MP3
-  export reports it missing. Settings → **capabilities** shows what's detected.
+  export reports it missing.
 - **`uv`** is not in the Ubuntu archive — install it from
   [astral.sh](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`),
   then run `earworm-enable-ml` (below). `demucs` and the PyTorch venvs are set up
@@ -236,8 +235,8 @@ field):
 | `ctrl ±` / `ctrl 0` | zoom in/out / reset | `,` | settings |
 | `esc` | clear selection → quit prompt | | |
 
-Settings (UI scale, grid-snap default, capture buffer length, playback volume)
-live in the gear menu (`,`) and persist in the practice DB.
+Settings (UI scale, grid-snap default, playback volume) live in the gear menu
+(`,`) and persist in the practice DB.
 
 **Paths & overrides** (defaults shown):
 
@@ -343,7 +342,7 @@ printf '%s\n' '{"id":1,"cmd":"song.import","params":{"path":"/path/song.flac"}}'
   python3 -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect("'"$XDG_RUNTIME_DIR"'/earworm.sock"); s.sendall(sys.stdin.buffer.read()); print(s.recv(65536).decode())'
 ```
 
-Commands: `song.*`, `section.replace`, `loop.*`, `capture.*`, `stems.*`,
+Commands: `song.*`, `section.replace`, `loop.*`, `tuner.*`, `stems.*`,
 `analysis.*`, `settings.*`, transport
 (`play/pause/seek/rate/volume/pitch/loop.set/bass_focus/mute`), `subscribe`
 for the event stream.
