@@ -14,6 +14,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 
 /// Map any displayable error onto the protocol's String error channel.
@@ -28,6 +29,13 @@ impl<T, E: std::fmt::Display> ErrStr<T> for Result<T, E> {
 
 fn from_params<T: serde::de::DeserializeOwned>(p: Value) -> Result<T, String> {
     serde_json::from_value(p).map_err(|e| format!("bad params: {e}"))
+}
+
+/// Semitones + cents (+ optional octave) → the frequency multiplier the engine
+/// stretcher wants. Shared by the live `pitch` command and offline export so
+/// both pitch the same way.
+fn pitch_scale_factor(semitones: f64, cents: f64, octave_up: bool) -> f64 {
+    2f64.powf((semitones + cents / 100.0) / 12.0) * if octave_up { 2.0 } else { 1.0 }
 }
 
 // --- shared dispatch (lock-phased heavy commands) ---------------------------
@@ -160,6 +168,37 @@ fn open_stem(path: &Path) -> Result<engine::buffer::SongBuffer, String> {
     Ok(buf)
 }
 
+/// Decode the song to an engine `StemSet` for export — the 4-stem set when a
+/// stem cache exists, else the plain mix. Skips peak computation (export
+/// doesn't need a waveform). No lock held; runs on the export thread.
+fn export_decode(song: &Song, stems_cache: &Path) -> Result<engine::buffer::StemSet, String> {
+    if !App::stems_cached(stems_cache) {
+        let buf = engine::decode::decode_file(Path::new(&song.path)).err_str()?;
+        return Ok(engine::buffer::StemSet::single(buf));
+    }
+    let mut bufs = Vec::with_capacity(STEM_NAMES.len());
+    for name in STEM_NAMES {
+        bufs.push(open_stem(&stems_cache.join(format!("{name}.wav")))?);
+    }
+    Ok(engine::buffer::StemSet::new(bufs))
+}
+
+/// `dir/stem.ext`, or `dir/stem (n).ext` if that exists — never silently
+/// clobbers a previous export.
+fn unique_export_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
+    let base = dir.join(format!("{stem}.{ext}"));
+    if !base.exists() {
+        return base;
+    }
+    for n in 1..10_000 {
+        let cand = dir.join(format!("{stem} ({n}).{ext}"));
+        if !cand.exists() {
+            return cand;
+        }
+    }
+    base
+}
+
 /// Lock-free product of `song.import`'s slow phase.
 struct ImportPrepared {
     path: String,
@@ -244,6 +283,9 @@ pub struct App {
     job_rx: mpsc::Receiver<Event>,
     /// Song ids with a separation thread in flight.
     separating: Arc<Mutex<HashSet<i64>>>,
+    /// Set true to ask the in-flight export render to stop. One export at a
+    /// time: a new `export.start` replaces (and cancels) any prior one.
+    export_cancel: Arc<AtomicBool>,
     analyzer: Arc<dyn Analyzer>,
     /// Finished analyses; drained by `tick()`, which persists them (the
     /// store lives on this thread) and emits `analysis_progress`.
@@ -296,6 +338,7 @@ impl App {
             job_tx,
             job_rx,
             separating: Arc::new(Mutex::new(HashSet::new())),
+            export_cancel: Arc::new(AtomicBool::new(false)),
             analyzer: Arc::new(crate::analysis::ScriptAnalyzer::default()),
             analysis_tx,
             analysis_rx,
@@ -406,6 +449,9 @@ impl App {
             "stems.separate" => self.stems_separate(p),
             "stems.status" => self.stems_status(p),
             "stems.gains" => self.stems_gains(p),
+            "export.caps" => Ok(json!({ "mp3": engine::encode::ffmpeg_available() })),
+            "export.start" => self.export_start(p),
+            "export.cancel" => self.export_cancel(),
             "analysis.run" => self.analysis_run(p),
             "analysis.status" => self.analysis_status(p),
             "analysis.get" => self.analysis_get(p),
@@ -535,9 +581,11 @@ impl App {
             }
         }
         let p: P = from_params(p)?;
-        let scale =
-            2f64.powf((p.semitones + p.cents / 100.0) / 12.0) * if p.octave_up { 2.0 } else { 1.0 };
-        self.send_ok(EngineCmd::SetPitchScale(scale))
+        self.send_ok(EngineCmd::SetPitchScale(pitch_scale_factor(
+            p.semitones,
+            p.cents,
+            p.octave_up,
+        )))
     }
 
     fn status(&self) -> Result<Value, String> {
@@ -777,6 +825,135 @@ impl App {
         for (idx, gain) in p.gains.into_iter().enumerate() {
             self.audio.send(EngineCmd::SetStemGain { idx, gain });
         }
+        Ok(Value::Null)
+    }
+
+    // --- export ------------------------------------------------------------
+
+    /// Render the song to disk on a background thread, baking the supplied mix
+    /// (stem gains, rate, pitch, bass focus) into the requested span. The mix
+    /// comes from the caller (the UI mirrors the live engine), so the file
+    /// matches what's heard — master volume excluded by construction. Progress
+    /// and the terminal result arrive as `export_progress` events.
+    fn export_start(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            song_id: SongId,
+            dir: String,
+            filename: String,
+            format: String,
+            #[serde(default)]
+            start_secs: Option<f64>,
+            #[serde(default)]
+            end_secs: Option<f64>,
+            #[serde(default = "one")]
+            rate: f64,
+            #[serde(default)]
+            semitones: f64,
+            #[serde(default)]
+            cents: f64,
+            #[serde(default)]
+            octave_up: bool,
+            #[serde(default)]
+            bass_focus: bool,
+            #[serde(default)]
+            gains: Vec<f32>,
+        }
+        fn one() -> f64 {
+            1.0
+        }
+        let p: P = from_params(p)?;
+        if p.format != "wav" && p.format != "mp3" {
+            return Err(format!("unknown export format: {}", p.format));
+        }
+        if p.format == "mp3" && !engine::encode::ffmpeg_available() {
+            return Err("MP3 export needs ffmpeg, which isn't installed".into());
+        }
+        let song = self.song_row(p.song_id)?;
+        let stems_cache = self.stems_cache_dir(&song.file_hash);
+        let cfg = engine::export::RenderConfig {
+            start_secs: p.start_secs.unwrap_or(0.0),
+            end_secs: p.end_secs,
+            rate: p.rate,
+            pitch_scale: pitch_scale_factor(p.semitones, p.cents, p.octave_up),
+            bass_focus: p.bass_focus,
+            gains: p.gains,
+        };
+
+        // One export at a time: signal any prior render to stop, arm a fresh
+        // flag this thread owns.
+        self.export_cancel.store(true, Ordering::SeqCst);
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.export_cancel = cancel.clone();
+
+        let tx = self.job_tx.clone();
+        let dir = PathBuf::from(&p.dir);
+        let (filename, format) = (p.filename, p.format);
+
+        std::thread::spawn(move || {
+            let emit = |data: Value| {
+                let _ = tx.send(Event {
+                    event: "export_progress".into(),
+                    data,
+                });
+            };
+            emit(json!({ "state": "decoding" }));
+            let set = match export_decode(&song, &stems_cache) {
+                Ok(set) => set,
+                Err(e) => return emit(json!({ "state": "failed", "error": e })),
+            };
+            if cancel.load(Ordering::SeqCst) {
+                return emit(json!({ "state": "cancelled" }));
+            }
+
+            let mut last_pct = -2i32;
+            let samples = engine::export::render_with_progress(&set, &cfg, &mut |frac| {
+                if cancel.load(Ordering::SeqCst) {
+                    return false;
+                }
+                let pct = (frac * 100.0) as i32;
+                if pct >= last_pct + 2 {
+                    last_pct = pct;
+                    emit(json!({ "state": "rendering", "percent": pct }));
+                }
+                true
+            });
+            if cancel.load(Ordering::SeqCst) {
+                return emit(json!({ "state": "cancelled" }));
+            }
+
+            let ext = if format == "mp3" { "mp3" } else { "wav" };
+            let out_path = unique_export_path(&dir, &filename, ext);
+            let write = if format == "mp3" {
+                emit(json!({ "state": "encoding" }));
+                let tmp = dir.join(format!(".{filename}.export.wav"));
+                let r = engine::capture::write_wav(&tmp, &samples)
+                    .err_str()
+                    .and_then(|()| engine::encode::encode_mp3(&tmp, &out_path, 320).err_str());
+                let _ = std::fs::remove_file(&tmp);
+                r
+            } else {
+                engine::capture::write_wav(&out_path, &samples).err_str()
+            };
+            match write {
+                Ok(()) => {
+                    let bytes = std::fs::metadata(&out_path).map(|m| m.len()).unwrap_or(0);
+                    emit(json!({
+                        "state": "done",
+                        "path": out_path.to_string_lossy(),
+                        "bytes": bytes,
+                    }));
+                }
+                Err(e) => emit(json!({ "state": "failed", "error": e })),
+            }
+        });
+        Ok(json!({ "state": "started" }))
+    }
+
+    /// Ask the in-flight export (if any) to stop. The render checks this
+    /// between blocks and emits a `cancelled` event; no file is written.
+    fn export_cancel(&mut self) -> Result<Value, String> {
+        self.export_cancel.store(true, Ordering::SeqCst);
         Ok(Value::Null)
     }
 
