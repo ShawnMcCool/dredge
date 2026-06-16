@@ -3,6 +3,12 @@
 All notable user-facing changes to earworm, newest first. Entries are written
 at release time by `scripts/ship release`.
 
+## v0.2.1 — 2026-06-16
+
+### Fixed
+
+- **Release packaging** — fixes the Linux release build so this version publishes correctly. This is the first downloadable build carrying the v0.2.0 changes (export, opening video files, the Settings capabilities panel, the tidier loop toolbar, and the export `~`-path fix — see v0.2.0 below). No app behavior changed since v0.2.0.
+
 ## v0.2.0 — 2026-06-16
 
 ### New
