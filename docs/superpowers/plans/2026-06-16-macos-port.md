@@ -10,6 +10,36 @@
 
 ---
 
+## Status — updated 2026-06-16
+
+Executed subagent-driven on `main` (per repo convention; commits local, not
+pushed). Every Rust task passed independent spec + code-quality review; the full
+Linux gate (`just check`) is green.
+
+| Task | State | Commit(s) |
+|------|-------|-----------|
+| 1 — deps + `Error::Audio` | ✅ done | `a6f3b2b` |
+| 2 — extract `RenderCore` | ✅ done | `693f11f` |
+| 3 — cpal output backend | ✅ done | `0a35a44` |
+| 4 — scrub capture + grab-back (D1) | ✅ done | `a08698a`, `b14ae7e` (doc), `2d0d7e5` (fmt) |
+| — lockfile for cpal deps | ✅ done | `1ad0dc1` |
+| 5 — cpal input backend (tuner) | ✅ done | `c9adedd`, `f73dfe7` (doc) |
+| 6 — Python MPS device branch | ✅ done | `606be4a` |
+| 7 — bash `readlink` portability | ✅ done | `05d69d8` |
+| 8 — `die_with_parent` macOS shim | ✅ done | `78d238a` |
+| 9 — packaging | ◐ **partial** | `e711a40` (Linux-doable parts) |
+
+**Task 9 is PARKED — no Apple hardware available.** The config-only parts that
+are Linux-safe are committed (Tauri `app`/`dmg` targets, `bundle.macOS`,
+`Info.plist` mic entitlement, `_pw_thread`→`_audio_thread` rename, neutral
+`build.rs` message, park-loop comment). Everything that needs a real Mac is
+outstanding and **unverified**: the cpal/CoreAudio code has never been compiled
+(coreaudio-sys needs the macOS SDK). When hardware is available, resume at
+**Task 9 Step 1** and work the carried cleanups (Step 7) + the follow-ups below.
+Setup is captured in `docs/macos-build.md`.
+
+---
+
 ## Key Decisions (review before executing)
 
 **D1 — Scrub system-audio capture + grab-back entirely (both platforms).** The user authorized removing the capture tab and grab-back ("I'd be fine scrubbing that from the app"). This deletes `list_output_streams`, `capture_control.rs`, the `capture.*` socket commands, `Capture.svelte`, and the capture tab. **The tuner's *input* (mic/instrument) capture is kept** — it ports cleanly to CoreAudio. This is the only destructive/irreversible part of the plan; if you'd rather keep capture Linux-only behind `cfg`, stop and re-scope before Task 4.
