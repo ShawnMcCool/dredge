@@ -38,3 +38,20 @@ export function fmtElapsed(ms: number): string {
   const s = ms / 1000;
   return s < 60 ? `${s.toFixed(1)} s` : fmtDur(s);
 }
+
+/**
+ * Human file size in binary units (`512 B`, `1.5 KB`, `39.0 MB`). Used by the
+ * export receipt's estimated-size readout.
+ */
+export function fmtBytes(bytes: number): string {
+  const b = Math.max(bytes, 0);
+  if (b < 1024) return `${Math.round(b)} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let v = b / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toFixed(1)} ${units[i]}`;
+}

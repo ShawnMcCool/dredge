@@ -14,3 +14,10 @@ export async function pickAudioFile(): Promise<string | null> {
   });
   return typeof path === "string" ? path : null;
 }
+
+/** Native folder picker for the export target directory. Returns the chosen
+ *  directory path, or null if cancelled. */
+export async function pickExportDir(): Promise<string | null> {
+  const path = await open({ directory: true, multiple: false });
+  return typeof path === "string" ? path : null;
+}

@@ -302,6 +302,9 @@ export const WINDOW_DECORATIONS = "window_decorations";
 /** Accent colour theme: "amber" (default) or "cyan". */
 export const COLOR_THEME = "color_theme";
 export const TUNER_INPUT_NAME = "tuner_input_name";
+/** Export tab: last-used target folder + format, restored across sessions. */
+export const EXPORT_DIR = "export_dir";
+export const EXPORT_FORMAT = "export_format";
 
 /** Side-column collapse state — persisted to settings, restored at launch. */
 export const libraryCollapsed = writable(false);

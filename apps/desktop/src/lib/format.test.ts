@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fmtClock, fmtDur, fmtElapsed } from "./format";
+import { fmtBytes, fmtClock, fmtDur, fmtElapsed } from "./format";
 
 describe("fmtDur", () => {
   it("formats sub-minute durations with unpadded minutes", () => {
@@ -62,5 +62,24 @@ describe("fmtElapsed", () => {
   it("uses the m:ss clock at and beyond a minute", () => {
     expect(fmtElapsed(60000)).toBe("1:00");
     expect(fmtElapsed(125000)).toBe("2:05");
+  });
+});
+
+describe("fmtBytes", () => {
+  it("uses plain bytes under a kibibyte", () => {
+    expect(fmtBytes(0)).toBe("0 B");
+    expect(fmtBytes(512)).toBe("512 B");
+  });
+
+  it("steps up to KB / MB / GB with one decimal", () => {
+    expect(fmtBytes(1024)).toBe("1.0 KB");
+    expect(fmtBytes(1536)).toBe("1.5 KB");
+    expect(fmtBytes(1024 * 1024)).toBe("1.0 MB");
+    expect(fmtBytes(39 * 1024 * 1024)).toBe("39.0 MB");
+    expect(fmtBytes(1024 * 1024 * 1024)).toBe("1.0 GB");
+  });
+
+  it("clamps negatives to zero", () => {
+    expect(fmtBytes(-5)).toBe("0 B");
   });
 });
