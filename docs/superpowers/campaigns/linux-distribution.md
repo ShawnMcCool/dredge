@@ -267,12 +267,46 @@ tarball + `SHA256SUMS`, `.deb` install-smoke-tested on the runner). `earworm-bin
 PKGBUILD stamped with the real tarball checksum and **validated end-to-end with
 `makepkg`** (downloads the release tarball, builds, correct /usr tree).
 
-**Remaining (needs the maintainer's AUR account):** publish the two PKGBUILDs to
-the AUR — blocked here only because AUR SSH isn't configured on this box (host
-key + registered key). `earworm-bin` is publish-ready; the source `earworm`
-PKGBUILD is `bash -n`/`--printsrcinfo` clean but not yet `makepkg`-built (a full
-from-source build). The optional in-app AnalyzePrompt hint (6.3) is still a
-flagged stretch.
+## Remaining follow-ups
+
+Deferred work, in rough priority order. None blocks the `.deb` / source-build
+paths, which already work for users.
+
+- [ ] **Publish `earworm-bin` to the AUR.** PKGBUILD is publish-ready (real
+  checksum, `.SRCINFO` regenerated, `makepkg`-validated). Blocked here only
+  because AUR SSH isn't set up on the build box (host key + registered key).
+  Needs the maintainer's AUR account:
+  ```bash
+  git clone ssh://aur@aur.archlinux.org/earworm-bin.git /tmp/aur-earworm-bin
+  cp packaging/aur/earworm-bin/{PKGBUILD,.SRCINFO} /tmp/aur-earworm-bin/
+  cd /tmp/aur-earworm-bin && git add -A && git commit -m "earworm-bin 0.1.0-1" && git push
+  ```
+  This makes `yay -S earworm-bin` work.
+- [ ] **Validate + publish the source `earworm` AUR package.** It's
+  `bash -n`/`--printsrcinfo` clean but never `makepkg`-built (a full clean
+  from-source build, ~10 min: clones tag `v0.1.0`, `cargo build -p server` +
+  `pnpm tauri build --no-bundle`). Run `makepkg` once to confirm `build()` +
+  `package()`, then publish to `ssh://aur@aur.archlinux.org/earworm.git`.
+- [ ] **Automate the per-release AUR bump.** Each release currently needs a
+  manual `pkgver` + `earworm-bin` `sha256sums` update + `.SRCINFO` regen + push.
+  A CI step (AUR-deploy action keyed off the published tag, pulling the tarball
+  checksum from the release `SHA256SUMS`) would make it hands-off (see
+  `packaging/aur/README.md`).
+- [ ] **`just release` can't re-release the current version.** It bumps
+  `tauri.conf.json` then commits, so if the version is unchanged the commit is
+  empty and the recipe aborts (why `v0.1.0` was tagged by hand). Fine for the
+  normal bump-then-release flow; only bites a re-tag. Optionally make it
+  tolerate an unchanged version (skip the commit, just tag).
+- [ ] **Phase 6.3 — in-app ML hint (stretch).** When PREPARE can't find
+  `uv`/`demucs`, have `AnalyzePrompt.svelte` surface "run `earworm-enable-ml
+  all`" inline instead of a bare failure. Flagged at design time, never built.
+- [ ] **Broaden the Debian floor (optional).** The `.deb` is built on
+  ubuntu-24.04 (PipeWire 1.0+, forced by `libspa-sys` 0.10). If older targets
+  matter, investigate pinning `pipewire-rs` to a version whose bindings match an
+  older system libspa — likely not worth it.
+- [ ] **rpm / AppImage / Flatpak (out of scope for v1).** Each is one more entry
+  in `bundle.targets` (rpm/appimage) or a separate manifest (Flatpak, with the
+  sandbox caveats in the rejected Approach C). Add only if users ask.
 
 ## Self-review notes
 
