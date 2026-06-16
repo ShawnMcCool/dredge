@@ -37,8 +37,8 @@
       title: "view",
       keys: [
         ["ctrl + / − / 0", "zoom in / out / reset"],
-        ["ctrl [  /  ]", "collapse library / panels"],
-        ["corner click", "far top-left / top-right toggles the library / panels column"],
+        ["corner icons", "the ‹ / › icon at the top-left / top-right hides the library / panels — click the thin rail to show it again"],
+        ["ctrl [  /  ]", "keyboard shortcut for the same hide / show"],
         [",", "open settings"],
         ["esc", "clear selection / dismiss"],
       ],
