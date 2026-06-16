@@ -1,9 +1,9 @@
-//! PipeWire app-node capture: discover application output streams and tap one
-//! into a rolling ring buffer.
+//! PipeWire input capture: discover audio input sources (mics, interfaces)
+//! and tap one into a rolling ring buffer for the tuner.
 //!
-//! All PipeWire code for capture lives here. Discovery is a short-lived
+//! All PipeWire code for input capture lives here. Discovery is a short-lived
 //! registry scan on its own thread; a capture session runs its own mainloop
-//! thread with an input stream targeting the chosen node.
+//! thread with an input stream targeting the chosen source.
 
 use crate::buffer::{CHANNELS, SAMPLE_RATE};
 use crate::ring::RollingRing;
@@ -25,7 +25,7 @@ pub struct CaptureNode {
     /// back to the default source).
     pub serial: u64,
     pub app: String,   // application.name or node.name fallback
-    pub media: String, // media.name (song title in Spotify/Firefox!) or ""
+    pub media: String, // media.name; typically empty for mic/interface sources
 }
 
 fn pw_err(e: pw::Error) -> crate::error::Error {
@@ -112,8 +112,8 @@ pub struct CaptureSession {
     thread: Option<JoinHandle<()>>,
 }
 
-/// Capture an application node's output into a rolling ring.
-/// `buffer_secs` default 180.0 (≈66 MB — three minutes of grab-back).
+/// Tap an input source (`node.serial`) into a rolling ring of `buffer_secs`
+/// seconds for the tuner.
 pub fn start_capture(node: CaptureNode, buffer_secs: f64) -> crate::error::Result<CaptureSession> {
     let ring = Arc::new(Mutex::new(RollingRing::with_secs(buffer_secs)));
     let stop = Arc::new(AtomicBool::new(false));

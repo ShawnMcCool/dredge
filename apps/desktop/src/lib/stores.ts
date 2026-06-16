@@ -145,7 +145,7 @@ export interface CaptureNode {
   /** object.serial — what the engine targets; registry ids don't link on modern PipeWire. */
   serial: number;
   app: string;
-  /** media.name — often the song title currently playing. */
+  /** media.name, typically empty for mic/interface sources. */
   media: string;
 }
 
