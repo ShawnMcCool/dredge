@@ -713,9 +713,16 @@ impl App {
         std::thread::spawn(move || {
             reporter.begin("stems", "separating stems");
             let mut timer = crate::profile::Timer::new("stems", Some(song_id));
-            let result = timer.stage("demucs", || {
-                separator.separate(&audio_path, &cache, force_cpu)
-            });
+            // Decode to a canonical WAV first so Demucs reads pure PCM (no
+            // ffmpeg) and video sources work; the temp dir lives until the job
+            // ends.
+            let prepared = timer.stage("decode", || canonical_wav_for_tools(&audio_path));
+            let result = match &prepared {
+                Ok((_dir, wav)) => {
+                    timer.stage("demucs", || separator.separate(wav, &cache, force_cpu))
+                }
+                Err(e) => Err(e.clone()),
+            };
             let m = reporter.maxes();
             reporter.end();
             separating.lock().unwrap().remove(&song_id.0);
@@ -821,13 +828,20 @@ impl App {
             };
             reporter.begin("analysis", first_stage);
             let mut timer = crate::profile::Timer::new("analysis", Some(song_id));
-            let (result, device) = crate::analysis::analyze_with_recovery(
-                analyzer.as_ref(),
-                &audio_path,
-                &device_setting,
-                &mut timer,
-                &reporter,
-            );
+            // Decode to a canonical WAV first so the Python analyzer reads pure
+            // PCM (no ffmpeg) and video sources work; the temp dir lives until
+            // the job ends.
+            let prepared = timer.stage("decode", || canonical_wav_for_tools(&audio_path));
+            let (result, device) = match &prepared {
+                Ok((_dir, wav)) => crate::analysis::analyze_with_recovery(
+                    analyzer.as_ref(),
+                    wav,
+                    &device_setting,
+                    &mut timer,
+                    &reporter,
+                ),
+                Err(e) => (Err(e.clone()), None),
+            };
             let m = reporter.maxes();
             reporter.end();
             let engine = result.as_ref().ok().map(|a| a.engine.clone());
@@ -1482,6 +1496,22 @@ fn default_captures_dir() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(std::env::temp_dir)
         .join("music/earworm-captures")
+}
+
+/// Decode `src` to a canonical 48k stereo WAV in a fresh temp dir, returning
+/// the dir (kept alive by the caller; auto-removes on drop) and the WAV path.
+/// External tools (analysis, Demucs) read this instead of the original file, so
+/// symphonia is the single decode authority — they never need ffmpeg, and video
+/// containers (mp4/mov) work because only the decoded audio reaches them. The
+/// fixed `audio.wav` stem keeps Demucs's file-stem-derived output dir stable.
+fn canonical_wav_for_tools(src: &Path) -> Result<(tempfile::TempDir, PathBuf), String> {
+    let dir = tempfile::Builder::new()
+        .prefix("earworm-decode-")
+        .tempdir()
+        .map_err(|e| format!("cannot create decode temp dir: {e}"))?;
+    let wav = dir.path().join("audio.wav");
+    engine::decode::decode_to_wav(src, &wav).err_str()?;
+    Ok((dir, wav))
 }
 
 /// `~/.local/share/earworm/stems/<file_hash>/{vocals,drums,bass,other}.wav`
