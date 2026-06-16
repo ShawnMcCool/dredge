@@ -33,11 +33,18 @@ pub fn decode_file(path: &Path) -> Result<SongBuffer> {
         )
         .map_err(|e| Error::Decode(e.to_string()))?;
     let mut format = probed.format;
+    let codecs = symphonia::default::get_codecs();
+    // Pick the first track the audio-codec registry can decode, NOT
+    // `default_track()`: in a video container (mp4/mov) the default track is
+    // usually the video track, which has no audio decoder. This skips it and
+    // grabs the audio track — we only ever want a file's audio.
     let track = format
-        .default_track()
-        .ok_or_else(|| Error::Decode("no default audio track".into()))?;
+        .tracks()
+        .iter()
+        .find(|t| codecs.get_codec(t.codec_params.codec).is_some())
+        .ok_or_else(|| Error::Decode("no decodable audio track".into()))?;
     let track_id = track.id;
-    let mut decoder = symphonia::default::get_codecs()
+    let mut decoder = codecs
         .make(&track.codec_params, &DecoderOptions::default())
         .map_err(|e| Error::Decode(e.to_string()))?;
 

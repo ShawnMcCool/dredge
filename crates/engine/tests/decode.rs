@@ -73,6 +73,20 @@ fn missing_file_is_an_error() {
 }
 
 #[test]
+fn decodes_audio_track_from_a_video_container() {
+    // An mp4 with an h264 video track (the container default) + an AAC audio
+    // track. We must skip the video track and decode the audio — regression
+    // guard for selecting the audio track instead of `default_track()`.
+    let mp4 = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/video_with_audio.mp4");
+    let buf = decode_file(&mp4).expect("video file's audio track should decode");
+    assert_eq!(buf.data.len() % CHANNELS, 0);
+    // ~1 s of audio at 48 kHz proves we decoded the audio, not nothing.
+    assert!(buf.frames() > 40_000, "frames = {}", buf.frames());
+    let _ = SAMPLE_RATE;
+}
+
+#[test]
 fn decode_to_wav_writes_a_canonical_48k_stereo_file() {
     // A 44.1k mono source must come out as a readable 48k stereo WAV — the
     // canonical PCM external tools (analyze, demucs) consume.
