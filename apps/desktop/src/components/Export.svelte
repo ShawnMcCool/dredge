@@ -169,8 +169,18 @@
     void actions.setSetting(EXPORT_FORMAT, f);
   }
 
+  // Client-side filename check for instant feedback; the backend re-validates
+  // both name and folder authoritatively (it can stat the filesystem).
+  const filenameError = $derived(filenameProblem(filename));
+  function filenameProblem(name: string): string | null {
+    const t = name.trim();
+    if (!t) return null; // emptiness just disables Export — no scary message
+    if (t === "." || t === ".." || /[/\\]/.test(t)) return "no slashes or path parts";
+    return null;
+  }
+
   const canExport = $derived(
-    !!$openSong && !!dir.trim() && !!filename.trim() && phase !== "rendering",
+    !!$openSong && !!dir.trim() && !!filename.trim() && !filenameError && phase !== "rendering",
   );
 
   async function startExport() {
@@ -179,20 +189,26 @@
     stage = "decoding";
     percent = 0;
     errorMsg = "";
-    await cmd("export.start", {
-      song_id: $openSong.song.id,
-      dir,
-      filename: filename.trim(),
-      format,
-      start_secs: span.start,
-      end_secs: span.end,
-      rate,
-      semitones: $pitch.semitones,
-      cents: $pitch.cents,
-      octave_up: $pitch.octaveUp,
-      bass_focus: $bassFocus,
-      gains,
-    });
+    try {
+      await cmd("export.start", {
+        song_id: $openSong.song.id,
+        dir: dir.trim(),
+        filename: filename.trim(),
+        format,
+        start_secs: span.start,
+        end_secs: span.end,
+        rate,
+        semitones: $pitch.semitones,
+        cents: $pitch.cents,
+        octave_up: $pitch.octaveUp,
+        bass_focus: $bassFocus,
+        gains,
+      });
+    } catch (e) {
+      // e.g. the backend rejected the folder/filename — show it, don't hang.
+      phase = "failed";
+      errorMsg = e instanceof Error ? e.message : String(e);
+    }
   }
 
   function cancelExport() {
@@ -298,7 +314,8 @@
     <div class="group-head">destination</div>
     <div class="field">
       <label for="ex-name">file name</label>
-      <input id="ex-name" class="txt" bind:value={filename} spellcheck="false" />
+      <input id="ex-name" class="txt" class:invalid={!!filenameError} bind:value={filename} spellcheck="false" />
+      {#if filenameError}<p class="hint err">{filenameError}</p>{/if}
     </div>
     <div class="field">
       <label for="ex-dir">folder</label>
@@ -425,6 +442,13 @@
     font-size: 11px;
     color: var(--muted);
     margin: 8px 0 0;
+  }
+  .hint.err {
+    color: var(--miss);
+    margin: 4px 0 0;
+  }
+  .txt.invalid {
+    border-color: var(--miss);
   }
 
   .field {

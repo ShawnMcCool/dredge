@@ -74,6 +74,71 @@ fn export_caps_reports_mp3_availability_as_a_bool() {
 }
 
 #[test]
+fn export_rejects_a_missing_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let wav = dir.path().join("riff.wav");
+    write_test_wav(&wav);
+    let mut app = test_app();
+    let id = import_fixture(&mut app, &wav);
+
+    let resp = dispatch(
+        &mut app,
+        "export.start",
+        json!({
+            "song_id": id,
+            "dir": dir.path().join("nope"),
+            "filename": "take",
+            "format": "wav",
+            "rate": 1.0,
+            "gains": [],
+        }),
+    );
+    assert!(!resp.ok, "a missing folder must be refused");
+    assert!(
+        resp.error.unwrap().to_lowercase().contains("folder"),
+        "error should name the folder"
+    );
+}
+
+#[test]
+fn export_rejects_a_blank_filename() {
+    let dir = tempfile::tempdir().unwrap();
+    let wav = dir.path().join("riff.wav");
+    write_test_wav(&wav);
+    let mut app = test_app();
+    let id = import_fixture(&mut app, &wav);
+
+    let resp = dispatch(
+        &mut app,
+        "export.start",
+        json!({
+            "song_id": id, "dir": dir.path(), "filename": "   ", "format": "wav",
+            "rate": 1.0, "gains": [],
+        }),
+    );
+    assert!(!resp.ok, "a blank filename must be refused");
+}
+
+#[test]
+fn export_rejects_a_filename_with_a_path_separator() {
+    let dir = tempfile::tempdir().unwrap();
+    let wav = dir.path().join("riff.wav");
+    write_test_wav(&wav);
+    let mut app = test_app();
+    let id = import_fixture(&mut app, &wav);
+
+    let resp = dispatch(
+        &mut app,
+        "export.start",
+        json!({
+            "song_id": id, "dir": dir.path(), "filename": "sub/take", "format": "wav",
+            "rate": 1.0, "gains": [],
+        }),
+    );
+    assert!(!resp.ok, "a filename with a slash must be refused");
+}
+
+#[test]
 fn export_writes_a_wav_for_the_song() {
     let dir = tempfile::tempdir().unwrap();
     let wav = dir.path().join("riff.wav");
@@ -82,6 +147,7 @@ fn export_writes_a_wav_for_the_song() {
     let id = import_fixture(&mut app, &wav);
 
     let out = dir.path().join("out");
+    std::fs::create_dir_all(&out).unwrap();
     let resp = dispatch(
         &mut app,
         "export.start",
@@ -116,6 +182,7 @@ fn export_of_a_span_is_shorter_than_the_whole_song() {
     let mut app = test_app();
     let id = import_fixture(&mut app, &wav);
     let out = dir.path().join("out");
+    std::fs::create_dir_all(&out).unwrap();
 
     let base = json!({
         "song_id": id, "dir": out, "format": "wav",

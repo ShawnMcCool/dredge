@@ -183,6 +183,24 @@ fn export_decode(song: &Song, stems_cache: &Path) -> Result<engine::buffer::Stem
     Ok(engine::buffer::StemSet::new(bufs))
 }
 
+/// Reject an export whose destination isn't usable *before* any work starts:
+/// the folder must already exist (the picker only returns real dirs; a typed
+/// path might not), and the file name must be a plain name — non-empty and
+/// free of path separators so it can't escape the chosen folder.
+fn validate_export_target(dir: &Path, filename: &str) -> Result<(), String> {
+    let name = filename.trim();
+    if name.is_empty() {
+        return Err("enter a file name".into());
+    }
+    if name == "." || name == ".." || name.contains(['/', '\\', '\0']) {
+        return Err("file name can't contain slashes or path parts".into());
+    }
+    if !dir.is_dir() {
+        return Err("export folder doesn't exist".into());
+    }
+    Ok(())
+}
+
 /// `dir/stem.ext`, or `dir/stem (n).ext` if that exists — never silently
 /// clobbers a previous export.
 fn unique_export_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
@@ -869,6 +887,9 @@ impl App {
         if p.format == "mp3" && !engine::encode::ffmpeg_available() {
             return Err("MP3 export needs ffmpeg, which isn't installed".into());
         }
+        let dir = PathBuf::from(&p.dir);
+        validate_export_target(&dir, &p.filename)?;
+        let filename = p.filename.trim().to_string();
         let song = self.song_row(p.song_id)?;
         let stems_cache = self.stems_cache_dir(&song.file_hash);
         let cfg = engine::export::RenderConfig {
@@ -887,8 +908,7 @@ impl App {
         self.export_cancel = cancel.clone();
 
         let tx = self.job_tx.clone();
-        let dir = PathBuf::from(&p.dir);
-        let (filename, format) = (p.filename, p.format);
+        let format = p.format;
 
         std::thread::spawn(move || {
             let emit = |data: Value| {
