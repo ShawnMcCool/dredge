@@ -70,6 +70,8 @@
   // off (the pointer handlers below); zoom stays follow-aware.
   const FOLLOW_MARGIN = 0.2; // free-roam middle 60%, scroll past the edge 20%
   let follow = $state(false);
+  // grid/snap toolbar: collapsed to a corner icon by default, clicks expand it
+  let gridOpen = $state(false);
   // last playhead drawn — used as the zoom anchor while following so a zoom
   // can't shove the playhead out of view (recomputing the smoothed clock here
   // would perturb its interpolation, so reuse what draw() last produced).
@@ -896,16 +898,33 @@
       {/if}
     </div>
   {/if}
-  {#if $openSong?.analysis && hoverPt}
-    <div class="grid-ctl" transition:fade={{ duration: 120 }}>
-      <button class:on={$gridSnap} onclick={() => void actions.setGridSnap(!$gridSnap)} title="snap to grid (g)">snap</button>
-      <button class:on={$gridVisible} onclick={() => void actions.setGridVisible(!$gridVisible)} title="show grid">grid</button>
-      <button class:on={$gridLines} onclick={() => void actions.setGridLines(!$gridLines)} title="full gridlines vs bottom ticks">lines</button>
-      <span class="seg">
-        {#each GRID_SUBDIVS as s (s)}
-          <button class:on={$gridSubdivision === s} onclick={() => void actions.setGridSubdivision(s)}>{s}</button>
-        {/each}
-      </span>
+  {#if $openSong?.analysis && (hoverPt || gridOpen)}
+    <div class="grid-ctl" class:open={gridOpen} transition:fade={{ duration: 120 }}>
+      <div class="grid-fields">
+        <button class:on={$gridSnap} onclick={() => void actions.setGridSnap(!$gridSnap)} title="snap to grid (g)">snap</button>
+        <button class:on={$gridVisible} onclick={() => void actions.setGridVisible(!$gridVisible)} title="show grid">grid</button>
+        <button class:on={$gridLines} onclick={() => void actions.setGridLines(!$gridLines)} title="full gridlines vs bottom ticks">lines</button>
+        <span class="seg">
+          {#each GRID_SUBDIVS as s (s)}
+            <button class:on={$gridSubdivision === s} onclick={() => void actions.setGridSubdivision(s)}>{s}</button>
+          {/each}
+        </span>
+      </div>
+      <button
+        class="grid-toggle"
+        class:on={gridOpen}
+        onclick={() => (gridOpen = !gridOpen)}
+        title={gridOpen ? "hide grid controls" : "grid controls"}
+        aria-label="grid controls"
+        aria-pressed={gridOpen}
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <line x1="4" y1="9.5" x2="20" y2="9.5" />
+          <line x1="4" y1="14.5" x2="20" y2="14.5" />
+          <line x1="9.5" y1="4" x2="9.5" y2="20" />
+          <line x1="14.5" y1="4" x2="14.5" y2="20" />
+        </svg>
+      </button>
     </div>
   {/if}
   {#if $openSong && (hoverPt || follow)}
@@ -1022,14 +1041,35 @@
     right: 4px;
     display: flex;
     align-items: center;
-    gap: 4px;
     padding: 3px;
     background: color-mix(in srgb, var(--bg) 80%, transparent);
     border: 1px solid var(--line);
     border-radius: var(--radius);
   }
 
-  .grid-ctl button {
+  /* collapsed: fields shrink to nothing behind the corner toggle; opening
+     extends them leftward with a smooth width + fade */
+  .grid-fields {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 0;
+    margin-right: 0;
+    opacity: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    transition:
+      max-width 0.22s ease,
+      margin-right 0.22s ease,
+      opacity 0.18s ease;
+  }
+  .grid-ctl.open .grid-fields {
+    max-width: 320px;
+    margin-right: 4px;
+    opacity: 1;
+  }
+
+  .grid-fields button {
     background: none;
     border: 1px solid transparent;
     border-radius: var(--radius);
@@ -1040,19 +1080,43 @@
     padding: 1px 5px;
     cursor: pointer;
   }
-  .grid-ctl button:hover {
+  .grid-fields button:hover {
     color: var(--fg);
   }
-  .grid-ctl button.on {
+  .grid-fields button.on {
     color: var(--accent);
     border-color: var(--accent-dim);
   }
-  .grid-ctl .seg {
+  .grid-fields .seg {
     display: inline-flex;
     gap: 2px;
     border-left: 1px solid var(--line);
     padding-left: 4px;
     margin-left: 1px;
+  }
+
+  .grid-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px;
+    line-height: 0;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .grid-toggle svg {
+    width: 15px;
+    height: 15px;
+  }
+  .grid-toggle:hover {
+    color: var(--fg);
+  }
+  .grid-toggle.on {
+    color: var(--accent);
+    border-color: var(--accent-dim);
   }
 
   .follow-toggle {
