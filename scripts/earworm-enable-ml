@@ -22,7 +22,7 @@ need_uv() {
     return 0
   fi
   echo "earworm-enable-ml: 'uv' is required but not on PATH." >&2
-  echo "  install it via your distro (pacman -S uv / apt install uv) or:" >&2
+  echo "  Arch: pacman -S uv  ·  Ubuntu 24.04: not in the archive, use the installer:" >&2
   echo "    curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
   exit 1
 }

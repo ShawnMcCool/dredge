@@ -81,10 +81,10 @@ not locked in.
 
 ## Installation
 
-Earworm is **Linux-only**. The audio engine is PipeWire-native (output *and*
-capture), so a **PipeWire** audio stack is mandatory — there is no
-ALSA/PulseAudio fallback. Pick the install path for your distro; each one puts
-`earworm` (desktop app) and `earwormd` (headless daemon) on your `PATH`. Audio
+Earworm is **Linux-only**. The audio engine is PipeWire-native, so a
+**PipeWire** audio stack is mandatory — there is no ALSA/PulseAudio fallback.
+Pick the install path for your distro; each one puts `earworm` (desktop app) and
+`earwormd` (headless daemon) on your `PATH`. Audio
 **decoding** is pure-Rust (symphonia: mp3/flac/ogg/wav/aac/m4a) and SQLite is
 bundled — no system SQLite. Video files (mp4/mov, and anything else with an
 audio track) are loaded for their **waveform only**, never played back. When
@@ -109,16 +109,35 @@ yay -S earworm
 
 ### Debian / Ubuntu (.deb)
 
-Download the latest `earworm_*_amd64.deb` from the
-[releases page](https://github.com/ShawnMcCool/earworm/releases), then:
+1. Download the latest `earworm_*_amd64.deb` from the
+   [releases page](https://github.com/ShawnMcCool/earworm/releases).
+2. Install it — `apt` resolves the runtime libraries:
 
-```bash
-sudo apt install ./earworm_*_amd64.deb
-```
+   ```bash
+   sudo apt install ./earworm_*_amd64.deb
+   ```
 
-Needs **Ubuntu 24.04+ / Debian 13+** (PipeWire 1.0+, plus `libwebkit2gtk-4.1-0`);
-`apt` resolves the runtime deps (`librubberband2`, `libpipewire-0.3-0`,
-`libwebkit2gtk-4.1-0`, `libgtk-3-0`).
+Needs **Ubuntu 24.04+ / Debian 13+** (PipeWire 1.0+). `apt` pulls
+`librubberband2`, `libpipewire-0.3-0`, `libwebkit2gtk-4.1-0`, and `libgtk-3-0`
+automatically. That covers the whole looper — load a track, loop, stretch, the
+tempo trainer, and the tuner all work with nothing else installed.
+
+**Optional features** are off by default and pull in extra dependencies:
+
+| Feature | Dependency | Install |
+|---------|------------|---------|
+| MP3 export · mkv/webm and other awkward containers · stem export | `ffmpeg` | `sudo apt install ffmpeg` |
+| Beat / section analysis · stem separation | `uv` + PyTorch venvs | [Enable the optional ML features](#enable-the-optional-ml-features) |
+
+Notes:
+
+- **`ffmpeg`** — recent `.deb`s list it as a *recommended* dependency, so a
+  default `apt install` already pulls it in; run the command above only if MP3
+  export reports it missing. Settings → **capabilities** shows what's detected.
+- **`uv`** is not in the Ubuntu archive — install it from
+  [astral.sh](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`),
+  then run `earworm-enable-ml` (below). `demucs` and the PyTorch venvs are set up
+  by that helper, not by `apt`.
 
 ### Build from source
 
@@ -140,7 +159,7 @@ sudo apt install librubberband-dev libpipewire-0.3-dev libspa-0.2-dev \
 | Dependency | Why it's needed |
 |------------|-----------------|
 | `rubberband` (≥3.0) | pitch-preserving time-stretch (Rubber Band R3), FFI-linked by the engine |
-| `pipewire` | all audio output and capture |
+| `pipewire` | all audio output, plus the tuner's microphone input |
 | `webkit2gtk-4.1`, `gtk3` | the Tauri webview that renders the UI (desktop app only) |
 | `clang` / libclang | bindgen builds the PipeWire/`libspa-sys` bindings — the build fails without it |
 | `pkgconf`, `base-devel` | `pkg-config` + a C compiler/linker for the FFI crates |
