@@ -1,9 +1,11 @@
-//! PipeWire input capture: discover audio input sources (mics, interfaces)
-//! and tap one into a rolling ring buffer for the tuner.
+//! Input capture for the tuner: discover an audio input source (mic,
+//! interface) and tap it into a rolling ring buffer.
 //!
-//! All PipeWire code for input capture lives here. Discovery is a short-lived
-//! registry scan on its own thread; a capture session runs its own mainloop
-//! thread with an input stream targeting the chosen source.
+//! This module holds the shared cross-platform types (`CaptureNode`,
+//! `CaptureSession`, `write_wav`, `wav_header_rate`) and the Linux PipeWire
+//! implementation of `list_input_sources`/`start_capture`. The non-Linux
+//! (cpal) implementation lives in `capture_cpal.rs` and is re-exported from
+//! the bottom of this module.
 
 use crate::buffer::{CHANNELS, SAMPLE_RATE};
 use crate::ring::RollingRing;
