@@ -8,6 +8,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("unsupported: {0}")]
     Unsupported(String),
+    #[error("audio error: {0}")]
+    Audio(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

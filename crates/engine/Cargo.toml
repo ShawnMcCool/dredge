@@ -10,8 +10,7 @@ rubato = "0.16"
 rtrb = "0.3"
 arc-swap = "1"
 bytemuck = "1"
-pipewire = { version = "0.10", features = ["v0_3_49"] }
-libspa = "0.10"
+cpal = "0.15"
 blake3 = "1"
 serde.workspace = true
 serde_json.workspace = true
@@ -19,6 +18,10 @@ dirs = "6"
 hound = "3"
 pitch-detection = "0.3"
 tempfile = "3"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+pipewire = { version = "0.10", features = ["v0_3_49"] }
+libspa = "0.10"
 
 [dev-dependencies]
 
