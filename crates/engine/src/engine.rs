@@ -7,7 +7,7 @@ pub struct Engine {
     cmd_tx: rtrb::Producer<EngineCmd>,
     evt_rx: rtrb::Consumer<EngineEvent>,
     song_slot: Arc<ArcSwapOption<StemSet>>,
-    _pw_thread: std::thread::JoinHandle<()>,
+    _audio_thread: std::thread::JoinHandle<()>,
 }
 
 impl Engine {
@@ -21,7 +21,7 @@ impl Engine {
             cmd_tx,
             evt_rx,
             song_slot,
-            _pw_thread: pw_thread,
+            _audio_thread: pw_thread,
         })
     }
 

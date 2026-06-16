@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Merged into the macOS app bundle's Info.plist by Tauri at bundle time.
+     NSMicrophoneUsageDescription is required so the tuner can open an input
+     device on macOS; without it CoreAudio denies microphone access. -->
+<plist version="1.0">
+<dict>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Earworm uses the microphone for the live tuner.</string>
+</dict>
+</plist>

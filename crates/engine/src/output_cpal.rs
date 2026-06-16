@@ -66,8 +66,9 @@ fn run(
         .play()
         .map_err(|e| Error::Audio(format!("play stream: {e}")))?;
 
-    // The Engine owns this JoinHandle and never joins it; park forever so the
-    // stream stays alive on this thread.
+    // The Engine owns this JoinHandle and never joins it; park to keep the
+    // stream alive on this thread. park() may wake spuriously — re-parking is
+    // harmless, we never need to do work here.
     loop {
         std::thread::park();
     }
