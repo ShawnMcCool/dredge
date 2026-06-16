@@ -7,14 +7,20 @@
 
 use crate::buffer::{CHANNELS, SAMPLE_RATE};
 use crate::ring::RollingRing;
+#[cfg(target_os = "linux")]
 use pipewire as pw;
+#[cfg(target_os = "linux")]
 use pw::{properties::properties, spa};
+#[cfg(target_os = "linux")]
 use spa::pod::Pod;
+#[cfg(target_os = "linux")]
 use std::cell::RefCell;
+#[cfg(target_os = "linux")]
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
+#[cfg(target_os = "linux")]
 use std::time::Duration;
 
 #[derive(Debug, Clone, serde::Serialize, PartialEq)]
@@ -28,12 +34,14 @@ pub struct CaptureNode {
     pub media: String, // media.name; typically empty for mic/interface sources
 }
 
+#[cfg(target_os = "linux")]
 fn pw_err(e: pw::Error) -> crate::error::Error {
     std::io::Error::other(e.to_string()).into()
 }
 
 /// One-shot registry scan for capture sources (mics, audio interfaces:
 /// media.class == "Audio/Source").
+#[cfg(target_os = "linux")]
 pub fn list_input_sources() -> crate::error::Result<Vec<CaptureNode>> {
     let handle = std::thread::Builder::new()
         .name("earworm-pw-scan-in".into())
@@ -44,6 +52,7 @@ pub fn list_input_sources() -> crate::error::Result<Vec<CaptureNode>> {
         .map_err(pw_err)
 }
 
+#[cfg(target_os = "linux")]
 fn scan_input_sources() -> Result<Vec<CaptureNode>, pw::Error> {
     pw::init();
     let mainloop = pw::main_loop::MainLoopRc::new(None)?;
@@ -112,32 +121,22 @@ pub struct CaptureSession {
     thread: Option<JoinHandle<()>>,
 }
 
-/// Tap an input source (`node.serial`) into a rolling ring of `buffer_secs`
-/// seconds for the tuner.
-pub fn start_capture(node: CaptureNode, buffer_secs: f64) -> crate::error::Result<CaptureSession> {
-    let ring = Arc::new(Mutex::new(RollingRing::with_secs(buffer_secs)));
-    let stop = Arc::new(AtomicBool::new(false));
-    let thread = {
-        let ring = ring.clone();
-        let stop = stop.clone();
-        let node = node.clone();
-        std::thread::Builder::new()
-            .name("earworm-pw-cap".into())
-            .spawn(move || {
-                if let Err(e) = run_capture(node, ring, stop) {
-                    eprintln!("earworm capture thread failed: {e}");
-                }
-            })?
-    };
-    Ok(CaptureSession {
-        ring,
-        node,
-        stop,
-        thread: Some(thread),
-    })
-}
-
 impl CaptureSession {
+    /// Assemble a session from a backend's ring/stop/thread. Backend-agnostic.
+    pub(crate) fn from_parts(
+        ring: Arc<Mutex<RollingRing>>,
+        node: CaptureNode,
+        stop: Arc<AtomicBool>,
+        thread: JoinHandle<()>,
+    ) -> Self {
+        Self {
+            ring,
+            node,
+            stop,
+            thread: Some(thread),
+        }
+    }
+
     pub fn stop(mut self) {
         self.shutdown();
     }
@@ -156,11 +155,34 @@ impl Drop for CaptureSession {
     }
 }
 
+/// Tap an input source (`node.serial`) into a rolling ring of `buffer_secs`
+/// seconds for the tuner.
+#[cfg(target_os = "linux")]
+pub fn start_capture(node: CaptureNode, buffer_secs: f64) -> crate::error::Result<CaptureSession> {
+    let ring = Arc::new(Mutex::new(RollingRing::with_secs(buffer_secs)));
+    let stop = Arc::new(AtomicBool::new(false));
+    let thread = {
+        let ring = ring.clone();
+        let stop = stop.clone();
+        let node = node.clone();
+        std::thread::Builder::new()
+            .name("earworm-pw-cap".into())
+            .spawn(move || {
+                if let Err(e) = run_capture(node, ring, stop) {
+                    eprintln!("earworm capture thread failed: {e}");
+                }
+            })?
+    };
+    Ok(CaptureSession::from_parts(ring, node, stop, thread))
+}
+
+#[cfg(target_os = "linux")]
 struct CapState {
     ring: Arc<Mutex<RollingRing>>,
     scratch: Vec<f32>,
 }
 
+#[cfg(target_os = "linux")]
 fn run_capture(
     node: CaptureNode,
     ring: Arc<Mutex<RollingRing>>,
@@ -312,3 +334,6 @@ pub fn write_wav(path: &std::path::Path, interleaved: &[f32]) -> crate::error::R
         .map_err(|e| std::io::Error::other(e.to_string()))?;
     Ok(())
 }
+
+#[cfg(not(target_os = "linux"))]
+pub use crate::capture_cpal::{list_input_sources, start_capture};

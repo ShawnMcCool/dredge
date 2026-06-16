@@ -2,6 +2,9 @@
 
 pub mod buffer;
 pub mod capture;
+#[cfg(not(target_os = "linux"))]
+#[path = "capture_cpal.rs"]
+mod capture_cpal;
 pub mod decode;
 pub mod encode;
 pub mod engine;
