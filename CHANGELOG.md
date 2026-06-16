@@ -3,6 +3,20 @@
 All notable user-facing changes to earworm, newest first. Entries are written
 at release time by `scripts/ship release`.
 
+## v0.2.2 — 2026-06-16
+
+### New
+
+- **`earworm-doctor`** — a terminal command that lists the optional tools (ffmpeg, analysis, stem separation), shows which are installed, and prints the command to add anything that's missing. The desktop app shows the same under Settings → capabilities.
+
+### Improved
+
+- **MP3 export works out of the box** — the package now pulls in `ffmpeg` by default, so exporting to MP3 (and separating stems) no longer needs a manual install.
+
+### Fixed
+
+- **Export file names** — the file-name field now shows the extension earworm adds (`.wav` / `.mp3`), and typing one yourself no longer doubles it (no more `track.mp3.mp3`).
+
 ## v0.2.1 — 2026-06-16
 
 ### Fixed
