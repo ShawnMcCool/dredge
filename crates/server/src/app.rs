@@ -164,6 +164,30 @@ fn export_decode(song: &Song, stems_cache: &Path) -> Result<engine::buffer::Stem
     Ok(engine::buffer::StemSet::new(bufs))
 }
 
+/// Resolve a user-typed export folder into an absolute path: expand a leading
+/// `~`/`~/` to the home directory, then require the result be absolute. A typed
+/// relative path must never resolve against the daemon's working directory —
+/// that's how typing `~/downloads/` once spawned a literal `~` dir in the repo.
+fn resolve_export_dir(input: &str) -> Result<PathBuf, String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Err("choose an export folder".into());
+    }
+    let path = if trimmed == "~" {
+        dirs::home_dir().ok_or("can't find your home directory")?
+    } else if let Some(rest) = trimmed.strip_prefix("~/") {
+        dirs::home_dir()
+            .ok_or("can't find your home directory")?
+            .join(rest)
+    } else {
+        PathBuf::from(trimmed)
+    };
+    if !path.is_absolute() {
+        return Err("enter an absolute folder path (e.g. /home/you/Music or ~/Music)".into());
+    }
+    Ok(path)
+}
+
 /// Reject an export whose destination isn't usable *before* any work starts:
 /// the folder must already exist (the picker only returns real dirs; a typed
 /// path might not), and the file name must be a plain name — non-empty and
@@ -397,6 +421,11 @@ impl App {
             "stems.status" => self.stems_status(p),
             "stems.gains" => self.stems_gains(p),
             "export.caps" => Ok(json!({ "mp3": engine::encode::ffmpeg_available() })),
+            "caps" => Ok(json!({
+                "mp3": engine::encode::ffmpeg_available(),
+                "stems": self.separator.is_available(),
+                "analysis": self.analyzer.is_available(),
+            })),
             "export.start" => self.export_start(p),
             "export.cancel" => self.export_cancel(),
             "analysis.run" => self.analysis_run(p),
@@ -816,7 +845,7 @@ impl App {
         if p.format == "mp3" && !engine::encode::ffmpeg_available() {
             return Err("MP3 export needs ffmpeg, which isn't installed".into());
         }
-        let dir = PathBuf::from(&p.dir);
+        let dir = resolve_export_dir(&p.dir)?;
         validate_export_target(&dir, &p.filename)?;
         let filename = p.filename.trim().to_string();
         let song = self.song_row(p.song_id)?;
@@ -1583,4 +1612,38 @@ fn default_stems_dir() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(std::env::temp_dir)
         .join("earworm/stems")
+}
+
+#[cfg(test)]
+mod export_dir_tests {
+    use super::resolve_export_dir;
+
+    #[test]
+    fn expands_leading_tilde_to_home() {
+        let home = dirs::home_dir().expect("home dir");
+        assert_eq!(resolve_export_dir("~").unwrap(), home);
+        assert_eq!(resolve_export_dir("~/Music").unwrap(), home.join("Music"));
+        // trailing slash and surrounding whitespace are tolerated
+        assert_eq!(
+            resolve_export_dir("  ~/Music/  ").unwrap(),
+            home.join("Music/")
+        );
+    }
+
+    #[test]
+    fn passes_absolute_paths_through() {
+        assert_eq!(
+            resolve_export_dir("/tmp/earworm-out").unwrap(),
+            std::path::PathBuf::from("/tmp/earworm-out")
+        );
+    }
+
+    #[test]
+    fn rejects_relative_paths_so_they_never_resolve_against_cwd() {
+        // This is the bug being guarded: a relative/untilded path must error
+        // rather than be created relative to the daemon's working directory.
+        assert!(resolve_export_dir("downloads").is_err());
+        assert!(resolve_export_dir("./out").is_err());
+        assert!(resolve_export_dir("").is_err());
+    }
 }
