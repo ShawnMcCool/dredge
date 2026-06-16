@@ -34,6 +34,17 @@ const RENDER_BLOCK: usize = 1024;
 
 /// Render `set` under `cfg` to an interleaved-stereo f32 buffer at 48 kHz.
 pub fn render(set: &StemSet, cfg: &RenderConfig) -> Vec<f32> {
+    render_with_progress(set, cfg, &mut |_| true)
+}
+
+/// As [`render`], but reports completion fraction (0.0..=1.0) after each block
+/// to `progress`; when `progress` returns `false` the render stops early
+/// (cooperative cancellation) and returns what it has so far.
+pub fn render_with_progress(
+    set: &StemSet,
+    cfg: &RenderConfig,
+    progress: &mut dyn FnMut(f32) -> bool,
+) -> Vec<f32> {
     let total = set.frames();
     let start = secs_to_frames(cfg.start_secs).min(total);
     let end = cfg
@@ -71,6 +82,9 @@ pub fn render(set: &StemSet, cfg: &RenderConfig) -> Vec<f32> {
             &mut events,
         );
         filled += n;
+        if !progress(filled as f32 / target as f32) {
+            break;
+        }
     }
     out
 }
@@ -175,6 +189,33 @@ mod tests {
         );
         assert!(!out.is_empty());
         assert!(peak(&out) < 1e-3, "expected silence, peak = {}", peak(&out));
+    }
+
+    #[test]
+    fn progress_climbs_to_completion() {
+        let set = StemSet::single(sine(2.0, 220.0, 0.5));
+        let (mut last, mut calls) = (0.0f32, 0);
+        render_with_progress(&set, &cfg(), &mut |p| {
+            assert!(p >= last, "progress went backwards: {last} -> {p}");
+            last = p;
+            calls += 1;
+            true
+        });
+        assert!(calls > 0, "progress callback never fired");
+        assert!(last >= 0.999, "final progress = {last}");
+    }
+
+    #[test]
+    fn returning_false_stops_the_render_early() {
+        let set = StemSet::single(sine(5.0, 220.0, 0.5));
+        let mut calls = 0;
+        render_with_progress(&set, &cfg(), &mut |_| {
+            calls += 1;
+            calls < 2 // keep going once, then cancel
+        });
+        // a 5 s render is hundreds of blocks; cancelling after the 2nd means we
+        // never ran them all.
+        assert_eq!(calls, 2, "render did not stop on cancel");
     }
 
     #[test]
