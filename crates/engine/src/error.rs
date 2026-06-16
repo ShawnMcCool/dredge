@@ -2,6 +2,8 @@
 pub enum Error {
     #[error("decode error: {0}")]
     Decode(String),
+    #[error("encode error: {0}")]
+    Encode(String),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
     #[error("unsupported: {0}")]

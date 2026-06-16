@@ -3,8 +3,10 @@
 pub mod buffer;
 pub mod capture;
 pub mod decode;
+pub mod encode;
 pub mod engine;
 pub mod error;
+pub mod export;
 pub mod ffi;
 pub mod filter;
 pub mod looper;
