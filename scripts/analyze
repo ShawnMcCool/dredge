@@ -10,7 +10,16 @@ set -euo pipefail
 
 VENV="${EARWORM_ANALYZE_VENV:-$HOME/.local/share/earworm/analyze-venv}"
 PY="$VENV/bin/python"
-HERE="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+
+# Portable absolute-dir of this script. macOS ships BSD readlink, which has no
+# -f, so resolve symlinks by hand instead of `readlink -f`.
+SOURCE="$0"
+while [ -h "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  case "$SOURCE" in /*) ;; *) SOURCE="$DIR/$SOURCE" ;; esac
+done
+HERE="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 
 if [ ! -x "$PY" ] || ! "$PY" -c "import beat_this" >/dev/null 2>&1; then
   echo "earworm-analyze: bootstrapping venv at $VENV (first run — downloads torch, may take minutes)" >&2
@@ -26,9 +35,10 @@ fi
 # /usr/bin/earworm-analyze, away from its impls). songformer_impl.py is resolved
 # by analyze_impl.py relative to its own location, so co-location is enough.
 IMPL=""
-for d in "$HERE" /usr/lib/earworm /usr/local/lib/earworm; do
+for d in "$HERE" "${EARWORM_IMPL_DIR:-}" /usr/lib/earworm /usr/local/lib/earworm /opt/homebrew/lib/earworm; do
+  [ -n "$d" ] || continue
   if [ -f "$d/analyze_impl.py" ]; then IMPL="$d/analyze_impl.py"; break; fi
 done
-[ -n "$IMPL" ] || { echo "earworm-analyze: analyze_impl.py not found (looked in $HERE, /usr/lib/earworm, /usr/local/lib/earworm)" >&2; exit 1; }
+[ -n "$IMPL" ] || { echo "earworm-analyze: analyze_impl.py not found (looked in $HERE, \$EARWORM_IMPL_DIR, /usr/lib/earworm, /usr/local/lib/earworm, /opt/homebrew/lib/earworm)" >&2; exit 1; }
 
 exec "$PY" "$IMPL" "$@"
