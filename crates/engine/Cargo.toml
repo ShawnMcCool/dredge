@@ -18,6 +18,7 @@ serde_json.workspace = true
 dirs = "6"
 hound = "3"
 pitch-detection = "0.3"
+tempfile = "3"
 
 [dev-dependencies]
 

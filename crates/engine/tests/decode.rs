@@ -86,6 +86,33 @@ fn decodes_audio_track_from_a_video_container() {
     let _ = SAMPLE_RATE;
 }
 
+/// True when an `ffmpeg` binary is on PATH (the fallback is optional).
+fn ffmpeg_present() -> bool {
+    std::process::Command::new("ffmpeg")
+        .arg("-version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+#[test]
+fn falls_back_to_ffmpeg_for_containers_symphonia_cannot_demux() {
+    // WebM (Matroska) is not in symphonia's feature set, so the pure-Rust path
+    // fails and decode_file must route through the ffmpeg fallback. Skips when
+    // ffmpeg is absent — it's an optional dependency, off the common path.
+    if !ffmpeg_present() {
+        eprintln!("skipping: ffmpeg not on PATH");
+        return;
+    }
+    let webm =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/audio_only.webm");
+    let buf = decode_file(&webm).expect("webm should decode via the ffmpeg fallback");
+    assert_eq!(buf.data.len() % CHANNELS, 0);
+    assert!(buf.frames() > 40_000, "frames = {}", buf.frames());
+}
+
 #[test]
 fn decode_to_wav_writes_a_canonical_48k_stereo_file() {
     // A 44.1k mono source must come out as a readable 48k stereo WAV — the

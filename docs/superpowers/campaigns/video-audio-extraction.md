@@ -103,6 +103,28 @@ Opus) is explicitly **out of scope** — it would need a new symphonia feature
   (14 KB, h264 + AAC) + test `decodes_audio_track_from_a_video_container` —
   decodes without ffmpeg at test time.
 
+## Phase 1.6 — ffmpeg fallback for containers symphonia can't demux (Rust) ✅
+
+**Second premise correction (found in real-world testing).** A real MP4 failed
+with `isomp4: sl descriptor predefined not mp4` — symphonia's pure-Rust mp4
+demuxer rejects many real files (and has no matroska/webm support at all). This
+**reverses the "compile-time only / no ffmpeg" guarantee** for video: no
+pure-Rust path reliably handles arbitrary containers. Decision (user-chosen):
+**ffmpeg fallback**.
+
+- [x] `decode_file` now tries `decode_symphonia` first; on a `Decode`/
+  `Unsupported` error (never `Io`/missing-file) it calls `decode_via_ffmpeg`,
+  which runs `ffmpeg -vn -ac 2 -ar 48000 -c:a pcm_s16le` to a temp WAV and
+  decodes that. ffmpeg missing → a clear "install ffmpeg" error that keeps
+  symphonia's original reason.
+- [x] ffmpeg is **optional**: plain audio + symphonia-friendly containers never
+  invoke it. As a bonus this gives mkv/webm/etc. for free when ffmpeg is present.
+- [x] Fixture `audio_only.webm` (Opus — symphonia can't decode) + test
+  `falls_back_to_ffmpeg_for_containers_symphonia_cannot_demux`, which skips
+  when ffmpeg is absent (CI stays green). Verified end-to-end through the daemon
+  (`song.import` webm → `dur=1.0`; `song.open` → peaks).
+- Docs corrected: README no longer claims "no ffmpeg".
+
 ## Phase 2 — Route analysis + stems through a decoded WAV (Rust)
 
 **Goal:** the Python tools read a Rust-decoded WAV, never the original file.

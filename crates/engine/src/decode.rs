@@ -17,7 +17,63 @@ const RESAMPLE_CHUNK: usize = 1024;
 
 /// Decode any supported file to the canonical in-memory format:
 /// interleaved stereo f32 at 48 kHz.
+///
+/// Tries symphonia (pure-Rust) first. Symphonia's demuxers reject many
+/// real-world containers — incomplete mp4 box parsing (e.g. `sl descriptor
+/// predefined not mp4`), and no matroska/webm support — so on a demux/codec
+/// failure we fall back to ffmpeg (if installed) to remux the audio to a WAV
+/// and decode that. Missing files (`Io`) never trigger the fallback.
 pub fn decode_file(path: &Path) -> Result<SongBuffer> {
+    match decode_symphonia(path) {
+        Ok(buf) => Ok(buf),
+        Err(primary @ (Error::Decode(_) | Error::Unsupported(_))) => {
+            decode_via_ffmpeg(path, &primary)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// Last resort for containers symphonia can't demux: let ffmpeg extract the
+/// audio track to a canonical 48 kHz stereo WAV, then decode that WAV (which
+/// symphonia reads reliably). `primary` is symphonia's original error, kept in
+/// the message so the failure is legible when ffmpeg is absent too.
+fn decode_via_ffmpeg(src: &Path, primary: &Error) -> Result<SongBuffer> {
+    let tmp = tempfile::Builder::new()
+        .prefix("earworm-ffmpeg-")
+        .suffix(".wav")
+        .tempfile()
+        .map_err(|e| Error::Decode(format!("{primary}; ffmpeg temp file: {e}")))?;
+    let output = std::process::Command::new("ffmpeg")
+        .args(["-v", "error", "-nostdin", "-y", "-i"])
+        .arg(src)
+        .args(["-vn", "-ac", "2", "-ar"])
+        .arg(SAMPLE_RATE.to_string())
+        .args(["-c:a", "pcm_s16le"])
+        .arg(tmp.path())
+        .output();
+    let output = match output {
+        Ok(o) => o,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(Error::Unsupported(format!(
+                "{primary} — install ffmpeg to load this file"
+            )));
+        }
+        Err(e) => {
+            return Err(Error::Decode(format!(
+                "{primary}; ffmpeg failed to start: {e}"
+            )))
+        }
+    };
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let tail = stderr.lines().last().unwrap_or("").trim();
+        return Err(Error::Decode(format!("{primary}; ffmpeg: {tail}")));
+    }
+    decode_symphonia(tmp.path())
+}
+
+/// Pure-Rust decode via symphonia. See `decode_file` for the ffmpeg fallback.
+fn decode_symphonia(path: &Path) -> Result<SongBuffer> {
     let file = File::open(path)?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
