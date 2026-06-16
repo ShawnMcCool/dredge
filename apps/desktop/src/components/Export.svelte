@@ -179,8 +179,12 @@
     return null;
   }
 
+  // The backend appends the real extension, so strip a trailing .wav/.mp3 the
+  // user may have typed — otherwise "track.mp3" would land as "track.mp3.mp3".
+  const exportStem = $derived(filename.trim().replace(/\.(wav|mp3)$/i, ""));
+
   const canExport = $derived(
-    !!$openSong && !!dir.trim() && !!filename.trim() && !filenameError && phase !== "rendering",
+    !!$openSong && !!dir.trim() && !!exportStem && !filenameError && phase !== "rendering",
   );
 
   async function startExport() {
@@ -193,7 +197,7 @@
       await cmd("export.start", {
         song_id: $openSong.song.id,
         dir: dir.trim(),
-        filename: filename.trim(),
+        filename: exportStem,
         format,
         start_secs: span.start,
         end_secs: span.end,
@@ -314,8 +318,15 @@
     <div class="group-head">destination</div>
     <div class="field">
       <label for="ex-name">file name</label>
-      <input id="ex-name" class="txt" class:invalid={!!filenameError} bind:value={filename} spellcheck="false" />
-      {#if filenameError}<p class="hint err">{filenameError}</p>{/if}
+      <div class="namerow">
+        <input id="ex-name" class="txt" class:invalid={!!filenameError} bind:value={filename} spellcheck="false" />
+        <span class="ext">.{format}</span>
+      </div>
+      {#if filenameError}
+        <p class="hint err">{filenameError}</p>
+      {:else}
+        <p class="hint">the <code>.{format}</code> extension is added automatically</p>
+      {/if}
     </div>
     <div class="field">
       <label for="ex-dir">folder</label>
@@ -481,6 +492,23 @@
   .pick {
     flex: 0 0 auto;
     padding: 0 10px;
+  }
+  .namerow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .namerow .txt {
+    flex: 1;
+  }
+  .namerow .ext {
+    flex: 0 0 auto;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .hint code {
+    font-family: var(--mono, ui-monospace, monospace);
+    color: var(--fg);
   }
 
   .export-btn {
