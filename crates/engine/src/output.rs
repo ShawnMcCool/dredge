@@ -1,11 +1,12 @@
-//! PipeWire output thread: a thin shell around `Pipeline`.
+//! PipeWire output thread: a thin shell around `RenderCore`.
 //!
-//! The process callback drains the command ring, renders, and pushes events
-//! out the event ring. It never allocates or locks, except constructing a
-//! fresh `Pipeline` at a song-swap boundary (acceptable: song loads only).
+//! The process callback dequeues a PipeWire buffer, delegates the
+//! swap/drain/render work to `RenderCore::fill`, then copies the rendered
+//! F32LE samples into the mapped device buffer. It never allocates or locks
+//! on the steady path.
 
 use crate::buffer::{StemSet, CHANNELS, SAMPLE_RATE};
-use crate::pipeline::{EngineCmd, EngineEvent, Pipeline};
+use crate::pipeline::{EngineCmd, EngineEvent};
 use arc_swap::ArcSwapOption;
 use pipewire as pw;
 use pw::{properties::properties, spa};
@@ -21,16 +22,8 @@ const _: () = assert!(cfg!(target_endian = "little"));
 const MAX_QUANTUM_FRAMES: usize = 8192;
 
 struct State {
-    cmd_rx: rtrb::Consumer<EngineCmd>,
-    evt_tx: rtrb::Producer<EngineEvent>,
-    song_slot: Arc<ArcSwapOption<StemSet>>,
-    pipeline: Option<Pipeline>,
-    current_song: Option<Arc<StemSet>>,
+    core: crate::render_core::RenderCore,
     render_buf: Vec<f32>,
-    events: Vec<EngineEvent>,
-    /// User volume, held here (not just in the Pipeline) so it survives song
-    /// swaps and an early SetVolume that arrives before any song is loaded.
-    volume: f32,
 }
 
 pub fn spawn(
@@ -73,14 +66,8 @@ fn run(
     )?;
 
     let state = State {
-        cmd_rx,
-        evt_tx,
-        song_slot,
-        pipeline: None,
-        current_song: None,
+        core: crate::render_core::RenderCore::new(cmd_rx, evt_tx, song_slot),
         render_buf: vec![0.0; MAX_QUANTUM_FRAMES * CHANNELS],
-        events: Vec::with_capacity(64),
-        volume: 1.0,
     };
 
     let _listener = stream
@@ -90,44 +77,7 @@ fn run(
                 return;
             };
 
-            // Song swap detection: compare the slot against the buffer the
-            // current pipeline was built from. `load()` gives a guard (no
-            // refcount clone) for the common no-swap path; only clone the Arc
-            // out when an actual swap happened.
-            let guard = state.song_slot.load();
-            let swapped = match (guard.as_ref(), state.current_song.as_ref()) {
-                (Some(a), Some(b)) => !Arc::ptr_eq(a, b),
-                (Some(_), None) | (None, Some(_)) => true,
-                (None, None) => false,
-            };
-            if swapped {
-                let song = (*guard).clone();
-                // StemSet clone is cheap: a Vec of Arcs + gains. Seed the fresh
-                // pipeline with the current user volume so song swaps don't reset
-                // it back to the Pipeline default.
-                state.pipeline = song.clone().map(|s| {
-                    let mut p = Pipeline::new((*s).clone());
-                    p.apply(EngineCmd::SetVolume(state.volume));
-                    p
-                });
-                state.current_song = song;
-            }
-
-            // Drain control commands into the pipeline. SetVolume is also latched
-            // into State so it persists across song swaps and survives arriving
-            // before any pipeline exists (e.g. the saved volume sent at boot).
-            while let Ok(cmd) = state.cmd_rx.pop() {
-                if let EngineCmd::SetVolume(v) = cmd {
-                    state.volume = v;
-                }
-                if let Some(p) = state.pipeline.as_mut() {
-                    p.apply(cmd);
-                }
-            }
-
             let stride = std::mem::size_of::<f32>() * CHANNELS;
-            // The driver tells us how many frames this cycle wants; the
-            // mapped buffer itself may be much larger (maxsize).
             let requested = buffer.requested() as usize;
             let datas = buffer.datas_mut();
             let data = &mut datas[0];
@@ -137,20 +87,9 @@ fn run(
                     n_frames = n_frames.min(requested);
                 }
                 let out = &mut state.render_buf[..n_frames * CHANNELS];
-                match state.pipeline.as_mut() {
-                    Some(p) => {
-                        state.events.clear();
-                        p.render(out, &mut state.events);
-                        for ev in state.events.drain(..) {
-                            let _ = state.evt_tx.push(ev); // drop on full
-                        }
-                    }
-                    None => out.fill(0.0),
-                }
-                // The mapped buffer is F32LE (set below) and the host is
-                // little-endian (asserted at module load), so render_buf's bytes
-                // are already in destination layout — one bulk memcpy instead of
-                // a per-sample to_le_bytes loop (~2048 tiny copies per quantum).
+                state.core.fill(out);
+                // F32LE device buffer + little-endian host (asserted at module
+                // load): render_buf bytes are already in destination layout.
                 let bytes: &[u8] = bytemuck::cast_slice(&out[..]);
                 slice[..bytes.len()].copy_from_slice(bytes);
                 n_frames

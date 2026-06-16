@@ -11,6 +11,7 @@ pub mod ffi;
 pub mod filter;
 pub mod looper;
 pub mod output;
+pub mod render_core;
 pub mod peaks;
 pub mod pipeline;
 pub mod pitch;
