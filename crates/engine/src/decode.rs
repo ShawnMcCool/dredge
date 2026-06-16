@@ -223,6 +223,16 @@ fn resample_stereo(left: &[f32], right: &[f32], src_rate: u32) -> Result<(Vec<f3
     Ok((out_l[start..end].to_vec(), out_r[start..end].to_vec()))
 }
 
+/// Decode `src` (any supported container, including MP4/MOV video files —
+/// symphonia takes the default audio track and ignores video) to the canonical
+/// 48 kHz stereo WAV at `dst`. This is how external tools (analysis, Demucs)
+/// receive audio: symphonia is the single decode authority, so they read plain
+/// PCM via libsndfile and never need ffmpeg.
+pub fn decode_to_wav(src: &Path, dst: &Path) -> Result<()> {
+    let buf = decode_file(src)?;
+    crate::capture::write_wav(dst, &buf.data)
+}
+
 /// blake3 hash of the file contents (streaming, 1 MiB chunks), hex string.
 pub fn file_hash(path: &Path) -> Result<String> {
     let mut file = File::open(path)?;

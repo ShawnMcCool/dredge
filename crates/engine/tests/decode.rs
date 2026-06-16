@@ -71,3 +71,21 @@ fn decodes_native_48k_stereo_without_resampling() {
 fn missing_file_is_an_error() {
     assert!(decode_file(std::path::Path::new("/nope/missing.flac")).is_err());
 }
+
+#[test]
+fn decode_to_wav_writes_a_canonical_48k_stereo_file() {
+    // A 44.1k mono source must come out as a readable 48k stereo WAV — the
+    // canonical PCM external tools (analyze, demucs) consume.
+    let dir = std::env::temp_dir().join("earworm-decode-to-wav");
+    std::fs::create_dir_all(&dir).unwrap();
+    let src = dir.join("src.wav");
+    write_test_wav(&src);
+    let dst = dir.join("canonical.wav");
+
+    engine::decode::decode_to_wav(&src, &dst).unwrap();
+
+    assert_eq!(engine::capture::wav_header_rate(&dst).unwrap(), SAMPLE_RATE);
+    let reader = hound::WavReader::open(&dst).unwrap();
+    assert_eq!(reader.spec().channels as usize, CHANNELS);
+    assert!(reader.len() > 0, "wrote no samples");
+}
