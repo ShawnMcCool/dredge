@@ -10,7 +10,6 @@ rubato = "0.16"
 rtrb = "0.3"
 arc-swap = "1"
 bytemuck = "1"
-cpal = "0.15"
 blake3 = "1"
 serde.workspace = true
 serde_json.workspace = true
@@ -22,6 +21,12 @@ tempfile = "3"
 [target.'cfg(target_os = "linux")'.dependencies]
 pipewire = { version = "0.10", features = ["v0_3_49"] }
 libspa = "0.10"
+
+# cpal is only used by the non-Linux audio backends (output_cpal/capture_cpal);
+# gating it here keeps alsa-sys out of the Linux build entirely (Linux uses
+# PipeWire), which is what CI compiles.
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+cpal = "0.15"
 
 [dev-dependencies]
 
