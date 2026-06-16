@@ -1,0 +1,368 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Deterministic release mechanics for earworm. The only step left to a human
+# or model is writing the user-facing release notes; everything else — version
+# math, release-safety checks, changelog insertion, commits, tag, push, and
+# post-tag verification — is mechanical and lives here.
+#
+# Subcommands:
+#
+#   prepare <major|minor|patch>
+#       Read-only. Prints the release facts (last tag, current/next version,
+#       suggested notes-file path, commits since last tag) in KEY=VALUE form
+#       for the caller to consume. Mutates nothing.
+#
+#   check [--fast] [--allow-schema-change]
+#       Release-safety gate. Confirms main is current, flags risky SQLite
+#       schema edits, and (unless --fast) runs the production artifact build
+#       so a tag never publishes a release that doesn't compile. Exits
+#       non-zero with a FAILED list when something is wrong.
+#
+#   release <major|minor|patch> --notes <file> [--dry-run]
+#       The mutation chain: insert the notes into CHANGELOG.md under a
+#       "## v<next> — <date>" header, commit, bump the version in
+#       tauri.conf.json (the source of truth), commit, push main, tag from
+#       tauri.conf.json, push the tag. The notes file must contain ONLY the
+#       body (no version header). --dry-run prints what would happen.
+#
+#   verify [<version>] [--timeout <seconds>]
+#       Polls the GitHub release for the tag (default: version in
+#       tauri.conf.json) until the .deb + tarball + SHA256SUMS are present,
+#       failing fast if the release workflow run concluded in failure.
+#
+# Tests and lint are deliberately NOT run here — run `just check` before
+# shipping; this script gates the *release path*, not code quality.
+
+cd "$(dirname "$0")/.."
+
+CONF="apps/desktop/src-tauri/tauri.conf.json"
+SCHEMA="crates/practice/src/store.rs"
+
+banner() { echo "==> $1"; }
+fail() { echo "FAILED: $1" >&2; exit 1; }
+
+conf_version() {
+  python3 -c "import json;print(json.load(open('$CONF'))['version'])"
+}
+
+set_conf_version() {
+  python3 - "$1" <<PY
+import json, sys
+p = "$CONF"
+d = json.load(open(p))
+d["version"] = sys.argv[1]
+with open(p, "w") as f:
+    json.dump(d, f, indent=2)
+    f.write("\n")
+PY
+}
+
+last_tag() {
+  git tag --sort=-v:refname | head -n1
+}
+
+next_version() {
+  local level="$1" current="$2" major minor patch
+  IFS=. read -r major minor patch <<<"${current%%-*}"
+  case "$level" in
+    major) echo "$((major + 1)).0.0" ;;
+    minor) echo "${major}.$((minor + 1)).0" ;;
+    patch) echo "${major}.${minor}.$((patch + 1))" ;;
+    *) fail "bump level must be major|minor|patch, got: $level" ;;
+  esac
+}
+
+# On main and not behind origin. earworm keeps main local, so a missing or
+# unreachable origin/main is tolerated (we're simply ahead, ready to push);
+# we only refuse when we can confirm the local tip is stale.
+require_main_and_current() {
+  local branch
+  branch=$(git rev-parse --abbrev-ref HEAD)
+  [ "$branch" = "main" ] || fail "on branch '$branch' — releases ship from main"
+
+  if GIT_SSH_COMMAND='ssh -o BatchMode=yes' git fetch --quiet origin main 2>/dev/null; then
+    if [ -n "$(git log --oneline HEAD..origin/main 2>/dev/null)" ]; then
+      fail "main is behind origin/main — pull/rebase first; refusing to ship from a stale tip"
+    fi
+  else
+    echo "  (note: couldn't reach origin/main — shipping from local main)" >&2
+  fi
+}
+
+# ---------------------------------------------------------------- prepare
+
+cmd_prepare() {
+  local level="${1:-}"
+  [ -n "$level" ] || fail "usage: scripts/ship prepare <major|minor|patch>"
+
+  require_main_and_current
+
+  local current next tag
+  current=$(conf_version)
+  next=$(next_version "$level" "$current")
+  tag=$(last_tag)
+
+  echo "LAST_TAG=${tag:-(none)}"
+  echo "CURRENT_VERSION=$current"
+  echo "NEXT_VERSION=$next"
+  echo "NEXT_TAG=v$next"
+  echo "DATE=$(date +%F)"
+  echo "NOTES_FILE=/tmp/earworm-notes-v$next.md"
+
+  if [ -n "$(git status --porcelain)" ]; then
+    echo "WORKING_TREE=dirty (commit before release)"
+  else
+    echo "WORKING_TREE=clean"
+  fi
+
+  if [ -n "$tag" ]; then
+    echo "COMMITS_SINCE_${tag}:"
+    git log --pretty=format:"- %s" "${tag}..HEAD"
+  else
+    echo "COMMITS (no prior tag):"
+    git log --pretty=format:"- %s"
+  fi
+  echo
+}
+
+# ------------------------------------------------------------------ check
+
+cmd_check() {
+  local fast=false allow_schema=false
+  for arg in "$@"; do
+    case "$arg" in
+      --fast) fast=true ;;
+      --allow-schema-change) allow_schema=true ;;
+      *) fail "unknown flag for check: $arg" ;;
+    esac
+  done
+
+  local tag failures=()
+  tag=$(last_tag)
+  banner "Release-safety check${tag:+ (diffing against $tag)}"
+
+  require_main_and_current
+
+  banner "SQLite schema contract"
+  # store.rs owns the embedded schema + PRAGMA user_version migrations. The
+  # safe-evolution rule is additive only: a NEW version block, never an edit
+  # to an existing one — editing a shipped block silently diverges existing
+  # users' databases. Any touch since the last tag is flagged for review.
+  if [ -n "$tag" ]; then
+    local schema_diff
+    schema_diff=$(git diff --name-only "${tag}..HEAD" -- "$SCHEMA")
+    if [ -n "$schema_diff" ] && [ "$allow_schema" = false ]; then
+      git --no-pager diff "${tag}..HEAD" -- "$SCHEMA"
+      failures+=("$SCHEMA touched since $tag — confirm the change is a NEW user_version block (not an edit to a shipped one), then re-run with --allow-schema-change")
+    fi
+  else
+    echo "  (no prior tag — skipping schema diff)"
+  fi
+
+  banner "Changelog sanity"
+  if [ ! -f CHANGELOG.md ]; then
+    echo "  (no CHANGELOG.md yet — 'release' will create it)"
+  elif ! head -1 CHANGELOG.md | grep -q '^# Changelog'; then
+    failures+=("CHANGELOG.md is malformed (must start with '# Changelog')")
+  fi
+
+  if [ "$fast" = false ]; then
+    banner "Production artifact build (just artifacts)"
+    if just artifacts; then
+      local ver
+      ver=$(conf_version)
+      ls dist/*.deb >/dev/null 2>&1 || failures+=("artifact missing: dist/*.deb")
+      [ -f "dist/earworm-${ver}-x86_64-linux.tar.gz" ] || failures+=("artifact missing: dist/earworm-${ver}-x86_64-linux.tar.gz")
+      [ -f dist/SHA256SUMS ] || failures+=("artifact missing: dist/SHA256SUMS")
+    else
+      failures+=("just artifacts failed — the tag would publish a broken release")
+    fi
+  else
+    banner "Skipping artifact build (--fast)"
+  fi
+
+  if [ "${#failures[@]}" -gt 0 ]; then
+    echo
+    echo "RELEASE SAFETY CHECK FAILED"
+    for failure in "${failures[@]}"; do
+      echo "  - $failure"
+    done
+    exit 1
+  fi
+
+  echo
+  echo "RELEASE SAFETY CHECK PASSED"
+}
+
+# ---------------------------------------------------------------- release
+
+cmd_release() {
+  local level="${1:-}" notes="" dry_run=false
+  [ -n "$level" ] || fail "usage: scripts/ship release <major|minor|patch> --notes <file> [--dry-run]"
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --notes) notes="${2:-}"; shift 2 ;;
+      --dry-run) dry_run=true; shift ;;
+      *) fail "unknown flag for release: $1" ;;
+    esac
+  done
+
+  [ -n "$notes" ] || fail "release requires --notes <file>"
+  [ -s "$notes" ] || fail "notes file is missing or empty: $notes"
+  grep -q '^## v[0-9]' "$notes" && \
+    fail "notes file contains a version header — provide the body only; the script adds '## v<version> — <date>'"
+
+  require_main_and_current
+
+  if [ "$dry_run" = false ] && [ -n "$(git status --porcelain)" ]; then
+    fail "working tree dirty — commit feature work before releasing"
+  fi
+
+  local current next date_today
+  current=$(conf_version)
+  next=$(next_version "$level" "$current")
+  date_today=$(date +%F)
+
+  git rev-parse "v$next" >/dev/null 2>&1 && fail "tag v$next already exists"
+
+  banner "Releasing v$next (from $current, $level bump)"
+
+  # Insert the new entry above the newest existing "## v" header, creating the
+  # file (with a "# Changelog" title) when this is the first release.
+  local header="## v$next — $date_today"
+  local changelog_new
+  if [ -f CHANGELOG.md ]; then
+    changelog_new=$(awk -v header="$header" -v notes_file="$notes" '
+      !inserted && /^## v[0-9]/ {
+        print header; print ""
+        while ((getline line < notes_file) > 0) print line
+        print ""
+        inserted = 1
+      }
+      { print }
+      END {
+        if (!inserted) {
+          print ""; print header; print ""
+          while ((getline line < notes_file) > 0) print line
+        }
+      }
+    ' CHANGELOG.md)
+  else
+    changelog_new=$(printf '# Changelog\n\nAll notable user-facing changes to earworm, newest first.\n\n%s\n\n%s' \
+      "$header" "$(cat "$notes")")
+  fi
+
+  if [ "$dry_run" = true ]; then
+    banner "[dry-run] CHANGELOG.md head would become:"
+    head -30 <<<"$changelog_new"
+    banner "[dry-run] $CONF version line would become: \"$next\""
+    banner "[dry-run] then: commit changelog, commit bump, push main, tag v$next, push tag"
+    return 0
+  fi
+
+  banner "Writing CHANGELOG.md entry"
+  printf '%s\n' "$changelog_new" > CHANGELOG.md
+  git add CHANGELOG.md
+  git commit -m "docs: changelog for v$next"
+
+  banner "Bumping $CONF to $next"
+  set_conf_version "$next"
+  [ "$(conf_version)" = "$next" ] || fail "version bump did not take — inspect $CONF"
+  git add "$CONF"
+  git commit -m "chore(release): v$next"
+
+  # The tag follows tauri.conf.json exactly (release.yml triggers on v* tags).
+  local version
+  version=$(conf_version)
+  push_or_explain "v$version"
+
+  echo
+  echo "RELEASED v$version — the tag triggers .github/workflows/release.yml."
+  echo "Run: scripts/ship verify $version"
+}
+
+# Push main + the tag, but degrade gracefully: earworm's main is kept local and
+# the SSH key is often locked, so a push failure is expected and recoverable —
+# the commits and tag exist locally, so we tell the user how to finish by hand.
+push_or_explain() {
+  local tag="$1"
+  banner "Tagging $tag"
+  git tag "$tag"
+
+  banner "Pushing main + $tag"
+  if git push origin main && git push origin "$tag"; then
+    return 0
+  fi
+
+  echo >&2
+  echo "PUSH FAILED (SSH key locked, or offline?). The commits and tag exist" >&2
+  echo "locally — unlock your key and finish with:" >&2
+  echo "    git push origin main && git push origin $tag" >&2
+  echo "(do not force-push; the tag triggers the release workflow on arrival)" >&2
+  exit 1
+}
+
+# ----------------------------------------------------------------- verify
+
+cmd_verify() {
+  local version="" timeout=1800
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --timeout) timeout="${2:-1800}"; shift 2 ;;
+      *) version="$1"; shift ;;
+    esac
+  done
+  [ -n "$version" ] || version=$(conf_version)
+  local tag="v$version"
+
+  banner "Verifying GitHub release $tag (timeout ${timeout}s)"
+  local deadline=$((SECONDS + timeout))
+
+  while [ $SECONDS -lt $deadline ]; do
+    local run_state run_status run_conclusion run_url
+    run_state=$(gh run list --workflow=release.yml --branch "$tag" --limit 1 \
+      --json status,conclusion,url \
+      --jq '(.[0].status // "none") + " " + (.[0].conclusion // "") + " " + (.[0].url // "")' 2>/dev/null) || run_state="unknown"
+    read -r run_status run_conclusion run_url <<<"$run_state"
+
+    if [ "$run_conclusion" = "failure" ] || [ "$run_conclusion" = "cancelled" ]; then
+      fail "release workflow $run_conclusion — ${run_url:-check: gh run list --workflow=release.yml}"
+    fi
+
+    local assets
+    assets=$(gh release view "$tag" --json assets --jq '.assets[].name' 2>/dev/null || true)
+    if [ -n "$assets" ]; then
+      local missing=()
+      echo "$assets" | grep -q "\.deb$" || missing+=(".deb")
+      echo "$assets" | grep -q "earworm-${version}-x86_64-linux.tar.gz" || missing+=("linux tarball")
+      echo "$assets" | grep -qx "SHA256SUMS" || missing+=("SHA256SUMS")
+      if [ "${#missing[@]}" -eq 0 ]; then
+        echo "RELEASE VERIFIED — assets present:"
+        echo "$assets" | sed 's/^/  /'
+        return 0
+      fi
+    fi
+
+    echo "  waiting… (workflow: ${run_status:-unknown})"
+    sleep 30
+  done
+
+  fail "timed out after ${timeout}s waiting for $tag assets — check: gh run list --workflow=release.yml"
+}
+
+# ------------------------------------------------------------------- main
+
+usage() {
+  sed -n '4,37p' "$0" | sed 's/^# \{0,1\}//'
+  exit 1
+}
+
+case "${1:-}" in
+  prepare) shift; cmd_prepare "$@" ;;
+  check) shift; cmd_check "$@" ;;
+  release) shift; cmd_release "$@" ;;
+  verify) shift; cmd_verify "$@" ;;
+  *) usage ;;
+esac
