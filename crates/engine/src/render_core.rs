@@ -38,6 +38,8 @@ impl RenderCore {
     }
 
     /// Render `out.len() / CHANNELS` interleaved stereo frames into `out`.
+    /// Call from the audio thread: does not allocate or lock on the steady
+    /// path (a song swap is the one exception, building a fresh pipeline).
     pub fn fill(&mut self, out: &mut [f32]) {
         // Song swap detection: compare the slot against the buffer the current
         // pipeline was built from. `load()` gives a guard (no refcount clone)

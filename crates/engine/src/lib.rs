@@ -10,11 +10,15 @@ pub mod export;
 pub mod ffi;
 pub mod filter;
 pub mod looper;
+#[cfg(target_os = "linux")]
 pub mod output;
-pub mod render_core;
+#[cfg(not(target_os = "linux"))]
+#[path = "output_cpal.rs"]
+pub mod output;
 pub mod peaks;
 pub mod pipeline;
 pub mod pitch;
+pub mod render_core;
 pub mod ring;
 pub mod stretch;
 
