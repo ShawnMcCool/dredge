@@ -983,6 +983,7 @@
       viewWidth={view.width}
       pointer={hoverPt}
       count={1}
+      z={4}
     >
       <button class="sa-btn" onclick={loopSelection} title="loop — opens the drill (not saved until you save it)" aria-label="loop selection">⟳</button>
     </HoverActions>

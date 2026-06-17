@@ -22,6 +22,7 @@
     viewWidth,
     pointer,
     count,
+    z = 3,
     children,
   }: {
     /** Region x-bounds in waveform px. */
@@ -36,6 +37,8 @@
     pointer: { x: number; y: number } | null;
     /** Number of buttons in the cluster (for width math). */
     count: number;
+    /** Stack order; raise it so an overlapping cluster wins (selection > loop). */
+    z?: number;
     children?: Snippet;
   } = $props();
 
@@ -72,7 +75,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="hover-actions"
-    style="left: {placeLeft}px; top: {top}px; gap: {GAP}px;"
+    style="left: {placeLeft}px; top: {top}px; gap: {GAP}px; z-index: {z};"
     transition:fade={{ duration: 120 }}
     onpointerenter={() => (hoveringButtons = true)}
     onpointerleave={() => (hoveringButtons = false)}
