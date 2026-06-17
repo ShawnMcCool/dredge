@@ -31,23 +31,24 @@
   const CELL_W = 11; // px per column; keep in sync with .cell width
   const CELL_H = 20; // px per row
 
-  /** Which boundary a hover at this point targets, or null when over the ASCII
-   *  body (not on a handle margin). Right margin → width, top margin → strings;
-   *  in the overlapping corner the nearer boundary wins. */
-  function hoverAxis(clientX: number, clientY: number): "top" | "right" | null {
-    if (!gridEl) return null;
-    const rect = gridEl.getBoundingClientRect();
-    const inRight = clientX > rect.right;
-    const inTop = clientY < rect.top;
-    if (!inRight && !inTop) return null;
+  /** Which boundary a right-click here would grab — matches the resize logic
+   *  exactly, so the hover highlight covers ALL the draggable space, not just
+   *  the margin past the edge. The right handle's space extends left of the |
+   *  edge (any point closer to the right edge than the top edge); the top
+   *  handle's extends down. Right/top margins always own their axis; the
+   *  overlapping corner picks the nearer boundary. */
+  function grabAxis(clientX: number, clientY: number): "top" | "right" {
+    const rect = gridEl!.getBoundingClientRect();
     const dTop = Math.abs(clientY - rect.top);
     const dRight = Math.abs(clientX - rect.right);
+    const inRight = clientX > rect.right;
+    const inTop = clientY < rect.top;
     return inRight !== inTop ? (inRight ? "right" : "top") : dRight <= dTop ? "right" : "top";
   }
 
   function onPointerMove(e: PointerEvent) {
-    if (grabbed) return; // dragging — the grabbed highlight already shows
-    hovered = hoverAxis(e.clientX, e.clientY);
+    if (grabbed || !gridEl) return; // dragging — the grabbed highlight already shows
+    hovered = grabAxis(e.clientX, e.clientY);
   }
 
   function onKey(e: KeyboardEvent) {
@@ -74,16 +75,7 @@
   function onPointerDown(e: PointerEvent) {
     if (e.button !== 2 || !gridEl) return;
     e.preventDefault();
-    const rect = gridEl.getBoundingClientRect();
-    const dTop = Math.abs(e.clientY - rect.top);
-    const dRight = Math.abs(e.clientX - rect.right);
-    const inRight = e.clientX > rect.right; // right margin (past the | edge)
-    const inTop = e.clientY < rect.top; // top margin (above the first row)
-    // In exactly one margin → that boundary owns the press. In the top-right
-    // corner where the two grab zones overlap (or inside the grid, where neither
-    // margin owns it) → start on the nearer boundary by perpendicular distance.
-    const axis: "top" | "right" =
-      inRight !== inTop ? (inRight ? "right" : "top") : dRight <= dTop ? "right" : "top";
+    const axis = grabAxis(e.clientX, e.clientY);
     grabbed = axis;
     const el = gridEl;
     el.setPointerCapture(e.pointerId);
