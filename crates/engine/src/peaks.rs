@@ -35,7 +35,7 @@ const MAGIC: &[u8; 4] = b"EWP1";
 fn cache_path(file_hash: &str) -> Option<std::path::PathBuf> {
     Some(
         dirs::cache_dir()?
-            .join("earworm/peaks")
+            .join("dredge/peaks")
             .join(format!("{file_hash}.peaks")),
     )
 }
@@ -89,7 +89,7 @@ pub fn remove_cache(file_hash: &str) -> std::io::Result<()> {
     }
 }
 
-/// Cache under ~/.cache/earworm/peaks/<file_hash>.peaks; load if present.
+/// Cache under ~/.cache/dredge/peaks/<file_hash>.peaks; load if present.
 pub fn load_or_compute(buf: &SongBuffer, file_hash: &str) -> std::io::Result<Peaks> {
     let path = cache_path(file_hash).ok_or_else(|| std::io::Error::other("no cache dir"))?;
     if let Ok(bytes) = std::fs::read(&path) {

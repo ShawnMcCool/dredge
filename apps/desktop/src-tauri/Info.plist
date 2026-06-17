@@ -6,6 +6,6 @@
 <plist version="1.0">
 <dict>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Earworm uses the microphone for the live tuner.</string>
+	<string>Dredge uses the microphone for the live tuner.</string>
 </dict>
 </plist>

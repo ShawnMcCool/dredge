@@ -43,10 +43,10 @@ pub fn start_capture(node: CaptureNode, buffer_secs: f64) -> crate::error::Resul
         let stop = stop.clone();
         let target = node.serial as usize;
         std::thread::Builder::new()
-            .name("earworm-cap".into())
+            .name("dredge-cap".into())
             .spawn(move || {
                 if let Err(e) = run_capture(target, ring, stop) {
-                    eprintln!("earworm capture thread failed: {e}");
+                    eprintln!("dredge capture thread failed: {e}");
                 }
             })?
     };
@@ -82,7 +82,7 @@ fn run_capture(
                     r.push(data);
                 }
             },
-            move |err| eprintln!("earworm cpal capture error: {err}"),
+            move |err| eprintln!("dredge cpal capture error: {err}"),
             None,
         )
         .map_err(|e| Error::Audio(format!("build input stream: {e}")))?;

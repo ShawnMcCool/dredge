@@ -1,4 +1,4 @@
-# earworm — Plan 13: fast song opens + loading indication
+# dredge — Plan 13: fast song opens + loading indication
 
 > **For agentic workers:** Use superpowers:executing-plans. Checkboxes track steps.
 
@@ -31,6 +31,6 @@
 
 - [x] Timing proof on a generated 4-min file with FakeSeparator-style 44.1k stems seeded: time `song.open` via socket before/after Tasks 1–2 on the same data (expect ≥3× improvement on the stems case; report numbers). Second open after lazy upgrade should be faster still.
       Measured (release, `open_timing` harness, 240 s file seeded at 44.1 kHz): single decode (no stems) 1.78–1.81 s → sequential-5-decode baseline ≈ 9 s. With Tasks 1–2: stems open #1 (parallel decode + lazy 48 k upgrade) **2.27 s** (~4×), opens #2/#3 (48 k caches, peaks cached) **1.80–1.83 s** (~5×, ≈ the cost of the original mix alone).
-- [x] Visual: screenshot the loading state mid-open (open the big file via sendshortcut-driven… clicking isn't possible — instead use `EARWORM_OPEN` for launch-time open and screenshot the stage `opening…` state during launch; the per-row spinner can be verified by code review if not capturable — note honestly which was seen).
-      Seen live (temp DB, `EARWORM_OPEN=1`, grim mid-open): stage `opening…` text AND the amber `◌` spinner on the library row, both in the same frame. The 2 px song-switch bar needs a second song already open — verified by code review only.
+- [x] Visual: screenshot the loading state mid-open (open the big file via sendshortcut-driven… clicking isn't possible — instead use `DREDGE_OPEN` for launch-time open and screenshot the stage `opening…` state during launch; the per-row spinner can be verified by code review if not capturable — note honestly which was seen).
+      Seen live (temp DB, `DREDGE_OPEN=1`, grim mid-open): stage `opening…` text AND the amber `◌` spinner on the library row, both in the same frame. The 2 px song-switch bar needs a second song already open — verified by code review only.
 - [x] Full gate: `cargo test && cargo clippy --workspace -- -D warnings && cargo fmt && pnpm vitest run && pnpm build`. Commit: `feat: plan 13 complete — fast opens with loading indication`

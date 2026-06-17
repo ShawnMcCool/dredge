@@ -46,7 +46,7 @@ fn pw_err(e: pw::Error) -> crate::error::Error {
 #[cfg(target_os = "linux")]
 pub fn list_input_sources() -> crate::error::Result<Vec<CaptureNode>> {
     let handle = std::thread::Builder::new()
-        .name("earworm-pw-scan-in".into())
+        .name("dredge-pw-scan-in".into())
         .spawn(scan_input_sources)?;
     handle
         .join()
@@ -168,10 +168,10 @@ pub fn start_capture(node: CaptureNode, buffer_secs: f64) -> crate::error::Resul
         let stop = stop.clone();
         let node = node.clone();
         std::thread::Builder::new()
-            .name("earworm-pw-cap".into())
+            .name("dredge-pw-cap".into())
             .spawn(move || {
                 if let Err(e) = run_capture(node, ring, stop) {
-                    eprintln!("earworm capture thread failed: {e}");
+                    eprintln!("dredge capture thread failed: {e}");
                 }
             })?
     };
@@ -200,14 +200,14 @@ fn run_capture(
         *pw::keys::MEDIA_CATEGORY => "Capture",
         *pw::keys::MEDIA_ROLE => "Music",
         *pw::keys::AUDIO_CHANNELS => "2",
-        *pw::keys::NODE_NAME => "earworm-capture",
+        *pw::keys::NODE_NAME => "dredge-capture",
     };
     // Target the chosen application output stream node directly; PipeWire
     // links us to its monitor ports. target.object matches object.serial
     // (or node.name) — never the registry id.
     props.insert(*pw::keys::TARGET_OBJECT, node.serial.to_string());
 
-    let stream = pw::stream::StreamBox::new(&core, "earworm-capture", props)?;
+    let stream = pw::stream::StreamBox::new(&core, "dredge-capture", props)?;
 
     let state = CapState {
         ring,

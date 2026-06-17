@@ -1,10 +1,10 @@
-# earworm — Plan 9: auto analysis (beat grid + section suggestions)
+# dredge — Plan 9: auto analysis (beat grid + section suggestions)
 
 > **For agentic workers:** Use superpowers:executing-plans. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** One "Analyze" action per song: beats/downbeats/BPM (beat_this) + suggested sections (SongFormer if it cooperates, novelty fallback otherwise). Results: beat ticks + bar-snapped loop drags on the waveform, suggested rows in the Sections lane (user edits → save → junctions re-derive **using downbeats** when available).
 
-**Architecture:** A repo-shipped wrapper (`scripts/analyze`, extensionless, bootstraps its own uv venv at `~/.local/share/earworm/analyze-venv` on first run) prints one JSON contract to stdout:
+**Architecture:** A repo-shipped wrapper (`scripts/analyze`, extensionless, bootstraps its own uv venv at `~/.local/share/dredge/analyze-venv` on first run) prints one JSON contract to stdout:
 ```json
 {"bpm": 98.2, "beats": [0.61, 1.22, ...], "downbeats": [0.61, 3.05, ...],
  "sections": [{"label": "A", "start": 0.0, "end": 31.4}, ...], "engine": "beat_this+novelty|songformer"}
@@ -22,7 +22,7 @@ Rust side mirrors the stems pattern exactly: `Analyzer` trait (Real = subprocess
 
 **Files:** Create `scripts/analyze` (extensionless, executable) + `scripts/analyze_impl.py`.
 
-- [x] `scripts/analyze` = bash bootstrap: ensures `~/.local/share/earworm/analyze-venv` exists (`uv venv --python 3.12` + `uv pip install --python ...` of the beat_this dep set), then `exec`s the venv python on `analyze_impl.py "$@"`. Idempotent, quiet when venv is ready; all diagnostics to **stderr** (stdout is the JSON contract).
+- [x] `scripts/analyze` = bash bootstrap: ensures `~/.local/share/dredge/analyze-venv` exists (`uv venv --python 3.12` + `uv pip install --python ...` of the beat_this dep set), then `exec`s the venv python on `analyze_impl.py "$@"`. Idempotent, quiet when venv is ready; all diagnostics to **stderr** (stdout is the JSON contract).
 - [x] `analyze_impl.py`: args `<audio> [--no-sections]`. Runs beat_this → beats/downbeats; bpm = median inter-beat 60/Δ. Sections v1 = novelty: librosa CQT-chroma + MFCC stacked self-similarity, `librosa.segment` novelty peaks (or `librosa.onset` on the SSM diagonal — implementer's judgment), boundaries snapped to nearest downbeat, merged below 4 bars, labeled `A B C ...` (repeating segments may share a label via simple chroma-mean clustering — best effort, don't gold-plate). Output the JSON contract; `engine` field reports what produced sections.
 - [x] Verify live on `/home/shawn/downloads/Deftones - Kimdracula (Bass Only).mp3`: sane bpm, downbeats ≈ every 4 beats, ≥3 sections with boundaries on downbeats. Print the JSON to the report.
   - Verified: bpm 157.89, 408 beats / 130 downbeats (median bar 1.54 s = 4 beats), 13 sections, all boundaries on downbeats. Cold bootstrap (venv + torch download) works; warm run ≈ 3.5 s.
@@ -30,7 +30,7 @@ Rust side mirrors the stems pattern exactly: `Analyzer` trait (Real = subprocess
 
 ### Task 2: SongFormer attempt (time-boxed)
 
-- [x] In a SECOND venv (`~/.local/share/earworm/songformer-venv`, torch==2.4.0 per its requirements): try to get `src/SongFormer/infer/infer.py` (repo: vendor the needed subset into `scripts/songformer/` or pip-install from git if possible) running on the Deftones file, checkpoints via `huggingface_hub.snapshot_download("ASLP-lab/SongFormer")`. If it works end-to-end: `analyze_impl.py` gains `--sections-engine songformer` (subprocess into that venv), and the wrapper prefers it when the venv exists, falling back to novelty on any failure (stderr-log, never die — beat grid must always ship).
+- [x] In a SECOND venv (`~/.local/share/dredge/songformer-venv`, torch==2.4.0 per its requirements): try to get `src/SongFormer/infer/infer.py` (repo: vendor the needed subset into `scripts/songformer/` or pip-install from git if possible) running on the Deftones file, checkpoints via `huggingface_hub.snapshot_download("ASLP-lab/SongFormer")`. If it works end-to-end: `analyze_impl.py` gains `--sections-engine songformer` (subprocess into that venv), and the wrapper prefers it when the venv exists, falling back to novelty on any failure (stderr-log, never die — beat grid must always ship).
 - [x] **Time-box: if after ~10 tool-call rounds of dependency fighting it does not produce labels, STOP**, keep novelty, record exactly what blocked it in the plan file, and move on. This task failing is an acceptable outcome.
   - **SongFormer WORKS** — and no repo vendoring was needed. The HF snapshot (`ASLP-lab/SongFormer`) is self-contained: it ships `modeling_songformer.py`, `model.py`, the `musicfm`/`dataset`/`postprocessing` packages, `muq_config2.json`, `msd_stats.json`, and all weights in `model.safetensors` (incl. MuQ + MusicFM). The "broken packaging" is just two undocumented requirements: `SONGFORMER_LOCAL_DIR` env must point at the snapshot, and the snapshot root must be on `sys.path`. `scripts/songformer_impl.py` does both, plus `scipy.inf = np.inf` (msaf needs the pre-scipy-1.12 alias).
   - Venv: python 3.11, `torch==2.4.0 torchaudio==2.4.0 "numpy<2" transformers==4.51.1 librosa soundfile ema-pytorch loguru omegaconf tqdm safetensors muq x-transformers msaf einops huggingface_hub`.
@@ -42,7 +42,7 @@ Rust side mirrors the stems pattern exactly: `Analyzer` trait (Real = subprocess
 
 **Files:** `crates/server/src/analysis.rs` (new), `app.rs`, `practice` store migration, `tests/app_analysis.rs`.
 
-- [x] `Analyzer` trait (mirror `StemSeparator`): `analyze(&self, audio: &Path) -> Result<AnalysisResult, String>`, `is_available()`. Real impl runs `scripts/analyze` (resolve relative to exe: `../../scripts/analyze` fallback to `$EARWORM_ANALYZE` env, then PATH). Fake returns a fixture.
+- [x] `Analyzer` trait (mirror `StemSeparator`): `analyze(&self, audio: &Path) -> Result<AnalysisResult, String>`, `is_available()`. Real impl runs `scripts/analyze` (resolve relative to exe: `../../scripts/analyze` fallback to `$DREDGE_ANALYZE` env, then PATH). Fake returns a fixture.
 - [x] Store migration v2: `analysis (song_id INTEGER PRIMARY KEY REFERENCES songs(id) ON DELETE CASCADE, bpm REAL, beats_json TEXT, downbeats_json TEXT, sections_json TEXT, engine TEXT)` + `Store::{save_analysis, get_analysis}` (+ store tests, existing style; migration must upgrade existing v1 DBs — guard on `user_version`).
 - [x] Commands: `analysis.run {song_id}` (background, like stems.separate; cached → `{state:"cached"}`), `analysis.status {song_id}`, `analysis.get {song_id}`. `song.open` response gains `"analysis": {...}|null`.
 - [x] Junction derivation upgrade: when the song has downbeats, `section.replace`/`junctions.derive` compute per-pair windows = from the **last downbeat strictly before** the boundary to the **first downbeat strictly after** (clamped inside the sections); else the existing tail/head seconds. Add a focused practice-crate function `junction_window(downbeats, boundary) -> (f64, f64)` with tests (boundary exactly on a downbeat, between, before first, after last).
@@ -60,8 +60,8 @@ Rust side mirrors the stems pattern exactly: `Analyzer` trait (Real = subprocess
 
 ### Task 5: Live verification + gate
 
-- [x] Through a live earwormd (real engine + real Analyzer): import the Deftones mp3 (already in library on the real DB — use a temp DB and re-import), `analysis.run`, poll to cached, `song.open` shows analysis, `section.replace` with two suggested sections → junction loop bounds land exactly on downbeats from `analysis.get`. Report the actual numbers.
-  - Verified 2026-06-12 against `target/debug/earwormd --socket /tmp/earworm-live.sock --db /tmp/earworm-live.db`: engine `songformer`, bpm 157.89, 408 beats, 130 downbeats, 12 sections. Saved suggestions `inst` 15.8406–31.4413 + `inst` 31.4413–47.0419 → junction `inst→inst` **30.32 → 31.88**, exactly the downbeats flanking boundary 31.4413.
+- [x] Through a live dredged (real engine + real Analyzer): import the Deftones mp3 (already in library on the real DB — use a temp DB and re-import), `analysis.run`, poll to cached, `song.open` shows analysis, `section.replace` with two suggested sections → junction loop bounds land exactly on downbeats from `analysis.get`. Report the actual numbers.
+  - Verified 2026-06-12 against `target/debug/dredged --socket /tmp/dredge-live.sock --db /tmp/dredge-live.db`: engine `songformer`, bpm 157.89, 408 beats, 130 downbeats, 12 sections. Saved suggestions `inst` 15.8406–31.4413 + `inst` 31.4413–47.0419 → junction `inst→inst` **30.32 → 31.88**, exactly the downbeats flanking boundary 31.4413.
 - [x] Full gate: `cargo test && cargo clippy --workspace -- -D warnings && cargo fmt && pnpm vitest run && pnpm build`. README: add Analyze to the feature list + `scripts/analyze` note.
   - 120 cargo tests passed, clippy clean, fmt clean, 19 vitest tests passed, build clean.
 - [x] Commit: `feat(analysis): live-verified beat-aware pipeline`

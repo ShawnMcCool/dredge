@@ -173,7 +173,7 @@ In `crates/engine/src/capture.rs`, immediately after `list_output_streams` / `sc
 /// media.class == "Audio/Source"). Mirrors `list_output_streams`.
 pub fn list_input_sources() -> crate::error::Result<Vec<CaptureNode>> {
     let handle = std::thread::Builder::new()
-        .name("earworm-pw-scan-in".into())
+        .name("dredge-pw-scan-in".into())
         .spawn(scan_input_sources)?;
     handle
         .join()
@@ -337,7 +337,7 @@ impl TunerControl for RealTuner {
         let thread = {
             let stop = stop.clone();
             std::thread::Builder::new()
-                .name("earworm-tuner".into())
+                .name("dredge-tuner".into())
                 .spawn(move || tuner_loop(ring, tx, stop))
                 .map_err(|e| e.to_string())?
         };

@@ -3,14 +3,14 @@ description: Commit and push git changes — and optionally tag a release with a
 allowed-tools: Bash, AskUserQuestion, Read, Write, Edit
 ---
 
-You are shipping earworm. All release mechanics are deterministic and live in `scripts/ship` (run it with no args for full usage) — your job is only the parts that need judgment: commit messages, the user-facing release notes, and reviewing any safety-check hunks the script flags.
+You are shipping dredge. All release mechanics are deterministic and live in `scripts/ship` (run it with no args for full usage) — your job is only the parts that need judgment: commit messages, the user-facing release notes, and reviewing any safety-check hunks the script flags.
 
 ## Arguments
 
 - `/ship` — plain ship. Commit working change(s), push `main`. No tag.
 - `/ship major|minor|patch` — ship AND release: bump version, changelog, release-safety gate, tag. Anything else: invalid, stop.
 
-## Earworm specifics (read before pushing)
+## Dredge specifics (read before pushing)
 
 - **main is kept local and the SSH key is often locked.** Pushing is the explicit intent of `/ship`, so it's allowed here — but if a push fails, report it and surface the manual command (`scripts/ship` already prints it). **Never force-push.** Don't retry in a loop.
 - **`just check` (tests + lint) is the prerequisite**, not part of ship. If it hasn't run green this session, run it first. `scripts/ship check` gates the *release path* (clean build, schema safety), not code quality.
@@ -41,7 +41,7 @@ Everything else (malformed changelog, `just artifacts` build failure) must be fi
 
 ## Release-notes voice
 
-earworm users are musicians drilling passages by ear, not engineers. Notes land on the GitHub release page (and CHANGELOG.md).
+dredge users are musicians drilling passages by ear, not engineers. Notes land on the GitHub release page (and CHANGELOG.md).
 
 - **Translate jargon.** `fix(export): expand ~ and require absolute folder` → `Fixed: typing ~/Music in the export folder now lands in your home folder instead of erroring.`
 - **Drop contributor-only items.** Refactors, test-only changes, CI tweaks, dependency bumps with no audible/visible effect → omit.

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Give the `earworm` binary first-class, internal timing/device/engine records for the heavy operations (analysis + stems), persisted and emitted, plus an analysis-device setting with Rust-orchestrated GPU→CPU recovery.
+**Goal:** Give the `dredge` binary first-class, internal timing/device/engine records for the heavy operations (analysis + stems), persisted and emitted, plus an analysis-device setting with Rust-orchestrated GPU→CPU recovery.
 
 **Architecture:** A `ProfileRun`/`ProfileStage` domain type timed in Rust with `std::time::Instant`; runs persist to a new SQLite `profiles` table (schema V4) and emit a `profile_run` event over the existing `tick()` broadcast. The `Analyzer`/`StemSeparator` traits gain a `force_cpu` flag that sets `CUDA_VISIBLE_DEVICES=""` on the spawned subprocess; `analysis.run` reads the `analysis_device` setting and, in `auto` mode, retries on CPU when a CUDA-OOM SongFormer run fell back to novelty.
 
@@ -277,7 +277,7 @@ Trait:
 ```rust
     fn analyze(&self, audio: &Path, force_cpu: bool) -> Result<Analysis, String> {
         let script = self.script.as_ref().ok_or(
-            "analysis script not found — expected <repo>/scripts/analyze (or set $EARWORM_ANALYZE)",
+            "analysis script not found — expected <repo>/scripts/analyze (or set $DREDGE_ANALYZE)",
         )?;
         let mut cmd = std::process::Command::new(script);
         cmd.arg(audio);
@@ -303,11 +303,11 @@ Add the venv probe (top-level fn in `analysis.rs`):
 /// mirrors `scripts/analyze_impl.py::songformer_python`.
 pub fn songformer_venv_present() -> bool {
     use std::os::unix::fs::PermissionsExt;
-    let venv = std::env::var_os("EARWORM_SONGFORMER_VENV")
+    let venv = std::env::var_os("DREDGE_SONGFORMER_VENV")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| {
             let home = std::env::var_os("HOME").unwrap_or_default();
-            std::path::PathBuf::from(home).join(".local/share/earworm/songformer-venv")
+            std::path::PathBuf::from(home).join(".local/share/dredge/songformer-venv")
         });
     let py = venv.join("bin/python");
     std::fs::metadata(&py)
@@ -558,7 +558,7 @@ In `tick()`, right after the analysis-draining `while let Ok((song_id, result)) 
         while let Ok(mut run) = self.profile_rx.try_recv() {
             match self.store.save_profile(&run) {
                 Ok(started) => run.started_at = started,
-                Err(e) => eprintln!("earworm: profile save failed: {e}"),
+                Err(e) => eprintln!("dredge: profile save failed: {e}"),
             }
             if let Ok(data) = serde_json::to_value(&run) {
                 events.push(Event { event: "profile_run".into(), data });

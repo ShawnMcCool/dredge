@@ -1,4 +1,4 @@
-# Earworm Performance Campaign — Implementation Plan
+# Dredge Performance Campaign — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans (inline) or superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

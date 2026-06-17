@@ -7,7 +7,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { get } from "svelte/store";
 import { actions, settings, UI_SCALE } from "./stores";
 
-const LEGACY_STORAGE_KEY = "earworm-zoom";
+const LEGACY_STORAGE_KEY = "dredge-zoom";
 const MIN = 0.5;
 const MAX = 3.0;
 const STEP = 0.125;
@@ -36,7 +36,7 @@ export async function initZoom(): Promise<void> {
     return;
   }
   // one-time migration: adopt the old localStorage zoom. The key stays put
-  // (it's ignored from now on): localStorage is shared across EARWORM_DB
+  // (it's ignored from now on): localStorage is shared across DREDGE_DB
   // profiles, so deleting it here would rob another profile's migration.
   const legacy = Number(localStorage.getItem(LEGACY_STORAGE_KEY));
   await apply(valid(legacy) ? legacy : firstRunDefault());

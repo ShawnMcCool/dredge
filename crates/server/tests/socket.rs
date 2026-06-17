@@ -18,7 +18,7 @@ fn start_server(
     std::path::PathBuf,
 ) {
     let path =
-        std::env::temp_dir().join(format!("earworm-test-{}-{name}.sock", std::process::id()));
+        std::env::temp_dir().join(format!("dredge-test-{}-{name}.sock", std::process::id()));
     let mock = Arc::new(Mutex::new(MockEngine::default()));
     let app = App::new(
         Store::open_in_memory().unwrap(),
@@ -80,7 +80,7 @@ fn subscribe_receives_events() {
 
 #[test]
 fn on_events_hook_receives_tick_events() {
-    let path = std::env::temp_dir().join(format!("earworm-test-{}-hook.sock", std::process::id()));
+    let path = std::env::temp_dir().join(format!("dredge-test-{}-hook.sock", std::process::id()));
     let mock = Arc::new(Mutex::new(MockEngine::default()));
     let app = App::new(
         Store::open_in_memory().unwrap(),

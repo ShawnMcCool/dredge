@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Deterministic release mechanics for earworm. The only step left to a human
+# Deterministic release mechanics for dredge. The only step left to a human
 # or model is writing the user-facing release notes; everything else — version
 # math, release-safety checks, changelog insertion, commits, tag, push, and
 # post-tag verification — is mechanical and lives here.
@@ -73,7 +73,7 @@ next_version() {
   esac
 }
 
-# On main and not behind origin. earworm keeps main local, so a missing or
+# On main and not behind origin. dredge keeps main local, so a missing or
 # unreachable origin/main is tolerated (we're simply ahead, ready to push);
 # we only refuse when we can confirm the local tip is stale.
 require_main_and_current() {
@@ -108,7 +108,7 @@ cmd_prepare() {
   echo "NEXT_VERSION=$next"
   echo "NEXT_TAG=v$next"
   echo "DATE=$(date +%F)"
-  echo "NOTES_FILE=/tmp/earworm-notes-v$next.md"
+  echo "NOTES_FILE=/tmp/dredge-notes-v$next.md"
 
   if [ -n "$(git status --porcelain)" ]; then
     echo "WORKING_TREE=dirty (commit before release)"
@@ -173,7 +173,7 @@ cmd_check() {
       local ver
       ver=$(conf_version)
       ls dist/*.deb >/dev/null 2>&1 || failures+=("artifact missing: dist/*.deb")
-      [ -f "dist/earworm-${ver}-x86_64-linux.tar.gz" ] || failures+=("artifact missing: dist/earworm-${ver}-x86_64-linux.tar.gz")
+      [ -f "dist/dredge-${ver}-x86_64-linux.tar.gz" ] || failures+=("artifact missing: dist/dredge-${ver}-x86_64-linux.tar.gz")
       [ -f dist/SHA256SUMS ] || failures+=("artifact missing: dist/SHA256SUMS")
     else
       failures+=("just artifacts failed — the tag would publish a broken release")
@@ -250,7 +250,7 @@ cmd_release() {
       }
     ' CHANGELOG.md)
   else
-    changelog_new=$(printf '# Changelog\n\nAll notable user-facing changes to earworm, newest first.\n\n%s\n\n%s' \
+    changelog_new=$(printf '# Changelog\n\nAll notable user-facing changes to dredge, newest first.\n\n%s\n\n%s' \
       "$header" "$(cat "$notes")")
   fi
 
@@ -283,7 +283,7 @@ cmd_release() {
   echo "Run: scripts/ship verify $version"
 }
 
-# Push main + the tag, but degrade gracefully: earworm's main is kept local and
+# Push main + the tag, but degrade gracefully: dredge's main is kept local and
 # the SSH key is often locked, so a push failure is expected and recoverable —
 # the commits and tag exist locally, so we tell the user how to finish by hand.
 push_or_explain() {
@@ -336,7 +336,7 @@ cmd_verify() {
     if [ -n "$assets" ]; then
       local missing=()
       echo "$assets" | grep -q "\.deb$" || missing+=(".deb")
-      echo "$assets" | grep -q "earworm-${version}-x86_64-linux.tar.gz" || missing+=("linux tarball")
+      echo "$assets" | grep -q "dredge-${version}-x86_64-linux.tar.gz" || missing+=("linux tarball")
       echo "$assets" | grep -qx "SHA256SUMS" || missing+=("SHA256SUMS")
       if [ "${#missing[@]}" -eq 0 ]; then
         echo "RELEASE VERIFIED — assets present:"

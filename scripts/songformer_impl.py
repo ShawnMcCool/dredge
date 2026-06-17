@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """SongFormer section inference. Runs inside the songformer venv
-(~/.local/share/earworm/songformer-venv, torch 2.4.0).
+(~/.local/share/dredge/songformer-venv, torch 2.4.0).
 
 Invoked by analyze_impl.py as a subprocess. stdout = JSON array of
 {"label","start","end"}; diagnostics to stderr. Everything loads from the

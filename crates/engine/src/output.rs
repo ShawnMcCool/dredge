@@ -32,10 +32,10 @@ pub fn spawn(
     song_slot: Arc<ArcSwapOption<StemSet>>,
 ) -> crate::error::Result<JoinHandle<()>> {
     let handle = std::thread::Builder::new()
-        .name("earworm-pw".into())
+        .name("dredge-pw".into())
         .spawn(move || {
             if let Err(e) = run(cmd_rx, evt_tx, song_slot) {
-                eprintln!("earworm pipewire thread failed: {e}");
+                eprintln!("dredge pipewire thread failed: {e}");
             }
         })?;
     Ok(handle)
@@ -53,13 +53,13 @@ fn run(
 
     let stream = pw::stream::StreamBox::new(
         &core,
-        "earworm",
+        "dredge",
         properties! {
             *pw::keys::MEDIA_TYPE => "Audio",
             *pw::keys::MEDIA_ROLE => "Music",
             *pw::keys::MEDIA_CATEGORY => "Playback",
             *pw::keys::AUDIO_CHANNELS => "2",
-            *pw::keys::NODE_NAME => "earworm",
+            *pw::keys::NODE_NAME => "dredge",
             // playback tool, not an instrument chain — a modest quantum is right
             *pw::keys::NODE_LATENCY => "1024/48000",
         },

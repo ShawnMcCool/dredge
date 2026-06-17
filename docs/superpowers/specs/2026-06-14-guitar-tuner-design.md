@@ -5,7 +5,7 @@
 
 ## Context
 
-Earworm is an ear-first practice looper. Tuning up is the first thing you do
+Dredge is an ear-first practice looper. Tuning up is the first thing you do
 before a practice session, so a tuner belongs *on the practice surface*, not in
 a separate utility. This spec adds a chromatic tuner as a first-class **box** in
 the stage stack, listening to a live instrument input, showing the detected note
@@ -23,7 +23,7 @@ follows existing patterns.
   driven by a live audio input chosen by the user.
 - Make it *feel* good: calm when idle, stable readings, confident "you nailed
   it" feedback.
-- Fit earworm's architecture — one shared data path, a pluggable view, state
+- Fit dredge's architecture — one shared data path, a pluggable view, state
   derived from dispatch events, settings in the SQLite settings table.
 
 ## Non-goals (v1)
@@ -68,7 +68,7 @@ timing are tunable later.
 Cents read as signed integers with a sharp/flat word.
 
 **Gauge style.** Ship **one** style — a **linear center-zero meter** (reuses
-earworm's existing meter/fader visual language, least custom code). The view is
+dredge's existing meter/fader visual language, least custom code). The view is
 **pluggable**: the gauge is a presentational component taking
 `{ note, octave, cents, hz, confidence, inTune, locked }`, so needle / strobe /
 other styles can be added later as sibling components selected by a setting.

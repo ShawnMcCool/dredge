@@ -1,4 +1,4 @@
-# earworm v1 — Plan 2: `engine` crate
+# dredge v1 — Plan 2: `engine` crate
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -10,7 +10,7 @@
 
 **Key constants:** sample rate 48000, channels 2, loop crossfade 480 frames (10 ms, equal-power), gain ramp 240 frames (5 ms), rate range 0.25–2.0, pitch ±12 semitones + cents, bass-focus low-pass 400 Hz Q 0.707.
 
-**Spec:** `docs/superpowers/specs/2026-06-12-earworm-design.md`
+**Spec:** `docs/superpowers/specs/2026-06-12-dredge-design.md`
 
 ---
 
@@ -202,7 +202,7 @@ fn write_test_wav(path: &std::path::Path) {
 
 #[test]
 fn decodes_resamples_and_upmixes() {
-    let dir = std::env::temp_dir().join("earworm-decode-test");
+    let dir = std::env::temp_dir().join("dredge-decode-test");
     std::fs::create_dir_all(&dir).unwrap();
     let wav = dir.join("sine.wav");
     write_test_wav(&wav);
@@ -277,7 +277,7 @@ pub fn compute_peaks(buf: &SongBuffer) -> Peaks {
     todo!()
 }
 
-/// Cache under ~/.cache/earworm/peaks/<file_hash>.json; load if present.
+/// Cache under ~/.cache/dredge/peaks/<file_hash>.json; load if present.
 pub fn load_or_compute(buf: &SongBuffer, file_hash: &str) -> std::io::Result<Peaks> {
     todo!()
 }
@@ -314,7 +314,7 @@ mod tests {
         let cached = load_or_compute(&SongBuffer { data: vec![] }, &hash).unwrap();
         assert_eq!(first, cached);
         // cleanup
-        let dir = dirs::cache_dir().unwrap().join("earworm/peaks");
+        let dir = dirs::cache_dir().unwrap().join("dredge/peaks");
         let _ = std::fs::remove_file(dir.join(format!("{hash}.json")));
     }
 }
@@ -322,7 +322,7 @@ mod tests {
 
 - [x] **Step 2: Run (fail), implement**
 
-`compute_peaks`: chunk `buf.data` by `FRAMES_PER_BUCKET * CHANNELS`, fold min/max over all samples in the chunk. `load_or_compute`: path = `dirs::cache_dir().join("earworm/peaks/<hash>.json")`; read+parse if exists (parse failure → recompute), else compute, `create_dir_all`, write JSON.
+`compute_peaks`: chunk `buf.data` by `FRAMES_PER_BUCKET * CHANNELS`, fold min/max over all samples in the chunk. `load_or_compute`: path = `dirs::cache_dir().join("dredge/peaks/<hash>.json")`; read+parse if exists (parse failure → recompute), else compute, `create_dir_all`, write JSON.
 
 - [x] **Step 3: Run tests, verify pass; commit**
 
@@ -1022,7 +1022,7 @@ Rings: `rtrb::RingBuffer::<EngineCmd>::new(256)`, `rtrb::RingBuffer::<EngineEven
 - [x] **Step 2: PipeWire output thread**
 
 `crates/engine/src/output.rs` — `pub fn spawn(cmd_rx, evt_tx, song_slot) -> Result<JoinHandle>`:
-- Thread runs a PipeWire `MainLoop` with a playback `Stream`, format F32LE 48 kHz 2ch, `AUTOCONNECT | MAP_BUFFERS | RT_PROCESS`, node name `"earworm"`.
+- Thread runs a PipeWire `MainLoop` with a playback `Stream`, format F32LE 48 kHz 2ch, `AUTOCONNECT | MAP_BUFFERS | RT_PROCESS`, node name `"dredge"`.
 - Process callback state: `Option<Pipeline>` + a generation counter on the song slot (use `ArcSwapOption::load_full` and `Arc::ptr_eq` against the pipeline's current buffer to detect swaps; on swap, construct a fresh `Pipeline` — construction allocates, acceptable at song-load boundaries only).
 - Callback body: drain `cmd_rx` → `pipeline.apply`; render into the stream buffer datas; push events via `evt_tx.push` (drop on full).
 - No song loaded → write silence.

@@ -5,7 +5,7 @@
 
 ## Problem
 
-The practice mix a user builds inside Earworm — slowed down, pitch-shifted,
+The practice mix a user builds inside Dredge — slowed down, pitch-shifted,
 drums muted, bass-focused — lives only inside live playback. There is no way to
 take that mix *out* of the app: a slowed backing track to a phone, a drumless
 loop into a DAW, a bass-focused passage to listen to away from the desk. There

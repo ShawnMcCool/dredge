@@ -8,30 +8,30 @@ use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
 fn db_path() -> std::path::PathBuf {
-    // dev/test affordance beside EARWORM_OPEN: point the store elsewhere
-    if let Some(p) = std::env::var_os("EARWORM_DB") {
+    // dev/test affordance beside DREDGE_OPEN: point the store elsewhere
+    if let Some(p) = std::env::var_os("DREDGE_DB") {
         return std::path::PathBuf::from(p);
     }
     dirs::data_local_dir()
         .unwrap_or_else(std::env::temp_dir)
-        .join("earworm/earworm.db")
+        .join("dredge/dredge.db")
 }
 
 /// Capture every panic (any thread) with a backtrace to stderr — which the
-/// logging redirect sends to `earworm.log`. A pump-thread panic only kills that
+/// logging redirect sends to `dredge.log`. A pump-thread panic only kills that
 /// thread (and silently wedges the app); this makes such a death loud and
 /// diagnosable instead of leaving a frozen window with no trace.
 fn install_panic_logger() {
     let default = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let bt = std::backtrace::Backtrace::force_capture();
-        eprintln!("=== earworm PANIC ===\n{info}\n--- backtrace ---\n{bt}\n=====================");
+        eprintln!("=== dredge PANIC ===\n{info}\n--- backtrace ---\n{bt}\n=====================");
         default(info);
     }));
 }
 
 fn main() {
-    server::logging::redirect_if_headless("earworm-desktop");
+    server::logging::redirect_if_headless("dredge-desktop");
     install_panic_logger();
     // webkit2gtk's DMA-BUF renderer crashes the Wayland connection on this
     // stack (Hyprland + NVIDIA): "Error 71 (Protocol error) dispatching to
@@ -44,12 +44,12 @@ fn main() {
     let db = db_path();
     if let Some(dir) = db.parent() {
         std::fs::create_dir_all(dir)
-            .unwrap_or_else(|e| panic!("earworm: cannot create data dir {}: {e}", dir.display()));
+            .unwrap_or_else(|e| panic!("dredge: cannot create data dir {}: {e}", dir.display()));
     }
     let store = Store::open(&db)
-        .unwrap_or_else(|e| panic!("earworm: cannot open db {}: {e}", db.display()));
+        .unwrap_or_else(|e| panic!("dredge: cannot open db {}: {e}", db.display()));
     let engine = engine::Engine::start()
-        .unwrap_or_else(|e| panic!("earworm: cannot start audio engine (PipeWire running?): {e}"));
+        .unwrap_or_else(|e| panic!("dredge: cannot start audio engine (PipeWire running?): {e}"));
     let app = Arc::new(Mutex::new(App::new(
         store,
         Box::new(engine),
@@ -72,5 +72,5 @@ fn main() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("error while running earworm");
+        .expect("error while running dredge");
 }

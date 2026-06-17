@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# earworm-doctor — report which optional external tools are installed, and how
+# dredge-doctor — report which optional external tools are installed, and how
 # to install the ones that aren't. The core looper (load a track, loop, stretch,
 # the tempo trainer, the tuner) needs none of these; each tool below unlocks one
 # optional feature. The desktop app shows the same status under
@@ -34,29 +34,29 @@ report() { # name  enabled(0|1)  feature  fix
   fi
 }
 
-echo "earworm — optional tool check"
+echo "dredge — optional tool check"
 echo
 
 # ffmpeg: MP3 export, containers symphonia can't demux, and demucs stem export.
 ffmpeg -version >/dev/null 2>&1
 report "ffmpeg" "$?" "MP3 export · mkv/webm · stem export" "$ffmpeg_fix"
 
-# analysis: the earworm-analyze wrapper ($EARWORM_ANALYZE, else on PATH). The
+# analysis: the dredge-analyze wrapper ($DREDGE_ANALYZE, else on PATH). The
 # wrapper ships with the package; it self-bootstraps its PyTorch venv on first
-# use, which earworm-enable-ml does up front.
-if { [ -n "${EARWORM_ANALYZE:-}" ] && [ -x "${EARWORM_ANALYZE}" ]; } \
-   || command -v earworm-analyze >/dev/null 2>&1; then
+# use, which dredge-enable-ml does up front.
+if { [ -n "${DREDGE_ANALYZE:-}" ] && [ -x "${DREDGE_ANALYZE}" ]; } \
+   || command -v dredge-analyze >/dev/null 2>&1; then
   analyze_rc=0
 else
   analyze_rc=1
 fi
-report "earworm-analyze" "$analyze_rc" "beat + section analysis" \
-  "earworm-enable-ml analyze   (from a source checkout: scripts/analyze)"
+report "dredge-analyze" "$analyze_rc" "beat + section analysis" \
+  "dredge-enable-ml analyze   (from a source checkout: scripts/analyze)"
 
 # stems: the demucs CLI on PATH.
 command -v demucs >/dev/null 2>&1
 report "demucs" "$?" "stem separation (vocals/drums/bass/other)" \
-  "earworm-enable-ml stems"
+  "dredge-enable-ml stems"
 
 echo
 if [ "$ready" -eq "$total" ]; then

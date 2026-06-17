@@ -1,4 +1,4 @@
-# earworm — Plan 8: UI layout abstractions (resize discipline)
+# dredge — Plan 8: UI layout abstractions (resize discipline)
 
 > **For agentic workers:** Use superpowers:executing-plans. Steps use checkbox (`- [ ]`) syntax.
 
@@ -49,9 +49,9 @@
 Launch the built release app and screenshot it **at three window sizes**; inspect the images yourself (Read tool) and iterate until all pass:
 
 ```bash
-cd ~/src/earworm && cargo build -p earworm-desktop --release
-target/release/earworm & sleep 4
-ADDR=$(hyprctl clients -j | jq -r '.[] | select(.class=="earworm") | .address')
+cd ~/src/dredge && cargo build -p dredge-desktop --release
+target/release/dredge & sleep 4
+ADDR=$(hyprctl clients -j | jq -r '.[] | select(.class=="dredge") | .address')
 hyprctl dispatch setfloating address:$ADDR
 for size in "2400 1300" "1500 900" "1000 700"; do
   hyprctl dispatch resizewindowpixel "exact ${size% *} ${size#* },address:$ADDR"
@@ -59,7 +59,7 @@ for size in "2400 1300" "1500 900" "1000 700"; do
   GEO=$(hyprctl clients -j | jq -r '.[] | select(.address=="'$ADDR'") | "\(.at[0]),\(.at[1]) \(.size[0])x\(.size[1])"')
   grim -g "$GEO" /tmp/ew-$( echo $size | tr ' ' x ).png
 done
-pkill -f target/release/earworm
+pkill -f target/release/dredge
 ```
 
 Pass criteria per screenshot:

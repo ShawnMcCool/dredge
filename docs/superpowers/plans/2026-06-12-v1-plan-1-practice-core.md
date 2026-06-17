@@ -1,4 +1,4 @@
-# earworm v1 — Plan 1: Workspace + `practice` crate
+# dredge v1 — Plan 1: Workspace + `practice` crate
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** Rust 2021, rusqlite 0.32 (bundled), serde/serde_json, time 0.3, thiserror.
 
-**Spec:** `docs/superpowers/specs/2026-06-12-earworm-design.md`
+**Spec:** `docs/superpowers/specs/2026-06-12-dredge-design.md`
 
 ---
 
@@ -1209,7 +1209,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 /// Everything a user could lose, mirrored as plain JSON next to the audio
-/// file: `<audio path>.earworm.json`. Written atomically (tmp + rename).
+/// file: `<audio path>.dredge.json`. Written atomically (tmp + rename).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Sidecar {
     pub version: u32,
@@ -1261,10 +1261,10 @@ mod tests {
     }
 
     #[test]
-    fn path_appends_earworm_json() {
+    fn path_appends_dredge_json() {
         assert_eq!(
             sidecar_path(Path::new("/x/song.flac")),
-            PathBuf::from("/x/song.flac.earworm.json")
+            PathBuf::from("/x/song.flac.dredge.json")
         );
     }
 
@@ -1294,7 +1294,7 @@ mod tests {
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        assert_eq!(entries, vec!["song.flac.earworm.json".to_string()]);
+        assert_eq!(entries, vec!["song.flac.dredge.json".to_string()]);
     }
 }
 ```
@@ -1309,7 +1309,7 @@ Expected: panics on `todo!()`.
 ```rust
 pub fn sidecar_path(audio_path: &Path) -> PathBuf {
     let mut os = audio_path.as_os_str().to_owned();
-    os.push(".earworm.json");
+    os.push(".dredge.json");
     PathBuf::from(os)
 }
 

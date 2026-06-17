@@ -73,7 +73,7 @@ impl TunerControl for RealTuner {
         let thread = {
             let stop = stop.clone();
             std::thread::Builder::new()
-                .name("earworm-tuner".into())
+                .name("dredge-tuner".into())
                 .spawn(move || tuner_loop(ring, tx, stop))
                 .map_err(|e| e.to_string())?
         };
@@ -142,7 +142,7 @@ fn median(window: &VecDeque<f32>) -> f32 {
 /// steady tuner. Brief detection dropouts are bridged by a release-hold: the
 /// last good reading is re-sent for up to `HOLD_TICKS` ticks before blanking.
 fn tuner_loop(ring: Arc<Mutex<RollingRing>>, tx: Sender<TunerReading>, stop: Arc<AtomicBool>) {
-    let debug = std::env::var("EARWORM_DEBUG").is_ok();
+    let debug = std::env::var("DREDGE_DEBUG").is_ok();
     let mut history: VecDeque<f32> = VecDeque::with_capacity(MEDIAN_WINDOW);
     let mut last: Option<TunerReading> = None;
     let mut misses: u32 = 0;

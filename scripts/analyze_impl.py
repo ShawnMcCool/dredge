@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""earworm analysis: beat grid (beat_this) + section suggestions.
+"""dredge analysis: beat grid (beat_this) + section suggestions.
 
 Run through `scripts/analyze` (which owns the venv). stdout carries exactly
 one JSON object:
@@ -21,14 +21,14 @@ import sys
 
 
 def log(*args):
-    print("earworm-analyze:", *args, file=sys.stderr, flush=True)
+    print("dredge-analyze:", *args, file=sys.stderr, flush=True)
 
 
 def songformer_python():
     """Python of the optional SongFormer venv, or None when not installed."""
     venv = os.environ.get(
-        "EARWORM_SONGFORMER_VENV",
-        os.path.expanduser("~/.local/share/earworm/songformer-venv"),
+        "DREDGE_SONGFORMER_VENV",
+        os.path.expanduser("~/.local/share/dredge/songformer-venv"),
     )
     py = os.path.join(venv, "bin", "python")
     return py if os.access(py, os.X_OK) else None
@@ -187,7 +187,7 @@ def novelty_sections(audio_path, beats, downbeats, duration):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="earworm beat + section analysis")
+    ap = argparse.ArgumentParser(description="dredge beat + section analysis")
     ap.add_argument("audio")
     ap.add_argument("--no-sections", action="store_true")
     ap.add_argument(

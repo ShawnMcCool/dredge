@@ -1,13 +1,13 @@
 // Runtime telemetry for cracking the intermittent open/freeze bug.
 //
-// Opt-in: off unless launched with `EARWORM_DEBUG=1` (the Rust side reports the
+// Opt-in: off unless launched with `DREDGE_DEBUG=1` (the Rust side reports the
 // gate via the `debug_flag` command). When off, every entry point here is a
 // cheap no-op — no timers, listeners or IPC.
 //
 // When on: the webview is WebKitGTK — its devtools aren't reachable from
 // outside the window, so every trace is ALSO forwarded to the Rust side
 // (`ui_log`), which prints to stderr and thus lands in
-// `~/.local/share/earworm/earworm.log` alongside the backend's own dispatch/
+// `~/.local/share/dredge/dredge.log` alongside the backend's own dispatch/
 // panic traces. That gives one unified, retrievable timeline of "what the UI
 // did last" even after a hard freeze or a WebKit/Wayland crash.
 //
@@ -67,7 +67,7 @@ export async function initTrace(): Promise<void> {
     enabled = false;
   }
   if (!enabled) return;
-  trace("boot", "trace online (EARWORM_DEBUG)");
+  trace("boot", "trace online (DREDGE_DEBUG)");
   installStallDetector();
   window.addEventListener("error", (e) =>
     traceErr("window", `error: ${e.message} @ ${e.filename}:${e.lineno}:${e.colno}`));

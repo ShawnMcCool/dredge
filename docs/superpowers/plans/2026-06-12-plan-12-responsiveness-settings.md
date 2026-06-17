@@ -1,4 +1,4 @@
-# earworm — Plan 12: UI responsiveness, exit confirm, settings
+# dredge — Plan 12: UI responsiveness, exit confirm, settings
 
 > **For agentic workers:** Use superpowers:executing-plans. Checkboxes track steps.
 
@@ -27,7 +27,7 @@
 
 ### Task 2: Escape → exit confirmation
 
-- [x] Escape cascade in `keys.ts` (in order): quick-prompt discard → clear selection → **open exit modal**. Exit modal (Modal primitive, `closable`): "exit earworm?" — Buttons `exit` (accent) / `stay`; Enter or `y` = exit, Escape/`n` = stay. *(Modal's Escape now `preventDefault`s so the global cascade can tell a consumed Escape apart.)*
+- [x] Escape cascade in `keys.ts` (in order): quick-prompt discard → clear selection → **open exit modal**. Exit modal (Modal primitive, `closable`): "exit dredge?" — Buttons `exit` (accent) / `stay`; Enter or `y` = exit, Escape/`n` = stay. *(Modal's Escape now `preventDefault`s so the global cascade can tell a consumed Escape apart.)*
 - [x] Host command `quit()` (`app_handle.exit(0)`) registered alongside `dispatch`; wire the exit Button to it.
 - [x] Commit: `feat(desktop): escape exit confirmation`
 
@@ -36,14 +36,14 @@
 - [x] Store migration **v3**: `settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL)` + `Store::{get_setting, set_setting}` (serde_json round-trip, tests in store suite style). *(Plus `all_settings` for `settings.get_all`.)*
 - [x] Commands: `settings.get_all` → `{key: value, ...}`; `settings.set {key, value}` (value = arbitrary JSON). Both trivial dispatch arms + one app test (`tests/app_settings.rs`).
 - [x] Known keys (constants in stores.ts): `ui_scale` (number, default per-screen heuristic), `grid_snap_default` (bool, default true), `capture_buffer_secs` (number, default 180 — pass into `capture.start` when the UI calls it).
-- [x] `zoom.ts` rework: read `ui_scale` from `settings.get_all` at init (one-time migration: if absent and localStorage `earworm-zoom` exists, adopt + persist it); ctrl±/0 still work and write through to `settings.set`. localStorage no longer authoritative.
+- [x] `zoom.ts` rework: read `ui_scale` from `settings.get_all` at init (one-time migration: if absent and localStorage `dredge-zoom` exists, adopt + persist it); ctrl±/0 still work and write through to `settings.set`. localStorage no longer authoritative.
 - [x] `SettingsModal.svelte`: gear Button (icon variant, `⚙` or `settings` text chip) at the right end of the tabs row + `,` keybinding. Rows: **UI scale** (horizontal Fader 0.75–2.5 step 0.05, live-applied via `setZoom` on drag, readout %), **grid snap by default** (toggle Button), **capture buffer** (chips 60/120/180/300 s). All writes immediate via `settings.set`. Help footer gains `, settings`.
 - [x] `pnpm build && pnpm vitest run` clean. Commit: `feat: durable settings table + settings modal (ui scale, grid snap, capture buffer)`
 
 ### Task 4: Visual verification
 
-- [x] Temp-DB app launch (EARWORM_DB + EARWORM_OPEN pattern). Screenshots, Read and judge each: (a) settings modal open (`,` via sendshortcut — remember ~1 s latency) with the scale Fader and rows; (b) exit modal (Escape); (c) after dragging nothing — confirm `stay` dismisses (send `n`). Leave /tmp/ew-set-*.png. *(All three pass: settings modal with fader/toggle/chips; exit modal with accent exit + stay; `n` dismisses, app stays alive. The 250% fader reading was the legacy localStorage zoom migrating correctly.)*
-- [x] Commit fixes if any: `fix(desktop): settings/exit verification` *(one fix: the legacy `earworm-zoom` key is kept after migration — localStorage is shared across EARWORM_DB profiles.)*
+- [x] Temp-DB app launch (DREDGE_DB + DREDGE_OPEN pattern). Screenshots, Read and judge each: (a) settings modal open (`,` via sendshortcut — remember ~1 s latency) with the scale Fader and rows; (b) exit modal (Escape); (c) after dragging nothing — confirm `stay` dismisses (send `n`). Leave /tmp/ew-set-*.png. *(All three pass: settings modal with fader/toggle/chips; exit modal with accent exit + stay; `n` dismisses, app stays alive. The 250% fader reading was the legacy localStorage zoom migrating correctly.)*
+- [x] Commit fixes if any: `fix(desktop): settings/exit verification` *(one fix: the legacy `dredge-zoom` key is kept after migration — localStorage is shared across DREDGE_DB profiles.)*
 
 ### Task 5: Live responsiveness proof + gate
 

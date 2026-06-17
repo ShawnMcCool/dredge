@@ -11,7 +11,7 @@
 
 The mix a user dials in for practice — slowed, pitch-shifted, stems muted,
 bass-focused — exists only in live playback. There is no way to render it to a
-file for use elsewhere (phone, DAW, sharing, archiving). Earworm has no export
+file for use elsewhere (phone, DAW, sharing, archiving). Dredge has no export
 path today.
 
 ## Design Objectives

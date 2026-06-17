@@ -1,6 +1,6 @@
 # Development
 
-How to build earworm from source and work on it. Architecture notes and the
+How to build dredge from source and work on it. Architecture notes and the
 full conventions live in [`CLAUDE.md`](CLAUDE.md).
 
 ## Prerequisites
@@ -35,13 +35,13 @@ Plus [rustup](https://rustup.rs), Node + [pnpm](https://pnpm.io) (not npm), and
 ## Build
 
 ```bash
-git clone https://github.com/ShawnMcCool/earworm.git && cd earworm
-just build      # daemon -> target/release/earwormd, then the desktop app +
-                # .deb bundle -> target/release/{earworm, bundle/deb/}
+git clone https://github.com/ShawnMcCool/dredge.git && cd dredge
+just build      # daemon -> target/release/dredged, then the desktop app +
+                # .deb bundle -> target/release/{dredge, bundle/deb/}
 ```
 
 `just build` compiles the daemon, then `pnpm tauri build` bundles the Svelte UI
-into `earworm` and emits a `.deb`. `just package` stages the `.deb` into
+into `dredge` and emits a `.deb`. `just package` stages the `.deb` into
 `dist/`; `just artifacts` adds a portable tarball + `SHA256SUMS` (what CI ships).
 
 ## Dev loop

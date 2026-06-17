@@ -1,4 +1,4 @@
-# earworm — Plan 10: Fader primitive (slider abstraction)
+# dredge — Plan 10: Fader primitive (slider abstraction)
 
 > **For agentic workers:** Use superpowers:executing-plans. Checkboxes track steps.
 
@@ -28,12 +28,12 @@
 
 ### Task 3: Reopen last song on launch
 
-- [x] `stores.ts`: after a successful `openSong(id)`, persist id to localStorage (`earworm-last-song`); on `initEvents()` startup, if present, attempt `openSong` (silently ignore failure — song may be gone).
+- [x] `stores.ts`: after a successful `openSong(id)`, persist id to localStorage (`dredge-last-song`); on `initEvents()` startup, if present, attempt `openSong` (silently ignore failure — song may be gone).
 - [x] Commit: `feat(desktop): reopen last song on launch`
 
 ### Task 4: Visual verification (the gate)
 
-- [x] Rebuild release. Launch (the real DB's last-opened song should auto-open; if no stems song was last, `song.open` the Deftones one once via UI… NO — instead: before launching, run a release earwormd? Cannot share DB. Simplest: launch app, it auto-opens last song (user's screenshot shows a stems song was open — its id is in localStorage? localStorage starts empty for this feature!). Therefore: open the song programmatically ONCE through the UI is impossible without clicks — so instead seed localStorage: webkit2gtk localStorage lives under `~/.local/share/earworm/` app data dir (`dev.shawn.earworm/localstorage` or similar) — too fragile. FALLBACK plan: temporary `EARWORM_OPEN` env: in `host.rs` add a tauri command `initial_song()` returning `std::env::var("EARWORM_OPEN").ok()` parsed as i64; stores calls it at init and opens that id when set (tiny, permanent, harmless dev affordance). Launch with `EARWORM_OPEN=<id of stems song>`.
+- [x] Rebuild release. Launch (the real DB's last-opened song should auto-open; if no stems song was last, `song.open` the Deftones one once via UI… NO — instead: before launching, run a release dredged? Cannot share DB. Simplest: launch app, it auto-opens last song (user's screenshot shows a stems song was open — its id is in localStorage? localStorage starts empty for this feature!). Therefore: open the song programmatically ONCE through the UI is impossible without clicks — so instead seed localStorage: webkit2gtk localStorage lives under `~/.local/share/dredge/` app data dir (`dev.shawn.dredge/localstorage` or similar) — too fragile. FALLBACK plan: temporary `DREDGE_OPEN` env: in `host.rs` add a tauri command `initial_song()` returning `std::env::var("DREDGE_OPEN").ok()` parsed as i64; stores calls it at init and opens that id when set (tiny, permanent, harmless dev affordance). Launch with `DREDGE_OPEN=<id of stems song>`.
 - [x] Float window via hyprctl (pattern from plan 8), screenshot at ~1800 and ~1100 wide, Read the PNGs: faders render as proper vertical faders (track + thumb), BASS accented, rate Fader matches design, drag affordance visible (thumb), nothing overflows. Iterate until clean; leave PNGs in /tmp.
 - [x] Commit: `fix(desktop): fader visual verification` (if fixes) 
 

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make Earworm build and run on macOS (Apple Silicon) for the load-a-file practice workflow — playback, looping/stretch, tuner, stem separation, and structure analysis — by abstracting the PipeWire-specific audio I/O behind a cross-platform backend and scrubbing the system-audio capture feature.
+**Goal:** Make Dredge build and run on macOS (Apple Silicon) for the load-a-file practice workflow — playback, looping/stretch, tuner, stem separation, and structure analysis — by abstracting the PipeWire-specific audio I/O behind a cross-platform backend and scrubbing the system-audio capture feature.
 
 **Architecture:** The DSP core (`pipeline`, `looper`, `stretch`, `filter`, `export`, `decode`) is already OS-agnostic. PipeWire touches only three engine files (`output.rs`, `capture.rs`, deps). We extract a platform-agnostic `RenderCore` that both a PipeWire (Linux) and a cpal (macOS/other) backend drive, `cfg`-gate the PipeWire crates to Linux, delete the system-audio capture feature end-to-end, and fix three small macOS shims in the out-of-process Python analysis path.
 
@@ -80,7 +80,7 @@ Setup is captured in `docs/macos-build.md`.
 
 **Python (`scripts/`):**
 - Modify `analyze_impl.py`, `songformer_impl.py` — MPS device branch.
-- Modify `analyze`, `earworm-enable-ml` — `readlink -f` portability; macOS impl-search path.
+- Modify `analyze`, `dredge-enable-ml` — `readlink -f` portability; macOS impl-search path.
 
 ---
 
@@ -360,10 +360,10 @@ pub fn spawn(
     song_slot: Arc<ArcSwapOption<crate::buffer::StemSet>>,
 ) -> crate::error::Result<JoinHandle<()>> {
     let handle = std::thread::Builder::new()
-        .name("earworm-audio".into())
+        .name("dredge-audio".into())
         .spawn(move || {
             if let Err(e) = run(cmd_rx, evt_tx, song_slot) {
-                eprintln!("earworm audio thread failed: {e}");
+                eprintln!("dredge audio thread failed: {e}");
             }
         })?;
     Ok(handle)
@@ -398,7 +398,7 @@ fn run(
                 // request; RenderCore fills exactly out.len() samples.
                 core.fill(out);
             },
-            move |err| eprintln!("earworm cpal stream error: {err}"),
+            move |err| eprintln!("dredge cpal stream error: {err}"),
             None,
         )
         .map_err(|e| Error::Audio(format!("build output stream: {e}")))?;
@@ -609,10 +609,10 @@ pub fn start_capture(node: CaptureNode, buffer_secs: f64) -> crate::error::Resul
         let stop = stop.clone();
         let target = node.serial as usize;
         std::thread::Builder::new()
-            .name("earworm-cap".into())
+            .name("dredge-cap".into())
             .spawn(move || {
                 if let Err(e) = run_capture(target, ring, stop) {
-                    eprintln!("earworm capture thread failed: {e}");
+                    eprintln!("dredge capture thread failed: {e}");
                 }
             })?
     };
@@ -648,7 +648,7 @@ fn run_capture(
                     r.push(data);
                 }
             },
-            move |err| eprintln!("earworm cpal capture error: {err}"),
+            move |err| eprintln!("dredge cpal capture error: {err}"),
             None,
         )
         .map_err(|e| Error::Audio(format!("build input stream: {e}")))?;
@@ -810,11 +810,11 @@ HERE="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 - [ ] **Step 2: Add macOS bundle/Homebrew impl-search dirs**
 
 In `scripts/analyze`, extend the impl-search loop (line ~30,
-`for d in "$HERE" /usr/lib/earworm /usr/local/lib/earworm; do`) to include
+`for d in "$HERE" /usr/lib/dredge /usr/local/lib/dredge; do`) to include
 Homebrew and an env override:
 
 ```bash
-for d in "$HERE" "${EARWORM_IMPL_DIR:-}" /usr/lib/earworm /usr/local/lib/earworm /opt/homebrew/lib/earworm; do
+for d in "$HERE" "${DREDGE_IMPL_DIR:-}" /usr/lib/dredge /usr/local/lib/dredge /opt/homebrew/lib/dredge; do
   [ -n "$d" ] || continue
   if [ -f "$d/analyze_impl.py" ]; then IMPL="$d/analyze_impl.py"; break; fi
 done
@@ -917,20 +917,20 @@ Add to the Info.plist (via Tauri's `bundle.macOS.infoPlist` or an
 
 ```xml
 <key>NSMicrophoneUsageDescription</key>
-<string>Earworm uses the microphone for the live tuner.</string>
+<string>Dredge uses the microphone for the live tuner.</string>
 ```
 
 - [ ] **Step 3: Ensure the analyze impls ship with/near the bundle**
 
-The `analyze` wrapper resolves impls via `$EARWORM_IMPL_DIR` or the search dirs
-from Task 7. For the `.app`, set `EARWORM_IMPL_DIR` (or place `analyze_impl.py`
+The `analyze` wrapper resolves impls via `$DREDGE_IMPL_DIR` or the search dirs
+from Task 7. For the `.app`, set `DREDGE_IMPL_DIR` (or place `analyze_impl.py`
 + `songformer_impl.py` in a resolved dir) so analysis works from the bundle.
 Document this in the Mac build notes / README.
 
 - [ ] **Step 4: Build the desktop app on macOS**
 
 Run (on Mac): `just build` (or `pnpm tauri build` from `apps/desktop`).
-Expected: produces `target/release/earworm` / `.app` with no compile errors.
+Expected: produces `target/release/dredge` / `.app` with no compile errors.
 The engine compiles the cpal backends; pipewire/libspa are absent (cfg-gated).
 
 - [ ] **Step 5: Smoke-test the core workflow on macOS**
@@ -970,7 +970,7 @@ git commit -m "build(desktop): macos bundle config + microphone entitlement"
 
 - [ ] **Document the MPS outcome:** record in the README / Mac build notes which
   analysis models run on MPS vs. need CPU, plus the Homebrew deps
-  (`rubber-band pkg-config ffmpeg uv`) and `EARWORM_IMPL_DIR`.
+  (`rubber-band pkg-config ffmpeg uv`) and `DREDGE_IMPL_DIR`.
 
 ---
 

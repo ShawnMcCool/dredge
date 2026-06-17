@@ -11,7 +11,7 @@ Designed 2026-06-16 (brainstorm in-thread). Work directly on `main`.
 
 ## What it is
 
-Earworm's Rust decoder is **symphonia**, compiled with `isomp4` + `aac`
+Dredge's Rust decoder is **symphonia**, compiled with `isomp4` + `aac`
 (`crates/engine/Cargo.toml:8`). Symphonia is probe-based, not
 extension-based (`decode.rs:27`): it sniffs the container and decodes a track.
 Waveform peaks are computed purely from decoded PCM (`peaks.rs`), so they're

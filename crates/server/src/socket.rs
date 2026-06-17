@@ -14,7 +14,7 @@ pub fn default_socket_path() -> PathBuf {
     let dir = std::env::var_os("XDG_RUNTIME_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(std::env::temp_dir);
-    dir.join("earworm.sock")
+    dir.join("dredge.sock")
 }
 
 pub struct ServerHandle {

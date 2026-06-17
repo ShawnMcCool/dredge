@@ -1,4 +1,4 @@
-# earworm — Plan 7: ephemeral practice (select → `p` → play)
+# dredge — Plan 7: ephemeral practice (select → `p` → play)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -6,7 +6,7 @@
 
 **Architecture:** Reuses `PlanRunner` wholesale. A transient `LoopRegion` with the existing unsaved sentinel `LoopId(0)` lives only in `ActivePlan.loops` plus a new `App.ephemeral: Option<LoopRegion>`. While an ephemeral session is active, `tick()` skips automatic rep recording (FK on `reps.loop_id` would reject id 0 anyway — the skip is the design, the FK is the backstop). `practice.quick_rate` is the single persistence point.
 
-**Spec:** `docs/superpowers/specs/2026-06-12-earworm-design.md` (Ephemeral practice amendment)
+**Spec:** `docs/superpowers/specs/2026-06-12-dredge-design.md` (Ephemeral practice amendment)
 
 ---
 
@@ -69,7 +69,7 @@ git add -A && git commit -m "feat(desktop): p-key ephemeral practice with keep/d
 
 - [x] **Step 1: README** — add `p` to the workflow blurb (one line under "What it does": select → `p` → instant session; rate to keep).
 
-- [x] **Step 2: Socket smoke** — against a live `earwormd` (real engine): import the test sine, open, `practice.quick {start:1, end:3}` via `just cmd`, subscribe and observe `rep_changed` events progressing listen→play with the oscillate rates while audio plays; `practice.quick_rate {rating:"solid"}` → loop persisted (verify `loop.list`); cleanup temp db.
+- [x] **Step 2: Socket smoke** — against a live `dredged` (real engine): import the test sine, open, `practice.quick {start:1, end:3}` via `just cmd`, subscribe and observe `rep_changed` events progressing listen→play with the oscillate rates while audio plays; `practice.quick_rate {rating:"solid"}` → loop persisted (verify `loop.list`); cleanup temp db.
 
 - [x] **Step 3: Commit**
 

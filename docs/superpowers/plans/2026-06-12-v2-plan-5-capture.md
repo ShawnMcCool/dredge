@@ -1,14 +1,14 @@
-# earworm v2 — Plan 5: PipeWire capture-anything
+# dredge v2 — Plan 5: PipeWire capture-anything
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Tap any application's audio (Spotify, Firefox, anything) into a rolling buffer, then "grab what just played" — snapshot the last N seconds to a WAV, import it as a song, and loop it. The workflow Spotify's SDK shutdown killed industry-wide, legitimately resurrected via PipeWire.
 
-**Architecture:** `engine::ring` is a pure rolling buffer (TDD). `engine::capture` runs its own PipeWire thread per capture session: a capture stream targeting the chosen app node feeds the ring (ring behind a Mutex — capture path is not latency-critical). Node discovery is a short-lived registry scan. `server` gets a `CaptureControl` trait (mockable, like `AudioControl`) and `capture.*` commands; snapshot writes a WAV under `~/music/earworm-captures/` and funnels through the existing `song.import` path so hashing/sidecar/peaks all just work. UI gets a Capture tab.
+**Architecture:** `engine::ring` is a pure rolling buffer (TDD). `engine::capture` runs its own PipeWire thread per capture session: a capture stream targeting the chosen app node feeds the ring (ring behind a Mutex — capture path is not latency-critical). Node discovery is a short-lived registry scan. `server` gets a `CaptureControl` trait (mockable, like `AudioControl`) and `capture.*` commands; snapshot writes a WAV under `~/music/dredge-captures/` and funnels through the existing `song.import` path so hashing/sidecar/peaks all just work. UI gets a Capture tab.
 
 **Tech Stack:** pipewire/libspa 0.10 (already in tree), hound (promoted from dev-dep — WAV writing), existing import pipeline.
 
-**Spec:** `docs/superpowers/specs/2026-06-12-earworm-design.md` (v2 section)
+**Spec:** `docs/superpowers/specs/2026-06-12-dredge-design.md` (v2 section)
 
 ---
 
@@ -212,7 +212,7 @@ pub trait CaptureControl: Send {
 ```
 `RealCapture` implements it over `engine::capture` (owns `Option<CaptureSession>`); `MockCapture` (in the same module, like MockEngine) returns scripted nodes and a scripted snapshot buffer.
 
-`App::new` gains a `Box<dyn CaptureControl>` parameter — update earwormd + desktop `main.rs` construction (`RealCapture::default()`), and all existing server tests (`MockCapture::default()`); keep the change mechanical.
+`App::new` gains a `Box<dyn CaptureControl>` parameter — update dredged + desktop `main.rs` construction (`RealCapture::default()`), and all existing server tests (`MockCapture::default()`); keep the change mechanical.
 
 - [x] **Step 2: Dispatch arms + tests**
 
@@ -221,11 +221,11 @@ Commands:
 - `"capture.start" {node_id, buffer_secs?}` (default 180)
 - `"capture.stop"`
 - `"capture.status"` → `{running, filled_secs?, app?, media?}`
-- `"capture.grab" {last_secs}` → snapshot; error if empty; write WAV to `~/music/earworm-captures/<app>-<media>-<unix_ts>.wav` (sanitize filename chars, `XDG_MUSIC_DIR` not worth parsing — use `~/music`, matching this user's lowercase dirs); then run the **existing** `song.import` path on it and return the imported Song. Title for the import: `<app> — <media>` if media nonempty (requires `song.import` to accept an optional `title` override param — add it: explicit title wins over file-stem).
+- `"capture.grab" {last_secs}` → snapshot; error if empty; write WAV to `~/music/dredge-captures/<app>-<media>-<unix_ts>.wav` (sanitize filename chars, `XDG_MUSIC_DIR` not worth parsing — use `~/music`, matching this user's lowercase dirs); then run the **existing** `song.import` path on it and return the imported Song. Title for the import: `<app> — <media>` if media nonempty (requires `song.import` to accept an optional `title` override param — add it: explicit title wins over file-stem).
 
 `tests/app_capture.rs` (MockCapture + MockEngine):
 1. `nodes_and_status_roundtrip` — scripted two nodes; `capture.nodes` returns them; `capture.status` shows not running, then running after `capture.start`.
-2. `grab_writes_wav_and_imports` — scripted snapshot = 1 s 440 Hz sine; `capture.grab {last_secs: 1}` → response is a Song with title `"Spotify — Some Song"`; the WAV exists at the returned song's path (point the captures dir at a tempdir via an `App` config field `captures_dir: PathBuf`, default `~/music/earworm-captures`, overridden in tests); `song.open` on it succeeds (decodes).
+2. `grab_writes_wav_and_imports` — scripted snapshot = 1 s 440 Hz sine; `capture.grab {last_secs: 1}` → response is a Song with title `"Spotify — Some Song"`; the WAV exists at the returned song's path (point the captures dir at a tempdir via an `App` config field `captures_dir: PathBuf`, default `~/music/dredge-captures`, overridden in tests); `song.open` on it succeeds (decodes).
 3. `grab_with_no_capture_errors` — ok:false.
 
 - [x] **Step 3: Run (fail→pass), full server suite, commit**
@@ -258,17 +258,17 @@ git add -A && git commit -m "feat(desktop): capture tab — pick app, roll, grab
 
 ---
 
-### Task 5: earwormd parity
+### Task 5: dredged parity
 
 **Files:**
-- Modify: `crates/server/src/bin/earwormd.rs` (construct `RealCapture`)
+- Modify: `crates/server/src/bin/dredged.rs` (construct `RealCapture`)
 
 - [x] **Step 1: Wire + gate**
 
 Run: `cargo test && cargo clippy --workspace -- -D warnings && cargo fmt`
 
 ```bash
-git add -A && git commit -m "feat(server): earwormd capture parity"
+git add -A && git commit -m "feat(server): dredged capture parity"
 ```
 
 ---
@@ -283,7 +283,7 @@ No files — verification task. PipeWire is live on this machine.
 ffmpeg -f lavfi -i "sine=frequency=330:duration=60" -ac 2 /tmp/cap-src.flac  # if missing
 pw-play /tmp/cap-src.flac &   # creates a Stream/Output/Audio node
 sleep 2
-# via the socket (earwormd or desktop running):
+# via the socket (dredged or desktop running):
 # capture.nodes  -> expect a node with app/media mentioning pw-play/cap-src
 # capture.start {node_id}
 # sleep 8

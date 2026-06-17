@@ -1,12 +1,12 @@
 # Transport redesign — Direction 2: Hero + Labelled Modules
 
-A self-contained HTML mockup of Earworm's playback control strip, committing
+A self-contained HTML mockup of Dredge's playback control strip, committing
 fully to a **transport hero + labelled control modules** layout. The strip sits
 full-width directly under the waveform in the centre stage column.
 
 ## Style
 
-Earworm's house aesthetic: near-black canvas (`--bg #101014`), a single amber
+Dredge's house aesthetic: near-black canvas (`--bg #101014`), a single amber
 accent (`--accent #e0a458`), system-ui for chrome and a monospace stack with
 `tabular-nums` for every number that moves. Micro-labels are the app's signature
 device — 10px, uppercase, `letter-spacing .08em`, `--muted` — borrowed from the

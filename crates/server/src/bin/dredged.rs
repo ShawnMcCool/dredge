@@ -1,6 +1,6 @@
-// earwormd — headless earworm: real engine + control socket.
-// Usage: earwormd [--socket <path>] [--db <path>]
-// Defaults: $XDG_RUNTIME_DIR/earworm.sock, ~/.local/share/earworm/earworm.db
+// dredged — headless dredge: real engine + control socket.
+// Usage: dredged [--socket <path>] [--db <path>]
+// Defaults: $XDG_RUNTIME_DIR/dredge.sock, ~/.local/share/dredge/dredge.db
 
 use practice::store::Store;
 use server::app::App;
@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 fn default_db_path() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(std::env::temp_dir)
-        .join("earworm/earworm.db")
+        .join("dredge/dredge.db")
 }
 
 fn parse_args() -> Result<(PathBuf, PathBuf), String> {
@@ -23,7 +23,7 @@ fn parse_args() -> Result<(PathBuf, PathBuf), String> {
             "--socket" => socket = PathBuf::from(args.next().ok_or("--socket needs a path")?),
             "--db" => db = PathBuf::from(args.next().ok_or("--db needs a path")?),
             "--help" | "-h" => {
-                println!("usage: earwormd [--socket <path>] [--db <path>]");
+                println!("usage: dredged [--socket <path>] [--db <path>]");
                 std::process::exit(0);
             }
             other => return Err(format!("unknown argument: {other}")),
@@ -33,32 +33,32 @@ fn parse_args() -> Result<(PathBuf, PathBuf), String> {
 }
 
 fn main() {
-    server::logging::redirect_if_headless("earwormd");
+    server::logging::redirect_if_headless("dredged");
     let (socket_path, db_path) = match parse_args() {
         Ok(paths) => paths,
         Err(e) => {
-            eprintln!("earwormd: {e}");
+            eprintln!("dredged: {e}");
             std::process::exit(2);
         }
     };
 
     if let Some(dir) = db_path.parent() {
         if let Err(e) = std::fs::create_dir_all(dir) {
-            eprintln!("earwormd: cannot create data dir {}: {e}", dir.display());
+            eprintln!("dredged: cannot create data dir {}: {e}", dir.display());
             std::process::exit(1);
         }
     }
     let store = match Store::open(&db_path) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("earwormd: cannot open db {}: {e}", db_path.display());
+            eprintln!("dredged: cannot open db {}: {e}", db_path.display());
             std::process::exit(1);
         }
     };
     let engine = match engine::Engine::start() {
         Ok(e) => e,
         Err(e) => {
-            eprintln!("earwormd: cannot start audio engine: {e}");
+            eprintln!("dredged: cannot start audio engine: {e}");
             std::process::exit(1);
         }
     };
@@ -72,14 +72,14 @@ fn main() {
         Ok(h) => h,
         Err(e) => {
             eprintln!(
-                "earwormd: cannot bind socket {}: {e}",
+                "dredged: cannot bind socket {}: {e}",
                 socket_path.display()
             );
             std::process::exit(1);
         }
     };
     eprintln!(
-        "earwormd: listening on {} (db: {})",
+        "dredged: listening on {} (db: {})",
         socket_path.display(),
         db_path.display()
     );

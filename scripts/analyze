@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# earworm audio analysis wrapper.
+# dredge audio analysis wrapper.
 #
-# Bootstraps its own uv venv on first run (~/.local/share/earworm/analyze-venv,
-# override with $EARWORM_ANALYZE_VENV), then execs analyze_impl.py inside it.
+# Bootstraps its own uv venv on first run (~/.local/share/dredge/analyze-venv,
+# override with $DREDGE_ANALYZE_VENV), then execs analyze_impl.py inside it.
 #
 # Contract: stdout carries EXACTLY ONE JSON object (the analysis result);
 # every diagnostic — including bootstrap output — goes to stderr.
 set -euo pipefail
 
-VENV="${EARWORM_ANALYZE_VENV:-$HOME/.local/share/earworm/analyze-venv}"
+VENV="${DREDGE_ANALYZE_VENV:-$HOME/.local/share/dredge/analyze-venv}"
 PY="$VENV/bin/python"
 
 # Portable absolute-dir of this script. macOS ships BSD readlink, which has no
@@ -22,23 +22,23 @@ done
 HERE="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 
 if [ ! -x "$PY" ] || ! "$PY" -c "import beat_this" >/dev/null 2>&1; then
-  echo "earworm-analyze: bootstrapping venv at $VENV (first run — downloads torch, may take minutes)" >&2
+  echo "dredge-analyze: bootstrapping venv at $VENV (first run — downloads torch, may take minutes)" >&2
   uv venv --python 3.12 "$VENV" 1>&2
   uv pip install --python "$PY" \
     "beat_this @ git+https://github.com/CPJKU/beat_this" \
     torch soundfile librosa einops rotary-embedding-torch 1>&2
-  echo "earworm-analyze: venv ready" >&2
+  echo "dredge-analyze: venv ready" >&2
 fi
 
 # analyze_impl.py sits next to this wrapper in a repo checkout, or under
-# /usr/lib/earworm when installed from a package (the wrapper lands on PATH as
-# /usr/bin/earworm-analyze, away from its impls). songformer_impl.py is resolved
+# /usr/lib/dredge when installed from a package (the wrapper lands on PATH as
+# /usr/bin/dredge-analyze, away from its impls). songformer_impl.py is resolved
 # by analyze_impl.py relative to its own location, so co-location is enough.
 IMPL=""
-for d in "$HERE" "${EARWORM_IMPL_DIR:-}" /usr/lib/earworm /usr/local/lib/earworm /opt/homebrew/lib/earworm; do
+for d in "$HERE" "${DREDGE_IMPL_DIR:-}" /usr/lib/dredge /usr/local/lib/dredge /opt/homebrew/lib/dredge; do
   [ -n "$d" ] || continue
   if [ -f "$d/analyze_impl.py" ]; then IMPL="$d/analyze_impl.py"; break; fi
 done
-[ -n "$IMPL" ] || { echo "earworm-analyze: analyze_impl.py not found (looked in $HERE, \$EARWORM_IMPL_DIR, /usr/lib/earworm, /usr/local/lib/earworm, /opt/homebrew/lib/earworm)" >&2; exit 1; }
+[ -n "$IMPL" ] || { echo "dredge-analyze: analyze_impl.py not found (looked in $HERE, \$DREDGE_IMPL_DIR, /usr/lib/dredge, /usr/local/lib/dredge, /opt/homebrew/lib/dredge)" >&2; exit 1; }
 
 exec "$PY" "$IMPL" "$@"

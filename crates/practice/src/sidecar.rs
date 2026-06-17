@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 /// Everything a user could lose, mirrored as plain JSON next to the audio
-/// file: `<audio path>.earworm.json`. Written atomically (tmp + rename).
+/// file: `<audio path>.dredge.json`. Written atomically (tmp + rename).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Sidecar {
     pub version: u32,
@@ -15,7 +15,7 @@ pub struct Sidecar {
 
 pub fn sidecar_path(audio_path: &Path) -> PathBuf {
     let mut os = audio_path.as_os_str().to_owned();
-    os.push(".earworm.json");
+    os.push(".dredge.json");
     PathBuf::from(os)
 }
 
@@ -77,10 +77,10 @@ mod tests {
     }
 
     #[test]
-    fn path_appends_earworm_json() {
+    fn path_appends_dredge_json() {
         assert_eq!(
             sidecar_path(Path::new("/x/song.flac")),
-            PathBuf::from("/x/song.flac.earworm.json")
+            PathBuf::from("/x/song.flac.dredge.json")
         );
     }
 
@@ -127,6 +127,6 @@ mod tests {
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        assert_eq!(entries, vec!["song.flac.earworm.json".to_string()]);
+        assert_eq!(entries, vec!["song.flac.dredge.json".to_string()]);
     }
 }

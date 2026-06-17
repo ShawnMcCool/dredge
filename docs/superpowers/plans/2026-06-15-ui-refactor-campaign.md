@@ -2,7 +2,7 @@
 
 > **For agentic workers:** Execute task-by-task. Steps use checkbox (`- [ ]`) syntax. After every phase: run `pnpm vitest run` + `pnpm svelte-check --threshold error` from `apps/desktop`, then commit on `main`.
 
-**Goal:** Bring the Earworm desktop frontend to "designed-from-scratch" quality by completing the half-built widget kit, breaking up the two god-files (`stores.ts`, `Waveform.svelte`), and sealing remaining seams — without changing behavior.
+**Goal:** Bring the Dredge desktop frontend to "designed-from-scratch" quality by completing the half-built widget kit, breaking up the two god-files (`stores.ts`, `Waveform.svelte`), and sealing remaining seams — without changing behavior.
 
 **Architecture:** The dispatch-mirror architecture stays. Work is additive-then-retrofit: build missing primitives first, then retrofit call sites; split god-modules behind unchanged public imports (barrel re-exports) so consuming components don't change; decompose the waveform into pure logic + layers. Every phase keeps vitest + svelte-check green.
 

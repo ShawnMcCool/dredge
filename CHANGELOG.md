@@ -1,6 +1,6 @@
 # Changelog
 
-All notable user-facing changes to earworm, newest first. Entries are written
+All notable user-facing changes to dredge, newest first. Entries are written
 at release time by `scripts/ship release`.
 
 ## v0.4.0 — 2026-06-17
@@ -33,7 +33,7 @@ at release time by `scripts/ship release`.
 
 ### New
 
-- **`earworm-doctor`** — a terminal command that lists the optional tools (ffmpeg, analysis, stem separation), shows which are installed, and prints the command to add anything that's missing. The desktop app shows the same under Settings → capabilities.
+- **`dredge-doctor`** — a terminal command that lists the optional tools (ffmpeg, analysis, stem separation), shows which are installed, and prints the command to add anything that's missing. The desktop app shows the same under Settings → capabilities.
 
 ### Improved
 
@@ -41,7 +41,7 @@ at release time by `scripts/ship release`.
 
 ### Fixed
 
-- **Export file names** — the file-name field now shows the extension earworm adds (`.wav` / `.mp3`), and typing one yourself no longer doubles it (no more `track.mp3.mp3`).
+- **Export file names** — the file-name field now shows the extension dredge adds (`.wav` / `.mp3`), and typing one yourself no longer doubles it (no more `track.mp3.mp3`).
 
 ## v0.2.1 — 2026-06-16
 
@@ -54,7 +54,7 @@ at release time by `scripts/ship release`.
 ### New
 
 - **Export your practice** — render a loop or the whole song to WAV or MP3 at the tempo and pitch you've been drilling at, with your stem mix and bass-focus baked in. There's a new "export" tab in the right-hand panel.
-- **Open video files** — load an mp4 or mov and earworm pulls the audio track straight out of it.
+- **Open video files** — load an mp4 or mov and dredge pulls the audio track straight out of it.
 - **See what's installed** — Settings now has a capabilities panel showing whether stem separation, structure analysis, and MP3 export are ready on your machine, with a full-or-partial summary at a glance.
 
 ### Improved
@@ -68,7 +68,7 @@ at release time by `scripts/ship release`.
 
 - **Export to a `~` path works** — typing `~/Music` now lands in your home folder instead of erroring or creating a stray folder; a relative path is rejected with a clear message.
 - **Export checks the folder and file name up front**, so a bad path fails instantly instead of half-way through a render.
-- **Some mp4/mov files decode correctly now** — earworm reads the audio track instead of the container's default track.
+- **Some mp4/mov files decode correctly now** — dredge reads the audio track instead of the container's default track.
 
 ### Removed
 

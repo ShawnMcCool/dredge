@@ -9,7 +9,7 @@ const MAX_LOG_BYTES: u64 = 1_000_000;
 pub fn log_path() -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(std::env::temp_dir)
-        .join("earworm/earworm.log")
+        .join("dredge/dredge.log")
 }
 
 /// Redirect stdout+stderr to the log file if they aren't a terminal.

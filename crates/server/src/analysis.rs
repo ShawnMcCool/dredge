@@ -40,8 +40,8 @@ impl ScriptAnalyzer {
 }
 
 /// Resolution order: `../../scripts/analyze` relative to the running
-/// executable (`target/{debug,release}/earwormd` → repo root), then
-/// `$EARWORM_ANALYZE`, then an `earworm-analyze` on PATH.
+/// executable (`target/{debug,release}/dredged` → repo root), then
+/// `$DREDGE_ANALYZE`, then an `dredge-analyze` on PATH.
 fn resolve_script() -> Option<PathBuf> {
     if let Some(candidate) = std::env::current_exe()
         .ok()
@@ -51,14 +51,14 @@ fn resolve_script() -> Option<PathBuf> {
             return candidate.canonicalize().ok();
         }
     }
-    if let Some(env) = std::env::var_os("EARWORM_ANALYZE") {
+    if let Some(env) = std::env::var_os("DREDGE_ANALYZE") {
         let p = PathBuf::from(env);
         if p.is_file() {
             return Some(p);
         }
     }
     crate::stems::find_in_path(
-        "earworm-analyze",
+        "dredge-analyze",
         &std::env::var_os("PATH").unwrap_or_default(),
     )
 }
@@ -66,7 +66,7 @@ fn resolve_script() -> Option<PathBuf> {
 impl Analyzer for ScriptAnalyzer {
     fn analyze(&self, audio: &Path, force_cpu: bool) -> Result<Analysis, String> {
         let script = self.script.as_ref().ok_or(
-            "analysis script not found — expected <repo>/scripts/analyze (or set $EARWORM_ANALYZE)",
+            "analysis script not found — expected <repo>/scripts/analyze (or set $DREDGE_ANALYZE)",
         )?;
         let mut cmd = std::process::Command::new(script);
         cmd.arg(audio);
@@ -168,11 +168,11 @@ pub fn analyze_with_recovery(
 /// mirrors `scripts/analyze_impl.py::songformer_python`.
 pub fn songformer_venv_present() -> bool {
     use std::os::unix::fs::PermissionsExt;
-    let venv = std::env::var_os("EARWORM_SONGFORMER_VENV")
+    let venv = std::env::var_os("DREDGE_SONGFORMER_VENV")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| {
             let home = std::env::var_os("HOME").unwrap_or_default();
-            std::path::PathBuf::from(home).join(".local/share/earworm/songformer-venv")
+            std::path::PathBuf::from(home).join(".local/share/dredge/songformer-venv")
         });
     let py = venv.join("bin/python");
     std::fs::metadata(&py)

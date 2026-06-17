@@ -1,8 +1,8 @@
-# earworm v1 — Plan 3: `server` crate (dispatcher + control socket)
+# dredge v1 — Plan 3: `server` crate (dispatcher + control socket)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** One dispatch layer joining `practice` (store, plan runner, scheduler) to `engine` (audio), exposed over a JSON-lines Unix socket — producing `earwormd`, a fully scriptable headless looper that runs practice plans.
+**Goal:** One dispatch layer joining `practice` (store, plan runner, scheduler) to `engine` (audio), exposed over a JSON-lines Unix socket — producing `dredged`, a fully scriptable headless looper that runs practice plans.
 
 **Architecture:** `App` owns the `Store`, an `AudioControl` (trait over the real `Engine` or a test mock), the open song, and the active `PlanRunner`. Every operation is a `dispatch(Request) -> Response` call; the socket and (later) Tauri share it. A pump loop calls `App::tick()` ~every 50 ms: it drains engine events, drives the plan runner (loop-wrap = rep done), and returns events for broadcast to subscribed socket clients. std-lib threading + `Arc<Mutex<App>>` — no async runtime.
 
@@ -10,7 +10,7 @@
 
 **Known engine API facts (from Plan 2 as built):** `engine::Engine::start() -> Result<Engine>`, `.load(SongBuffer)`, `.send(EngineCmd)` (`&mut`), `.poll_events() -> Vec<EngineEvent>`; `EngineCmd::{Play, Pause, SeekSecs(f64), SetLoopSecs{start,end}, ClearLoop, SetRate(f64), SetPitchScale(f64), BassFocus(bool), Mute(bool)}`; `EngineEvent::{Position{secs,rate,playing}, LoopWrapped, Finished}`; `engine::decode::{decode_file, file_hash}`; `engine::peaks::load_or_compute`. Verify signatures against the source before coding.
 
-**Spec:** `docs/superpowers/specs/2026-06-12-earworm-design.md`
+**Spec:** `docs/superpowers/specs/2026-06-12-dredge-design.md`
 
 ---
 
@@ -383,7 +383,7 @@ pub fn default_socket_path() -> PathBuf {
     let dir = std::env::var_os("XDG_RUNTIME_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(std::env::temp_dir);
-    dir.join("earworm.sock")
+    dir.join("dredge.sock")
 }
 
 pub struct SocketServer {
@@ -414,17 +414,17 @@ git add -A && git commit -m "feat(server): json-lines unix socket with event bro
 
 ---
 
-### Task 7: `earwormd` binary
+### Task 7: `dredged` binary
 
 **Files:**
-- Create: `crates/server/src/bin/earwormd.rs`
+- Create: `crates/server/src/bin/dredged.rs`
 
 - [x] **Step 1: Implement**
 
 ```rust
-// earwormd — headless earworm: real engine + control socket.
-// Usage: earwormd [--socket <path>] [--db <path>]
-// Defaults: $XDG_RUNTIME_DIR/earworm.sock, ~/.local/share/earworm/earworm.db
+// dredged — headless dredge: real engine + control socket.
+// Usage: dredged [--socket <path>] [--db <path>]
+// Defaults: $XDG_RUNTIME_DIR/dredge.sock, ~/.local/share/dredge/dredge.db
 ```
 Parse args by hand (no clap). Create data dir, `Store::open`, `engine::Engine::start()`, `App::new`, `serve`, then park the main thread (`loop { thread::sleep(1s) }`; Ctrl-C kills it, ServerHandle Drop cleanup is best-effort).
 
@@ -432,7 +432,7 @@ Parse args by hand (no clap). Create data dir, `Store::open`, `engine::Engine::s
 
 ```bash
 cargo build -p server --release
-./target/release/earwormd --socket /tmp/ew-test.sock --db /tmp/ew-test.db &
+./target/release/dredged --socket /tmp/ew-test.sock --db /tmp/ew-test.db &
 sleep 1
 printf '%s\n' '{"id":1,"cmd":"song.list"}' | timeout 3 nc -U /tmp/ew-test.sock -q1
 kill %1
@@ -444,7 +444,7 @@ Expected: `{"id":1,"ok":true,"data":[]}`. (If `nc` lacks `-q`, use a tiny python
 Run: `cargo test && cargo clippy --workspace -- -D warnings && cargo fmt`
 
 ```bash
-git add -A && git commit -m "feat(server): earwormd headless binary"
+git add -A && git commit -m "feat(server): dredged headless binary"
 ```
 
 ---

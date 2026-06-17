@@ -72,7 +72,7 @@ fn timed_open(
 #[ignore = "timing harness, run explicitly with --ignored --nocapture"]
 fn time_song_open() {
     let dir = tempfile::tempdir().unwrap();
-    // keep the peaks cache (~/.cache/earworm/peaks) inside the tempdir
+    // keep the peaks cache (~/.cache/dredge/peaks) inside the tempdir
     std::env::set_var("XDG_CACHE_HOME", dir.path().join("cache"));
 
     let plain = dir.path().join("plain.wav");
@@ -81,14 +81,14 @@ fn time_song_open() {
     write_44k_wav(&stemmed, 0.9);
 
     let mut app = App::new(
-        Store::open(&dir.path().join("earworm.db")).unwrap(),
+        Store::open(&dir.path().join("dredge.db")).unwrap(),
         Box::new(MockEngine::default()),
         Arc::new(FakeSeparator),
     );
     let stems_dir = dir.path().join("stems");
     app.set_stems_dir(stems_dir.clone());
 
-    let socket = dir.path().join("earworm.sock");
+    let socket = dir.path().join("dredge.sock");
     let _handle = serve(Arc::new(Mutex::new(app)), &socket, |_| {}).unwrap();
     let mut stream = UnixStream::connect(&socket).unwrap();
     stream

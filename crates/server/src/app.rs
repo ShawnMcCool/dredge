@@ -142,7 +142,7 @@ fn open_stem(path: &Path) -> Result<engine::buffer::SongBuffer, String> {
     if header_rate != engine::buffer::SAMPLE_RATE {
         if let Err(e) = crate::stems::rewrite_wav_48k(path, &buf.data) {
             eprintln!(
-                "earworm: stem cache upgrade failed for {}: {e}",
+                "dredge: stem cache upgrade failed for {}: {e}",
                 path.display()
             );
         }
@@ -596,7 +596,7 @@ impl App {
                         let sections = match self.commit_analysis_sections(song_id, &a.sections) {
                             Ok(s) => serde_json::to_value(s).unwrap_or(Value::Null),
                             Err(e) => {
-                                eprintln!("earworm: auto-save sections after analysis: {e}");
+                                eprintln!("dredge: auto-save sections after analysis: {e}");
                                 Value::Null
                             }
                         };
@@ -617,7 +617,7 @@ impl App {
         while let Ok(mut run) = self.profile_rx.try_recv() {
             match self.store.save_profile(&run) {
                 Ok(started) => run.started_at = started,
-                Err(e) => eprintln!("earworm: profile save failed: {e}"),
+                Err(e) => eprintln!("dredge: profile save failed: {e}"),
             }
             if let Ok(data) = serde_json::to_value(&run) {
                 events.push(Event {
@@ -959,7 +959,7 @@ impl App {
         }
         if !self.analyzer.is_available() {
             return Err(
-                "analysis script not found — expected <repo>/scripts/analyze (or set $EARWORM_ANALYZE)"
+                "analysis script not found — expected <repo>/scripts/analyze (or set $DREDGE_ANALYZE)"
                     .into(),
             );
         }
@@ -1114,16 +1114,16 @@ impl App {
         // best-effort off-DB cleanup; the DB is the source of truth, so a
         // failed file removal logs but does not fail the command
         if let Err(e) = engine::peaks::remove_cache(&song.file_hash) {
-            eprintln!("earworm: peaks cleanup failed for {}: {e}", song.file_hash);
+            eprintln!("dredge: peaks cleanup failed for {}: {e}", song.file_hash);
         }
         let stems = self.stems_cache_dir(&song.file_hash);
         if let Err(e) = std::fs::remove_dir_all(&stems) {
             if e.kind() != std::io::ErrorKind::NotFound {
-                eprintln!("earworm: stems cleanup failed for {}: {e}", song.file_hash);
+                eprintln!("dredge: stems cleanup failed for {}: {e}", song.file_hash);
             }
         }
         if let Err(e) = practice::sidecar::remove_sidecar(Path::new(&song.path)) {
-            eprintln!("earworm: sidecar cleanup failed for {}: {e}", song.path);
+            eprintln!("dredge: sidecar cleanup failed for {}: {e}", song.path);
         }
 
         let _ = self.job_tx.send(Event {
@@ -1643,7 +1643,7 @@ impl App {
             Ok(())
         };
         if let Err(e) = write() {
-            eprintln!("earworm: sidecar write failed for song {}: {e}", song_id.0);
+            eprintln!("dredge: sidecar write failed for song {}: {e}", song_id.0);
         }
     }
 }
@@ -1656,7 +1656,7 @@ impl App {
 /// fixed `audio.wav` stem keeps Demucs's file-stem-derived output dir stable.
 fn canonical_wav_for_tools(src: &Path) -> Result<(tempfile::TempDir, PathBuf), String> {
     let dir = tempfile::Builder::new()
-        .prefix("earworm-decode-")
+        .prefix("dredge-decode-")
         .tempdir()
         .map_err(|e| format!("cannot create decode temp dir: {e}"))?;
     let wav = dir.path().join("audio.wav");
@@ -1664,11 +1664,11 @@ fn canonical_wav_for_tools(src: &Path) -> Result<(tempfile::TempDir, PathBuf), S
     Ok((dir, wav))
 }
 
-/// `~/.local/share/earworm/stems/<file_hash>/{vocals,drums,bass,other}.wav`
+/// `~/.local/share/dredge/stems/<file_hash>/{vocals,drums,bass,other}.wav`
 fn default_stems_dir() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(std::env::temp_dir)
-        .join("earworm/stems")
+        .join("dredge/stems")
 }
 
 #[cfg(test)]
@@ -1690,8 +1690,8 @@ mod export_dir_tests {
     #[test]
     fn passes_absolute_paths_through() {
         assert_eq!(
-            resolve_export_dir("/tmp/earworm-out").unwrap(),
-            std::path::PathBuf::from("/tmp/earworm-out")
+            resolve_export_dir("/tmp/dredge-out").unwrap(),
+            std::path::PathBuf::from("/tmp/dredge-out")
         );
     }
 

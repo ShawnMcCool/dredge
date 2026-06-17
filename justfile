@@ -1,4 +1,4 @@
-# earworm task runner — `just` lists recipes
+# dredge task runner — `just` lists recipes
 
 default:
     @just --list
@@ -8,7 +8,7 @@ dev:
     cd apps/desktop && pnpm tauri dev
 
 # Release build of everything (headless daemon + UI binary + .deb bundle)
-# Daemon first: the .deb bundle's files-map pulls in target/release/earwormd.
+# Daemon first: the .deb bundle's files-map pulls in target/release/dredged.
 build:
     cargo build -p server --release
     cd apps/desktop && pnpm tauri build
@@ -28,18 +28,18 @@ tarball: build
     #!/usr/bin/env bash
     set -euo pipefail
     ver=$(python3 -c "import json;print(json.load(open('apps/desktop/src-tauri/tauri.conf.json'))['version'])")
-    name="earworm-${ver}-x86_64-linux"
+    name="dredge-${ver}-x86_64-linux"
     stage="dist/${name}"
     rm -rf "$stage"
-    install -Dm755 target/release/earworm                       "$stage/usr/bin/earworm"
-    install -Dm755 target/release/earwormd                      "$stage/usr/bin/earwormd"
-    install -Dm755 scripts/analyze                              "$stage/usr/bin/earworm-analyze"
-    install -Dm755 scripts/earworm-enable-ml                    "$stage/usr/bin/earworm-enable-ml"
-    install -Dm755 scripts/earworm-doctor                       "$stage/usr/bin/earworm-doctor"
-    install -Dm644 scripts/analyze_impl.py                      "$stage/usr/lib/earworm/analyze_impl.py"
-    install -Dm644 scripts/songformer_impl.py                   "$stage/usr/lib/earworm/songformer_impl.py"
-    install -Dm644 earworm.desktop                              "$stage/usr/share/applications/earworm.desktop"
-    install -Dm644 apps/desktop/src-tauri/icons/128x128@2x.png  "$stage/usr/share/icons/hicolor/256x256/apps/earworm.png"
+    install -Dm755 target/release/dredge                       "$stage/usr/bin/dredge"
+    install -Dm755 target/release/dredged                      "$stage/usr/bin/dredged"
+    install -Dm755 scripts/analyze                              "$stage/usr/bin/dredge-analyze"
+    install -Dm755 scripts/dredge-enable-ml                    "$stage/usr/bin/dredge-enable-ml"
+    install -Dm755 scripts/dredge-doctor                       "$stage/usr/bin/dredge-doctor"
+    install -Dm644 scripts/analyze_impl.py                      "$stage/usr/lib/dredge/analyze_impl.py"
+    install -Dm644 scripts/songformer_impl.py                   "$stage/usr/lib/dredge/songformer_impl.py"
+    install -Dm644 dredge.desktop                              "$stage/usr/share/applications/dredge.desktop"
+    install -Dm644 apps/desktop/src-tauri/icons/128x128@2x.png  "$stage/usr/share/icons/hicolor/256x256/apps/dredge.png"
     tar -C dist -czf "dist/${name}.tar.gz" "$name"
     rm -rf "$stage"
     echo "built dist/${name}.tar.gz"
@@ -57,13 +57,13 @@ artifacts: package tarball checksums
 
 # Run the release desktop app (builds if missing)
 run:
-    @test -x target/release/earworm || just build
-    target/release/earworm
+    @test -x target/release/dredge || just build
+    target/release/dredge
 
 # Run the headless daemon (release)
 daemon:
-    @test -x target/release/earwormd || cargo build -p server --release
-    target/release/earwormd
+    @test -x target/release/dredged || cargo build -p server --release
+    target/release/dredged
 
 # Cut a release: bump the canonical version + tag (CI builds the artifacts), e.g.:
 #   just release 0.2.0
@@ -85,7 +85,7 @@ release version:
         f.write("\n")
     subprocess.run(["git", "add", conf], check=True)
     subprocess.run(["git", "commit", "-m", f"chore(release): v{v}"], check=True)
-    subprocess.run(["git", "tag", "-a", f"v{v}", "-m", f"earworm v{v}"], check=True)
+    subprocess.run(["git", "tag", "-a", f"v{v}", "-m", f"dredge v{v}"], check=True)
     print(f"tagged v{v} — push with: git push origin main --follow-tags")
 
 # All tests: cargo workspace + vitest
@@ -114,9 +114,9 @@ cmd json:
     import os, socket, sys
     s = socket.socket(socket.AF_UNIX)
     try:
-        s.connect(os.environ["XDG_RUNTIME_DIR"] + "/earworm.sock")
+        s.connect(os.environ["XDG_RUNTIME_DIR"] + "/dredge.sock")
     except OSError:
-        sys.exit("earworm is not running (no socket)")
+        sys.exit("dredge is not running (no socket)")
     s.sendall(b'{{json}}' + b"\n")
     print(s.recv(1 << 20).decode(), end="")
 

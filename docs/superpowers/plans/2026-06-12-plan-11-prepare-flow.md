@@ -1,4 +1,4 @@
-# earworm — Plan 11: one-button song prepare with progress modal
+# dredge — Plan 11: one-button song prepare with progress modal
 
 > **For agentic workers:** Use superpowers:executing-plans. Checkboxes track steps.
 
@@ -16,8 +16,8 @@
 ### Task 2: Server — `library_changed` + small affordances
 
 - [x] `song.import` (incl. capture.grab path) and `song.delete`-if-exists push a `library_changed` event through the existing job-events mpsc so socket-driven imports refresh the UI. Test: dispatch import → `tick()` events include `library_changed` (extend an existing app test file). *(No `song.delete` command exists, so only `song.import` emits.)*
-- [x] Desktop `main.rs`: honor `EARWORM_DB` env for the store path (dev/test affordance beside `EARWORM_OPEN`).
-- [x] `cargo test -p server` green. Commit: `feat(server): library_changed event + EARWORM_DB affordance`
+- [x] Desktop `main.rs`: honor `DREDGE_DB` env for the store path (dev/test affordance beside `DREDGE_OPEN`).
+- [x] `cargo test -p server` green. Commit: `feat(server): library_changed event + DREDGE_DB affordance`
 
 ### Task 3: Prepare flow (stores + modal component + button)
 
@@ -30,13 +30,13 @@
 
 Setup (avoids touching the real library, exercises the real pipeline):
 ```bash
-# seed a temp db with a quick song via headless earwormd, then kill it
+# seed a temp db with a quick song via headless dredged, then kill it
 ffmpeg -y -loglevel error -f lavfi -i "sine=frequency=220:duration=20" -af volume=4 -ac 2 /tmp/prep-song.wav
-target/release/earwormd --socket /tmp/prep.sock --db /tmp/prep.db &  # import via python socket helper, then kill
+target/release/dredged --socket /tmp/prep.sock --db /tmp/prep.db &  # import via python socket helper, then kill
 # launch the UI on that db with the song auto-opened
-EARWORM_DB=/tmp/prep.db EARWORM_OPEN=1 target/release/earworm &
+DREDGE_DB=/tmp/prep.db DREDGE_OPEN=1 target/release/dredge &
 ```
-- [x] Trigger PREPARE without a mouse: `hyprctl dispatch sendshortcut ", a, address:$ADDR"` (focus the window first; if sendshortcut is unavailable in this Hyprland, fall back to a temporary `EARWORM_AUTOPREPARE=1` env read in stores init — and keep it, undocumented, it's harmless). *(sendshortcut worked — no fallback needed; keypress lands ~1 s after dispatch.)*
+- [x] Trigger PREPARE without a mouse: `hyprctl dispatch sendshortcut ", a, address:$ADDR"` (focus the window first; if sendshortcut is unavailable in this Hyprland, fall back to a temporary `DREDGE_AUTOPREPARE=1` env read in stores init — and keep it, undocumented, it's harmless). *(sendshortcut worked — no fallback needed; keypress lands ~1 s after dispatch.)*
 - [x] Screenshot the modal mid-run (analysis running) and after completion (both ✓, then auto-closed → stem mixer + beat grid visible). Read the PNGs yourself; iterate until the modal matches the design language. Leave as /tmp/ew-prep-*.png. Note: with the user's game using VRAM, SongFormer may fall back to novelty — fine, the modal still shows analysis ✓. *(SongFormer actually ran; modal matched on first pass — no fixes.)*
 - [x] Kill app, clean temp files. Commit: `fix(desktop): prepare modal verification` (if fixes) *(no fixes needed)*
 

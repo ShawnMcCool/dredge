@@ -130,7 +130,7 @@
 </dl>
 <p class="sig">
   One Rust core, two front ends — this Tauri desktop app and a headless daemon
-  (<span class="mono">earwormd</span>) — over a single command surface. Ear-first practice,
+  (<span class="mono">dredged</span>) — over a single command surface. Ear-first practice,
   built for Linux.
 </p>
 

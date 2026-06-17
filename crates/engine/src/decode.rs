@@ -39,7 +39,7 @@ pub fn decode_file(path: &Path) -> Result<SongBuffer> {
 /// the message so the failure is legible when ffmpeg is absent too.
 fn decode_via_ffmpeg(src: &Path, primary: &Error) -> Result<SongBuffer> {
     let tmp = tempfile::Builder::new()
-        .prefix("earworm-ffmpeg-")
+        .prefix("dredge-ffmpeg-")
         .suffix(".wav")
         .tempfile()
         .map_err(|e| Error::Decode(format!("{primary}; ffmpeg temp file: {e}")))?;

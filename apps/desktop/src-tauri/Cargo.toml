@@ -1,12 +1,12 @@
 [package]
-name = "earworm-desktop"
+name = "dredge-desktop"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 description = "Ear-first practice looper: loop sections, slow them down pitch-preserving, and drill passages with a live tempo trainer."
 
 [[bin]]
-name = "earworm"
+name = "dredge"
 path = "src/main.rs"
 
 [features]

@@ -1,4 +1,4 @@
-# earworm — ear-first practice looper (design)
+# dredge — ear-first practice looper (design)
 
 **Date:** 2026-06-12
 **Status:** approved design, pre-implementation
@@ -78,11 +78,11 @@ The novel layer. Pure logic + persistence; no audio types.
   pattern)`, `dwell(rate)` — interpreted by the plan runner.
 - Persistence: SQLite via `rusqlite`, migrations embedded. Annotations
   (sections/loops/plans) mirror to a plain-JSON sidecar
-  (`<song>.earworm.json`) on every save — git-able, shareable, survives DB
+  (`<song>.dredge.json`) on every save — git-able, shareable, survives DB
   loss.
 
 ### `server`
-- JSON-lines control socket at `$XDG_RUNTIME_DIR/earworm.sock`, mpv-style:
+- JSON-lines control socket at `$XDG_RUNTIME_DIR/dredge.sock`, mpv-style:
   `{"cmd":"loop.set","start":83.2,"end":91.7}`, `{"cmd":"rate","value":0.85}`,
   `{"cmd":"plan.start","id":...}`, plus an event subscription stream.
 - **One dispatch layer** shared by socket and Tauri commands — the UI is just

@@ -20,7 +20,7 @@ fn write_test_wav(path: &std::path::Path) {
 
 #[test]
 fn decodes_resamples_and_upmixes() {
-    let dir = std::env::temp_dir().join("earworm-decode-test");
+    let dir = std::env::temp_dir().join("dredge-decode-test");
     std::fs::create_dir_all(&dir).unwrap();
     let wav = dir.join("sine.wav");
     write_test_wav(&wav);
@@ -43,7 +43,7 @@ fn decodes_resamples_and_upmixes() {
 fn decodes_native_48k_stereo_without_resampling() {
     // 48 kHz stereo exercises the no-resample fast path (to_stereo_interleaved):
     // left ramps up, right is constant, so channels must stay distinct.
-    let dir = std::env::temp_dir().join("earworm-decode-48k");
+    let dir = std::env::temp_dir().join("dredge-decode-48k");
     std::fs::create_dir_all(&dir).unwrap();
     let wav = dir.join("stereo48.wav");
     let spec = hound::WavSpec {
@@ -117,7 +117,7 @@ fn falls_back_to_ffmpeg_for_containers_symphonia_cannot_demux() {
 fn decode_to_wav_writes_a_canonical_48k_stereo_file() {
     // A 44.1k mono source must come out as a readable 48k stereo WAV — the
     // canonical PCM external tools (analyze, demucs) consume.
-    let dir = std::env::temp_dir().join("earworm-decode-to-wav");
+    let dir = std::env::temp_dir().join("dredge-decode-to-wav");
     std::fs::create_dir_all(&dir).unwrap();
     let src = dir.join("src.wav");
     write_test_wav(&src);

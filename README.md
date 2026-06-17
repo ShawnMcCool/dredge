@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/earworm.png" alt="earworm — a waveform with detected song sections, a stem mixer, a tuner, and the song-structure panel" width="820">
+  <img src="docs/dredge.png" alt="dredge — a waveform with detected song sections, a stem mixer, a tuner, and the song-structure panel" width="820">
 </p>
 
-<h1 align="center">earworm</h1>
+<h1 align="center">dredge</h1>
 
 <p align="center">
   An ear-first practice looper for Linux — loop a section, slow it down without
@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ShawnMcCool/earworm/releases">Releases</a> ·
+  <a href="https://github.com/ShawnMcCool/dredge/releases">Releases</a> ·
   <a href="#install">Install</a> ·
   <a href="DEVELOPMENT.md">Build &amp; develop</a>
 </p>
@@ -40,33 +40,33 @@ Linux only. The audio engine is PipeWire-native (PipeWire 1.0+ required; no ALSA
 **Arch / Arch-based**
 
 ```bash
-yay -S earworm-bin      # prebuilt; or `yay -S earworm` to build from source
+yay -S dredge-bin      # prebuilt; or `yay -S dredge` to build from source
 ```
 
 **Debian / Ubuntu** (24.04+ / Debian 13+)
 
-Download the latest `earworm_*_amd64.deb` from the
-[releases page](https://github.com/ShawnMcCool/earworm/releases), then:
+Download the latest `dredge_*_amd64.deb` from the
+[releases page](https://github.com/ShawnMcCool/dredge/releases), then:
 
 ```bash
-sudo apt install ./earworm_*_amd64.deb
+sudo apt install ./dredge_*_amd64.deb
 ```
 
 `apt` pulls the runtime libraries automatically — the whole looper works with nothing else installed.
 
-**Optional tools** unlock extra features. Run **`earworm-doctor`** any time to see what's installed and the command to add what's missing:
+**Optional tools** unlock extra features. Run **`dredge-doctor`** any time to see what's installed and the command to add what's missing:
 
 | Feature | Needs |
 |---------|-------|
 | MP3 export · mkv/webm containers · stem export | `ffmpeg` — `sudo apt install ffmpeg` |
-| Beat / section analysis · stem separation | `uv` + [`earworm-enable-ml`](#optional-ml-features) |
+| Beat / section analysis · stem separation | `uv` + [`dredge-enable-ml`](#optional-ml-features) |
 
 ## Optional ML features
 
 Analysis and stem separation are off by default and self-bootstrap on first use. To set them up ahead of time (needs [`uv`](https://docs.astral.sh/uv/) on `PATH`):
 
 ```bash
-earworm-enable-ml all        # analyze + songformer + stems (demucs)
+dredge-enable-ml all        # analyze + songformer + stems (demucs)
 ```
 
 A GPU is optional — CPU works, just slower. The PyTorch venvs and model weights take several GB of disk.

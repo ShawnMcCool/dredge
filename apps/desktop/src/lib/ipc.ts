@@ -20,7 +20,7 @@ export async function cmd<T = unknown>(cmd: string, params: unknown = null): Pro
     if (!resp.ok) throw new Error(resp.error ?? `command ${cmd} failed`);
     return resp.data as T;
   }
-  // Watchdogs (EARWORM_DEBUG): a dispatch that never resolves (frozen invoke /
+  // Watchdogs (DREDGE_DEBUG): a dispatch that never resolves (frozen invoke /
   // wedged backend) is the prime suspect for the stuck-spinner bug — surface it
   // instead of hanging silently. These timers only fire if the main thread is
   // still alive.
@@ -39,7 +39,7 @@ export async function cmd<T = unknown>(cmd: string, params: unknown = null): Pro
   }
 }
 
-/** `EARWORM_OPEN=<song id>` dev affordance — null unless the env var is set. */
+/** `DREDGE_OPEN=<song id>` dev affordance — null unless the env var is set. */
 export function initialSong(): Promise<number | null> {
   return invoke<number | null>("initial_song");
 }
@@ -52,5 +52,5 @@ export function quit(): Promise<void> {
 export type EwEvent = { event: string; data: any };
 
 export function onEvent(handler: (e: EwEvent) => void): Promise<() => void> {
-  return listen<EwEvent>("earworm://event", (e) => handler(e.payload));
+  return listen<EwEvent>("dredge://event", (e) => handler(e.payload));
 }

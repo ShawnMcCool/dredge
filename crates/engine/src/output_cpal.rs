@@ -18,10 +18,10 @@ pub fn spawn(
     song_slot: Arc<ArcSwapOption<StemSet>>,
 ) -> crate::error::Result<JoinHandle<()>> {
     let handle = std::thread::Builder::new()
-        .name("earworm-audio".into())
+        .name("dredge-audio".into())
         .spawn(move || {
             if let Err(e) = run(cmd_rx, evt_tx, song_slot) {
-                eprintln!("earworm audio thread failed: {e}");
+                eprintln!("dredge audio thread failed: {e}");
             }
         })?;
     Ok(handle)
@@ -57,7 +57,7 @@ fn run(
                 // request; RenderCore fills exactly out.len() samples.
                 core.fill(out);
             },
-            move |err| eprintln!("earworm cpal stream error: {err}"),
+            move |err| eprintln!("dredge cpal stream error: {err}"),
             None,
         )
         .map_err(|e| Error::Audio(format!("build output stream: {e}")))?;

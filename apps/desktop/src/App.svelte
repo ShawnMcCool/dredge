@@ -75,7 +75,7 @@
     });
     const unlisten = initEvents();
     const uninstall = installKeys();
-    // Suppress the webview's native right-click menu app-wide so earworm reads
+    // Suppress the webview's native right-click menu app-wide so dredge reads
     // as a desktop app, not a web page. Right-click gestures (waveform + tab
     // resize) are driven by pointerdown, so this doesn't disturb them.
     const blockContextMenu = (e: MouseEvent) => e.preventDefault();

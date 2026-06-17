@@ -1,4 +1,4 @@
-# earworm — Plan 14: finish loading UX, playback volume, structure on the waveform
+# dredge — Plan 14: finish loading UX, playback volume, structure on the waveform
 
 > **For agentic workers:** Use superpowers:executing-plans. Checkboxes track steps.
 

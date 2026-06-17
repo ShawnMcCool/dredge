@@ -508,7 +508,7 @@ export const actions = {
 
   async openSong(id: number): Promise<void> {
     // Phase tracing: a stuck spinner means this flow never reached `finally`.
-    // Each milestone is forwarded to earworm.log, so the LAST line logged tells
+    // Each milestone is forwarded to dredge.log, so the LAST line logged tells
     // us exactly which step the open froze on (network/backend, or the reactive
     // waveform render after `openSong.set`).
     trace("open", `#${id} begin`);
@@ -1037,9 +1037,9 @@ activeLoop.subscribe((al) => {
 
 // --- launch restore ---------------------------------------------------------
 
-const LAST_SONG_KEY = "earworm-last-song";
+const LAST_SONG_KEY = "dredge-last-song";
 
-/** Pick up where the last session left off (`EARWORM_OPEN` wins when set);
+/** Pick up where the last session left off (`DREDGE_OPEN` wins when set);
  *  the song may be gone — start empty rather than surfacing an error. */
 async function openLastSong(): Promise<void> {
   const forced = await initialSong().catch(() => null);

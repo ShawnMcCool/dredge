@@ -54,7 +54,7 @@ export function accentHex(theme: string): string {
 /** Fired on <window> after the accent vars change. DOM styled with var(--accent)
  *  updates live, but canvas painters (the waveform) read the vars at draw time
  *  and must repaint — they listen for this. */
-export const THEME_EVENT = "earworm:theme";
+export const THEME_EVENT = "dredge:theme";
 
 export function applyTheme(theme: string): void {
   const root = document.documentElement;

@@ -1,16 +1,16 @@
-# earworm v1 — Plan 4: Tauri shell
+# dredge v1 — Plan 4: Tauri shell
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** The desktop UI: waveform-centred, keyboard-first, deliberately spare. Embeds the Plan-3 `App` dispatcher (single `dispatch` Tauri command + event emission) and keeps the control socket running alongside the UI.
 
-**Architecture:** `apps/desktop/src-tauri` is a workspace crate hosting `Arc<Mutex<server::app::App>>`; the webview talks through one Tauri command (`dispatch(Request) -> Response`) and listens to one event channel (`earworm://event`). Frontend: Vite + Svelte 5 + TypeScript. All UI state derives from dispatch responses + events; no second source of truth. Playhead animates client-side (rAF) from the last `position` event extrapolated by rate — LiveView-hook-style discipline: the canvas owns per-frame work, events only sync state.
+**Architecture:** `apps/desktop/src-tauri` is a workspace crate hosting `Arc<Mutex<server::app::App>>`; the webview talks through one Tauri command (`dispatch(Request) -> Response`) and listens to one event channel (`dredge://event`). Frontend: Vite + Svelte 5 + TypeScript. All UI state derives from dispatch responses + events; no second source of truth. Playhead animates client-side (rAF) from the last `position` event extrapolated by rate — LiveView-hook-style discipline: the canvas owns per-frame work, events only sync state.
 
 **Tech Stack:** Tauri 2, @tauri-apps/api, tauri-plugin-dialog (file picker), Vite, Svelte 5, TypeScript, vitest (pure-logic UI tests).
 
 **Design language (apply throughout, no component library):** near-black `#101014` background, `#e8e6e3` text, one accent `#e0a458` (amber), muted `#6b7280` for chrome; mono font (`ui-monospace`) for times/rates; 8 px spacing grid; no shadows, no rounded-corner soup (2 px radius max), no animations except the playhead and a 120 ms panel fade. The waveform is the hero; everything else is quiet lists.
 
-**Spec:** `docs/superpowers/specs/2026-06-12-earworm-design.md`
+**Spec:** `docs/superpowers/specs/2026-06-12-dredge-design.md`
 
 ---
 
@@ -27,12 +27,12 @@
 
 - [x] **Step 2: Tauri scaffold**
 
-`pnpm tauri init` (or hand-write) with: `productName: "earworm"`, identifier `dev.shawn.earworm`, `frontendDist: "../dist"`, `devUrl: "http://localhost:5173"`, window 1280×800, title "earworm". `src-tauri/Cargo.toml` joins the workspace (`edition.workspace = true`), deps: `tauri = { version = "2", features = [] }`, `tauri-plugin-dialog = "2"`, `server/practice/engine` path deps, serde/serde_json. Keep the generated `main.rs` minimal for now (default builder + dialog plugin) — state wiring is Task 2.
+`pnpm tauri init` (or hand-write) with: `productName: "dredge"`, identifier `dev.shawn.dredge`, `frontendDist: "../dist"`, `devUrl: "http://localhost:5173"`, window 1280×800, title "dredge". `src-tauri/Cargo.toml` joins the workspace (`edition.workspace = true`), deps: `tauri = { version = "2", features = [] }`, `tauri-plugin-dialog = "2"`, `server/practice/engine` path deps, serde/serde_json. Keep the generated `main.rs` minimal for now (default builder + dialog plugin) — state wiring is Task 2.
 
 - [x] **Step 3: Verify both builds**
 
 Run: `pnpm install && pnpm build` (in apps/desktop) — vite build succeeds.
-Run: `cargo check -p earworm-desktop` (name the crate that) — compiles.
+Run: `cargo check -p dredge-desktop` (name the crate that) — compiles.
 
 - [x] **Step 4: Commit**
 
@@ -53,7 +53,7 @@ git add -A && git commit -m "feat(desktop): tauri 2 + svelte 5 scaffold with des
 > As-built note: `serve` already owned the tick-pump, so the plan's
 > "simplest correct resolution" was taken — `serve(app, path, on_events)`
 > now accepts a hook called with each non-empty tick batch; desktop forwards
-> those to the webview (`host::start_server`), earwormd passes `|_| {}`.
+> those to the webview (`host::start_server`), dredged passes `|_| {}`.
 > No `start_pump` thread exists in the desktop crate; there is exactly one pump.
 
 `host.rs`:
@@ -75,20 +75,20 @@ pub fn start_pump(handle: tauri::AppHandle, app: Arc<Mutex<App>>) {
     std::thread::spawn(move || loop {
         let events = app.lock().unwrap().tick();
         for ev in events {
-            let _ = handle.emit("earworm://event", &ev);
+            let _ = handle.emit("dredge://event", &ev);
         }
         std::thread::sleep(std::time::Duration::from_millis(50));
     });
 }
 ```
 
-`main.rs` setup: open Store at `~/.local/share/earworm/earworm.db` (create dirs), `engine::Engine::start()` (on failure, show a dialog/panic with a clear message), build `App`, wrap in `Arc<Mutex<_>>`; `server::socket::serve(app.clone(), &server::socket::default_socket_path())` (keep the handle alive in managed state — UI and scripts share one session); `.manage(AppState(app.clone()))`, `.invoke_handler(tauri::generate_handler![host::dispatch])`, and in `.setup()` call `start_pump`.
+`main.rs` setup: open Store at `~/.local/share/dredge/dredge.db` (create dirs), `engine::Engine::start()` (on failure, show a dialog/panic with a clear message), build `App`, wrap in `Arc<Mutex<_>>`; `server::socket::serve(app.clone(), &server::socket::default_socket_path())` (keep the handle alive in managed state — UI and scripts share one session); `.manage(AppState(app.clone()))`, `.invoke_handler(tauri::generate_handler![host::dispatch])`, and in `.setup()` call `start_pump`.
 
 **Check against the as-built Plan-3 API first:** `serve`'s exact signature/handle type, and whether `App::tick` already broadcasts to socket subscribers internally (if the socket layer owns the pump, desktop must NOT double-tick — in that case have `serve` return events or add a `tick_hook`; simplest correct resolution: move the tick-pump INTO `server::socket` behind a callback parameter `serve(app, path, on_events: impl Fn(&[Event]))` so there is exactly one pump wherever App lives. Refactor minimally if needed and keep server tests green).
 
 - [x] **Step 2: Verify**
 
-Run: `cargo check -p earworm-desktop && cargo test -p server`
+Run: `cargo check -p dredge-desktop && cargo test -p server`
 Expected: compiles; server suite still green (especially if `serve` was refactored).
 
 - [x] **Step 3: Commit**
@@ -126,7 +126,7 @@ export async function cmd<T = unknown>(cmd: string, params: unknown = null): Pro
 export type EwEvent = { event: string; data: any };
 
 export function onEvent(handler: (e: EwEvent) => void): Promise<() => void> {
-  return listen<EwEvent>("earworm://event", (e) => handler(e.payload));
+  return listen<EwEvent>("dredge://event", (e) => handler(e.payload));
 }
 ```
 
@@ -278,11 +278,11 @@ git add -A && git commit -m "feat(desktop): plan runner with ratings, due panel,
 
 **Files:**
 - Create: `apps/desktop/src-tauri/` release config as needed
-- Create: `~/.local/share/applications/earworm.desktop` (Exec=the built binary) — follow the user's conventions: extensionless scripts, XDG paths
+- Create: `~/.local/share/applications/dredge.desktop` (Exec=the built binary) — follow the user's conventions: extensionless scripts, XDG paths
 
 - [x] **Step 1: Full build**
 
-Run: `pnpm tauri build --debug` (debug avoids long LTO; produces `src-tauri/target/.../earworm` — workspace target dir: `target/debug/earworm`).
+Run: `pnpm tauri build --debug` (debug avoids long LTO; produces `src-tauri/target/.../dredge` — workspace target dir: `target/debug/dredge`).
 Expected: bundle builds. Then `cargo test && cargo clippy --workspace -- -D warnings && cargo fmt && pnpm vitest run`.
 
 - [x] **Step 2: Smoke run**
@@ -291,14 +291,14 @@ Expected: bundle builds. Then `cargo test && cargo clippy --workspace -- -D warn
 > error)") — webkit2gtk's DMA-BUF renderer vs Hyprland+NVIDIA. Fix baked into
 > `main.rs`: set `WEBKIT_DISABLE_DMABUF_RENDERER=1` before webview init
 > (respects a user-provided value). With that, the binary runs cleanly,
-> `$XDG_RUNTIME_DIR/earworm.sock` exists, and `song.list`/`status` answer
+> `$XDG_RUNTIME_DIR/dredge.sock` exists, and `song.list`/`status` answer
 > over the socket while the UI is up — UI and scripts share one App.
 
-Launch the binary with a 5 s timeout under the current session (`timeout 5 target/debug/earworm`; Wayland/Hyprland session is live). Verify: process starts, no panic on stderr, socket `$XDG_RUNTIME_DIR/earworm.sock` exists while running, and `song.list` over the socket answers while the UI is up (proves UI+socket share one App).
+Launch the binary with a 5 s timeout under the current session (`timeout 5 target/debug/dredge`; Wayland/Hyprland session is live). Verify: process starts, no panic on stderr, socket `$XDG_RUNTIME_DIR/dredge.sock` exists while running, and `song.list` over the socket answers while the UI is up (proves UI+socket share one App).
 
 - [x] **Step 3: Desktop entry**
 
-`earworm.desktop` with Exec pointing at the release binary path (build release: `pnpm tauri build`), icon from the generated icons dir, `Categories=AudioVideo;Audio;`.
+`dredge.desktop` with Exec pointing at the release binary path (build release: `pnpm tauri build`), icon from the generated icons dir, `Categories=AudioVideo;Audio;`.
 
 - [x] **Step 4: Commit**
 

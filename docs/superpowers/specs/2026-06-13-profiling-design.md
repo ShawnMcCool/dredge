@@ -4,7 +4,7 @@ Date: 2026-06-13
 
 ## Problem
 
-Earworm's heavy operations — song decode/import, structural analysis (beat_this
+Dredge's heavy operations — song decode/import, structural analysis (beat_this
 + SongFormer/novelty), and Demucs stem separation — run for seconds to minutes
 and lean on out-of-process Python and the GPU. Today the binary records **no
 timing whatsoever** (no `Instant`, no `tracing` — only `eprintln`), and surfaces
@@ -34,7 +34,7 @@ Two needs fall out:
   **automatically recover** a CUDA-OOM SongFormer run onto CPU instead of
   dropping to novelty.
 - Make a silent novelty fallback **impossible to miss** (show the engine).
-- Keep all of it **internal to the `earworm` binary** — no new external
+- Keep all of it **internal to the `dredge` binary** — no new external
   dependency, no new Rust crate, no change to `scripts/*` or the analyzer's JSON
   contract.
 

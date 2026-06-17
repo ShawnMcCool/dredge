@@ -1,8 +1,8 @@
-pkgbase = earworm
+pkgbase = dredge
 	pkgdesc = Ear-first practice looper: loop sections, slow them down pitch-preserving, drill passages
 	pkgver = 0.2.2
 	pkgrel = 1
-	url = https://github.com/ShawnMcCool/earworm
+	url = https://github.com/ShawnMcCool/dredge
 	arch = x86_64
 	license = MIT
 	makedepends = rust
@@ -20,10 +20,10 @@ pkgbase = earworm
 	optdepends = uv: bootstrap the analyze/songformer ML venvs (beats, sections)
 	optdepends = python: ML analysis runtime
 	optdepends = demucs: 4-stem separation (vocals/drums/bass/other)
-	provides = earworm
-	conflicts = earworm-bin
+	provides = dredge
+	conflicts = dredge-bin
 	options = !lto
-	source = git+https://github.com/ShawnMcCool/earworm.git#tag=v0.2.2
+	source = git+https://github.com/ShawnMcCool/dredge.git#tag=v0.2.2
 	sha256sums = SKIP
 
-pkgname = earworm
+pkgname = dredge

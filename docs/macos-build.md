@@ -1,6 +1,6 @@
-# Building Earworm on macOS
+# Building Dredge on macOS
 
-Earworm was Linux-first (PipeWire audio I/O, Linux-only deps). The codebase now
+Dredge was Linux-first (PipeWire audio I/O, Linux-only deps). The codebase now
 compiles for macOS behind `#[cfg(target_os = "...")]`: audio I/O uses **cpal**
 (CoreAudio) on non-Linux and **PipeWire** on Linux, sharing one DSP core. This
 note captures what a macOS build needs.
@@ -46,7 +46,7 @@ export PKG_CONFIG_PATH="$(brew --prefix)/lib/pkgconfig"
 
 ```sh
 export PKG_CONFIG_PATH="$(brew --prefix)/lib/pkgconfig"
-just build           # release desktop app (.app/.dmg) + earwormd daemon
+just build           # release desktop app (.app/.dmg) + dredged daemon
 # or: cd apps/desktop && pnpm tauri build
 ```
 
@@ -57,12 +57,12 @@ The bundle is configured for `app`/`dmg` targets with
 ## Analysis / stems on macOS
 
 - The `analyze` wrapper resolves its Python impls (`analyze_impl.py`,
-  `songformer_impl.py`) from, in order: its own dir, `$EARWORM_IMPL_DIR`,
-  `/usr/lib/earworm`, `/usr/local/lib/earworm`, `/opt/homebrew/lib/earworm`.
-  For a `.app` bundle, set **`EARWORM_IMPL_DIR`** to wherever the impls ship, or
+  `songformer_impl.py`) from, in order: its own dir, `$DREDGE_IMPL_DIR`,
+  `/usr/lib/dredge`, `/usr/local/lib/dredge`, `/opt/homebrew/lib/dredge`.
+  For a `.app` bundle, set **`DREDGE_IMPL_DIR`** to wherever the impls ship, or
   drop them in one of those dirs.
 - First run downloads torch (several GB) into
-  `~/.local/share/earworm/analyze-venv` (override `$EARWORM_ANALYZE_VENV`).
+  `~/.local/share/dredge/analyze-venv` (override `$DREDGE_ANALYZE_VENV`).
 - **MPS caveat:** beat_this / SongFormer / Demucs may hit unimplemented Metal
   ops. If a model raises `NotImplementedError`, run with
   `PYTORCH_ENABLE_MPS_FALLBACK=1` (per-op CPU fallback) or force CPU. Record

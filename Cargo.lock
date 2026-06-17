@@ -847,6 +847,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "dredge-desktop"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "engine",
+ "practice",
+ "serde",
+ "serde_json",
+ "server",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+]
+
+[[package]]
 name = "dtoa"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -887,21 +902,6 @@ name = "dyn-clone"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
-
-[[package]]
-name = "earworm-desktop"
-version = "0.1.0"
-dependencies = [
- "dirs",
- "engine",
- "practice",
- "serde",
- "serde_json",
- "server",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
-]
 
 [[package]]
 name = "either"

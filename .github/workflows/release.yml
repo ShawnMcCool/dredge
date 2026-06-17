@@ -50,13 +50,13 @@ jobs:
       # which forces apt to resolve every declared runtime dependency.
       - name: Smoke-test the .deb
         run: |
-          sudo apt-get install -y ./dist/earworm_*_amd64.deb
-          command -v earworm
-          test -x /usr/bin/earwormd
-          test -x /usr/bin/earworm-analyze
-          test -x /usr/bin/earworm-enable-ml
-          test -f /usr/lib/earworm/analyze_impl.py
-          test -f /usr/lib/earworm/songformer_impl.py
+          sudo apt-get install -y ./dist/dredge_*_amd64.deb
+          command -v dredge
+          test -x /usr/bin/dredged
+          test -x /usr/bin/dredge-analyze
+          test -x /usr/bin/dredge-enable-ml
+          test -f /usr/lib/dredge/analyze_impl.py
+          test -f /usr/lib/dredge/songformer_impl.py
           echo "deb installs cleanly and lays out the expected files"
 
       - name: Publish GitHub Release

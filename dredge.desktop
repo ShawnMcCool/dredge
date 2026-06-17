@@ -1,11 +1,11 @@
 [Desktop Entry]
 Type=Application
-Name=Earworm
+Name=Dredge
 GenericName=Practice Looper
 Comment=Ear-first practice looper: loop sections, slow them down, run practice plans
-Exec=earworm
-Icon=earworm
+Exec=dredge
+Icon=dredge
 Terminal=false
 Categories=AudioVideo;Audio;Music;
-StartupWMClass=earworm
+StartupWMClass=dredge
 Keywords=practice;loop;music;guitar;ear;tempo;

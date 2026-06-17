@@ -4,7 +4,7 @@ Date: 2026-06-13
 
 ## Problem
 
-Earworm can import, open, and annotate tracks, but offers no way to **remove** a
+Dredge can import, open, and annotate tracks, but offers no way to **remove** a
 track from the library. `Store::delete_song` exists with full `ON DELETE
 CASCADE`, yet it is wired to no dispatch command, so no client can reach it. Two
 secondary gaps: there is no way to **edit a track's title/artist**, and no way
@@ -14,7 +14,7 @@ A related concern raised the request: generated data should persist until a
 track is deleted, so an analyzed track loads fast without recomputation.
 Investigation shows this already holds — analysis is cached in the SQLite
 `analysis` table and returned directly by `song.open`; waveform peaks are cached
-at `~/.cache/earworm/peaks/<file_hash>.json`; stems at
+at `~/.cache/dredge/peaks/<file_hash>.json`; stems at
 `<stems_dir>/<file_hash>/`. The architecture already persists generated data.
 The missing half is **deletion that cleans all of it up** — those off-DB caches
 are keyed by `file_hash`, outside the DB's cascade, so a naive delete orphans
@@ -63,12 +63,12 @@ then remove, in order:
 1. **DB rows** — `Store::delete_song(id)`. Already cascades to `sections`,
    `loops`, `plans`, `reps`, `resurfacing`, and `analysis` via `ON DELETE
    CASCADE`. No schema change.
-2. **Peaks cache** — `~/.cache/earworm/peaks/<file_hash>.json`. Add
+2. **Peaks cache** — `~/.cache/dredge/peaks/<file_hash>.json`. Add
    `engine::peaks::remove_cache(file_hash)` so path logic stays owned by the
    peaks module (mirrors `load_or_compute`).
 3. **Stems cache** — `<stems_dir>/<file_hash>/` via `std::fs::remove_dir_all`;
    path from the existing `stems_cache_dir(file_hash)`.
-4. **Sidecar** — `<audio_path>.earworm.json`. Add
+4. **Sidecar** — `<audio_path>.dredge.json`. Add
    `practice::sidecar::remove_sidecar(audio_path)`.
 5. **Source audio file** — **never touched.**
 

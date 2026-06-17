@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add track deletion (with full orphan cleanup), metadata rename, and a forced re-analyze to Earworm's library.
+**Goal:** Add track deletion (with full orphan cleanup), metadata rename, and a forced re-analyze to Dredge's library.
 
 **Architecture:** Three new/extended dispatch commands on `server::app::App` (`song.delete`, `song.update`, `analysis.run { force }`) backed by a new `Store::update_song` and two best-effort filesystem cleanup helpers (`engine::peaks::remove_cache`, `practice::sidecar::remove_sidecar`). The DB cascade already handles relational rows; the new work is sweeping the off-DB caches keyed by `file_hash` and the sidecar keyed by audio path, plus stopping playback when the open song is deleted. The frontend gets three store actions and unobtrusive row affordances.
 
@@ -177,7 +177,7 @@ Add inside `mod tests` in `crates/engine/src/peaks.rs`:
         load_or_compute(&buf, &hash).unwrap();
         let path = dirs::cache_dir()
             .unwrap()
-            .join("earworm/peaks")
+            .join("dredge/peaks")
             .join(format!("{hash}.json"));
         assert!(path.exists());
 
@@ -205,7 +205,7 @@ pub fn remove_cache(file_hash: &str) -> std::io::Result<()> {
     let Some(base) = dirs::cache_dir() else {
         return Ok(());
     };
-    let path = base.join("earworm/peaks").join(format!("{file_hash}.json"));
+    let path = base.join("dredge/peaks").join(format!("{file_hash}.json"));
     match std::fs::remove_file(&path) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -415,16 +415,16 @@ In the `// --- library ---` section, after `song_update`:
         // best-effort off-DB cleanup; the DB is the source of truth, so a
         // failed file removal logs but does not fail the command
         if let Err(e) = engine::peaks::remove_cache(&song.file_hash) {
-            eprintln!("earworm: peaks cleanup failed for {}: {e}", song.file_hash);
+            eprintln!("dredge: peaks cleanup failed for {}: {e}", song.file_hash);
         }
         let stems = self.stems_cache_dir(&song.file_hash);
         if let Err(e) = std::fs::remove_dir_all(&stems) {
             if e.kind() != std::io::ErrorKind::NotFound {
-                eprintln!("earworm: stems cleanup failed for {}: {e}", song.file_hash);
+                eprintln!("dredge: stems cleanup failed for {}: {e}", song.file_hash);
             }
         }
         if let Err(e) = practice::sidecar::remove_sidecar(Path::new(&song.path)) {
-            eprintln!("earworm: sidecar cleanup failed for {}: {e}", song.path);
+            eprintln!("dredge: sidecar cleanup failed for {}: {e}", song.path);
         }
 
         let _ = self.job_tx.send(Event {
@@ -898,4 +898,4 @@ git commit -m "chore: library management — pass full check gate"
 
 - **Source audio is never deleted.** `song.delete` removes regenerable caches (peaks, stems) and the sidecar, but leaves the user's audio file in place — Task 5's test asserts `wav.exists()` after delete.
 - **Re-analyze does not touch loops.** A forced re-analyze can change downbeats, leaving junction loops snapped to the old grid until the user re-derives them. This is intentional — re-deriving stays the existing manual action; we do not mutate the user's loops behind their back.
-- **Persistence was already correct.** Analysis (SQLite `analysis` table), peaks (`~/.cache/earworm/peaks`), and stems (`<stems_dir>/<hash>`) already persist and are reused on open. This plan only adds their *removal* and a *forced regeneration*; it does not change how they are produced or cached.
+- **Persistence was already correct.** Analysis (SQLite `analysis` table), peaks (`~/.cache/dredge/peaks`), and stems (`<stems_dir>/<hash>`) already persist and are reused on open. This plan only adds their *removal* and a *forced regeneration*; it does not change how they are produced or cached.

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Earworm is an ear-first practice looper for Linux: load a song, loop sections,
+Dredge is an ear-first practice looper for Linux: load a song, loop sections,
 slow them down pitch-preserving, and drill passages with a live tempo trainer.
 It ships
 as a Tauri desktop app (Svelte 5 frontend, Rust host) and a headless daemon that
@@ -15,7 +15,7 @@ share the same Rust core. See `README.md` for the feature-level "what it does".
 Use `just` (the task runner) for everything; `just` alone lists recipes.
 
 - `just dev` — desktop app in dev mode (vite hot-reload + debug Rust host)
-- `just build` — release build of the desktop app (`target/release/earworm`) + headless daemon (`target/release/earwormd`)
+- `just build` — release build of the desktop app (`target/release/dredge`) + headless daemon (`target/release/dredged`)
 - `just run` / `just daemon` — run the release UI / headless daemon
 - `just test` — full suite: `cargo test --workspace` + `pnpm vitest run`
 - `just lint` — clippy (`-D warnings`), `cargo fmt --check`, `svelte-check`
@@ -39,10 +39,10 @@ The entire backend is reached through a single command dispatcher,
 state is `{event, data}`. Two transports wrap the *same* dispatcher:
 
 - **Unix socket** (`crates/server/src/socket.rs`) — JSON-lines at
-  `$XDG_RUNTIME_DIR/earworm.sock`. Used by the headless daemon (`earwormd`)
+  `$XDG_RUNTIME_DIR/dredge.sock`. Used by the headless daemon (`dredged`)
   and by `just cmd` / shell scripts.
 - **Tauri webview** (`apps/desktop/src-tauri/src/host.rs`) — one `dispatch`
-  command in, one `earworm://event` channel out. The UI is "just another
+  command in, one `dredge://event` channel out. The UI is "just another
   client".
 
 There is exactly **one tick pump** (`server::socket::serve`, ~50 ms), regardless
@@ -68,19 +68,19 @@ clients. When adding a heavy command, follow the `*_phased` pattern in `app.rs`.
 - **`server`** (`crates/server`) — the dispatcher + transports above, plus
   the bridges to external work: `analysis.rs`, `stems.rs`, `capture_control.rs`.
 
-The desktop app (`apps/desktop/src-tauri`, binary name `earworm`) depends on all
+The desktop app (`apps/desktop/src-tauri`, binary name `dredge`) depends on all
 three and embeds the built Svelte frontend.
 
 ### Persistence
 
-Single SQLite DB (rusqlite, bundled) at `~/.local/share/earworm/earworm.db`.
+Single SQLite DB (rusqlite, bundled) at `~/.local/share/dredge/dredge.db`.
 Schema is **embedded in `crates/practice/src/store.rs`** — no migration files;
 versioning is incremental via `PRAGMA user_version` (V1 core tables → V2
 `analysis` cache → V3 `settings` → … → V8 drops the retired practice-plan
 tables). To evolve the schema, add a new version block in `store.rs` rather
 than editing existing ones. App settings live in the
 SQLite `settings` table as JSON; there are no TOML/JSON config files. Override
-the DB path with `--db` (daemon) or `EARWORM_DB` (desktop).
+the DB path with `--db` (daemon) or `DREDGE_DB` (desktop).
 
 Complex sub-objects (LoopKind, PlanStep arrays, analysis vectors) are stored as
 `serde_json` in `*_json` columns, not normalized.
@@ -135,7 +135,7 @@ Beat/downbeat/section analysis and Demucs stem separation run as out-of-process
 Python, invoked through repo-shipped wrappers in `scripts/` (`analyze`,
 `analyze_impl.py`, `songformer_impl.py`). The `analyze` wrapper **bootstraps its
 own `uv` venv on first run** (downloads torch etc.) at
-`~/.local/share/earworm/analyze-venv` (override `$EARWORM_ANALYZE_VENV`).
+`~/.local/share/dredge/analyze-venv` (override `$DREDGE_ANALYZE_VENV`).
 Contract: **stdout carries exactly one JSON object; all diagnostics go to
 stderr.** Swapping models stays entirely in Python — the Rust side
 (`server::analysis`, `server::stems`) only parses the JSON, so never let

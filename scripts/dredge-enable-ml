@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# earworm-enable-ml — one-command setup for the optional ML features.
+# dredge-enable-ml — one-command setup for the optional ML features.
 #
-# Earworm runs fine without these; they're off by default and self-bootstrap on
+# Dredge runs fine without these; they're off by default and self-bootstrap on
 # first use. This helper does that bootstrap up front so the first analysis /
 # stem-separation isn't a surprise multi-minute download.
 #
@@ -14,14 +14,14 @@
 # Contract: every diagnostic goes to stderr; stdout stays quiet.
 set -euo pipefail
 
-ANALYZE_VENV="${EARWORM_ANALYZE_VENV:-$HOME/.local/share/earworm/analyze-venv}"
-SONGFORMER_VENV="${EARWORM_SONGFORMER_VENV:-$HOME/.local/share/earworm/songformer-venv}"
+ANALYZE_VENV="${DREDGE_ANALYZE_VENV:-$HOME/.local/share/dredge/analyze-venv}"
+SONGFORMER_VENV="${DREDGE_SONGFORMER_VENV:-$HOME/.local/share/dredge/songformer-venv}"
 
 need_uv() {
   if command -v uv >/dev/null 2>&1; then
     return 0
   fi
-  echo "earworm-enable-ml: 'uv' is required but not on PATH." >&2
+  echo "dredge-enable-ml: 'uv' is required but not on PATH." >&2
   echo "  Arch: pacman -S uv  ·  Ubuntu 24.04: not in the archive, use the installer:" >&2
   echo "    curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
   exit 1
@@ -31,48 +31,48 @@ enable_analyze() {
   need_uv
   local py="$ANALYZE_VENV/bin/python"
   if [ -x "$py" ] && "$py" -c "import beat_this" >/dev/null 2>&1; then
-    echo "earworm-enable-ml: analyze already set up ($ANALYZE_VENV)" >&2
+    echo "dredge-enable-ml: analyze already set up ($ANALYZE_VENV)" >&2
     return 0
   fi
-  echo "earworm-enable-ml: creating analyze venv at $ANALYZE_VENV" >&2
+  echo "dredge-enable-ml: creating analyze venv at $ANALYZE_VENV" >&2
   echo "  (downloads torch — several GB, GPU optional, CPU just slower)" >&2
   uv venv --python 3.12 "$ANALYZE_VENV" 1>&2
   uv pip install --python "$py" \
     "beat_this @ git+https://github.com/CPJKU/beat_this" \
     torch soundfile librosa einops rotary-embedding-torch 1>&2
-  echo "earworm-enable-ml: analyze ready" >&2
+  echo "dredge-enable-ml: analyze ready" >&2
 }
 
 enable_songformer() {
   need_uv
   local py="$SONGFORMER_VENV/bin/python"
   if [ -x "$py" ] && "$py" -c "import muq" >/dev/null 2>&1; then
-    echo "earworm-enable-ml: songformer already set up ($SONGFORMER_VENV)" >&2
+    echo "dredge-enable-ml: songformer already set up ($SONGFORMER_VENV)" >&2
     return 0
   fi
-  echo "earworm-enable-ml: creating songformer venv at $SONGFORMER_VENV" >&2
+  echo "dredge-enable-ml: creating songformer venv at $SONGFORMER_VENV" >&2
   echo "  (wants ~8 GB VRAM at run time; falls back to the novelty detector if absent)" >&2
   uv venv --python 3.11 "$SONGFORMER_VENV" 1>&2
   uv pip install --python "$py" \
     torch==2.4.0 torchaudio==2.4.0 "numpy<2" transformers==4.51.1 librosa \
     soundfile ema-pytorch loguru omegaconf tqdm safetensors muq x-transformers \
     msaf einops huggingface_hub 1>&2
-  echo "earworm-enable-ml: songformer ready" >&2
+  echo "dredge-enable-ml: songformer ready" >&2
 }
 
 enable_stems() {
   need_uv
   if command -v demucs >/dev/null 2>&1; then
-    echo "earworm-enable-ml: demucs already on PATH ($(command -v demucs))" >&2
+    echo "dredge-enable-ml: demucs already on PATH ($(command -v demucs))" >&2
     return 0
   fi
-  echo "earworm-enable-ml: installing demucs (PyTorch ~2.5 GB; torchcodec for stem export)" >&2
+  echo "dredge-enable-ml: installing demucs (PyTorch ~2.5 GB; torchcodec for stem export)" >&2
   uv tool install demucs --with torchcodec 1>&2
-  echo "earworm-enable-ml: stems ready" >&2
+  echo "dredge-enable-ml: stems ready" >&2
 }
 
 usage() {
-  echo "usage: earworm-enable-ml {analyze|songformer|stems|all}" >&2
+  echo "usage: dredge-enable-ml {analyze|songformer|stems|all}" >&2
   exit 2
 }
 

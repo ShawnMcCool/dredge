@@ -1,10 +1,10 @@
 # Maintainer: Shawn McCool <shawn@mccool.email>
-pkgname=earworm
+pkgname=dredge
 pkgver=0.2.2
 pkgrel=1
 pkgdesc="Ear-first practice looper: loop sections, slow them down pitch-preserving, drill passages"
 arch=('x86_64')
-url="https://github.com/ShawnMcCool/earworm"
+url="https://github.com/ShawnMcCool/dredge"
 license=('MIT')
 depends=('rubberband' 'pipewire' 'webkit2gtk-4.1' 'gtk3')
 makedepends=('rust' 'nodejs' 'pnpm' 'just' 'clang' 'pkgconf' 'git')
@@ -12,12 +12,12 @@ optdepends=('ffmpeg: MP3 export, extra container formats, and demucs stem export
             'uv: bootstrap the analyze/songformer ML venvs (beats, sections)'
             'python: ML analysis runtime'
             'demucs: 4-stem separation (vocals/drums/bass/other)')
-provides=('earworm')
-conflicts=('earworm-bin')
+provides=('dredge')
+conflicts=('dredge-bin')
 # rusqlite bundles + cc-compiles sqlite3.c; makepkg's default LTO makes that a
 # GCC LTO object that Rust's lld can't link (undefined sqlite3_* symbols).
 options=('!lto')
-source=("git+https://github.com/ShawnMcCool/earworm.git#tag=v${pkgver}")
+source=("git+https://github.com/ShawnMcCool/dredge.git#tag=v${pkgver}")
 sha256sums=('SKIP')
 
 build() {
@@ -33,13 +33,13 @@ build() {
 
 package() {
   cd "${srcdir}/${pkgname}"
-  install -Dm755 target/release/earworm                       "${pkgdir}/usr/bin/earworm"
-  install -Dm755 target/release/earwormd                      "${pkgdir}/usr/bin/earwormd"
-  install -Dm755 scripts/analyze                              "${pkgdir}/usr/bin/earworm-analyze"
-  install -Dm755 scripts/earworm-enable-ml                    "${pkgdir}/usr/bin/earworm-enable-ml"
-  install -Dm755 scripts/earworm-doctor                       "${pkgdir}/usr/bin/earworm-doctor"
-  install -Dm644 scripts/analyze_impl.py                      "${pkgdir}/usr/lib/earworm/analyze_impl.py"
-  install -Dm644 scripts/songformer_impl.py                   "${pkgdir}/usr/lib/earworm/songformer_impl.py"
-  install -Dm644 earworm.desktop                              "${pkgdir}/usr/share/applications/earworm.desktop"
-  install -Dm644 apps/desktop/src-tauri/icons/128x128@2x.png  "${pkgdir}/usr/share/icons/hicolor/256x256/apps/earworm.png"
+  install -Dm755 target/release/dredge                       "${pkgdir}/usr/bin/dredge"
+  install -Dm755 target/release/dredged                      "${pkgdir}/usr/bin/dredged"
+  install -Dm755 scripts/analyze                              "${pkgdir}/usr/bin/dredge-analyze"
+  install -Dm755 scripts/dredge-enable-ml                    "${pkgdir}/usr/bin/dredge-enable-ml"
+  install -Dm755 scripts/dredge-doctor                       "${pkgdir}/usr/bin/dredge-doctor"
+  install -Dm644 scripts/analyze_impl.py                      "${pkgdir}/usr/lib/dredge/analyze_impl.py"
+  install -Dm644 scripts/songformer_impl.py                   "${pkgdir}/usr/lib/dredge/songformer_impl.py"
+  install -Dm644 dredge.desktop                              "${pkgdir}/usr/share/applications/dredge.desktop"
+  install -Dm644 apps/desktop/src-tauri/icons/128x128@2x.png  "${pkgdir}/usr/share/icons/hicolor/256x256/apps/dredge.png"
 }
