@@ -68,7 +68,13 @@
       e.preventDefault();
       return;
     }
-    if (e.key.length === 1 && /[0-9a-zA-Z/\\~().]/.test(e.key)) {
+    if (e.key === "Delete") {
+      onchange(clearCell(block, cursor.row, cursor.col)); // reset cell, stay put
+      e.preventDefault();
+      return;
+    }
+    // "-" is the empty glyph, so typing it overtypes back to default and advances
+    if (e.key.length === 1 && /[0-9a-zA-Z/\\~().-]/.test(e.key)) {
       onchange(setCell(block, cursor.row, cursor.col, e.key));
       cursor = moveCursor(block, cursor, "right");
       e.preventDefault();
