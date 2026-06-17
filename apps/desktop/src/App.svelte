@@ -1,15 +1,14 @@
 <script lang="ts">
   import { onMount, type Component } from "svelte";
-  import AnalyzePrompt from "./components/AnalyzePrompt.svelte";
   import Drill from "./components/Drill.svelte";
   import Export from "./components/Export.svelte";
   import Guide from "./components/Guide.svelte";
   import Library from "./components/Library.svelte";
   import Loops from "./components/Loops.svelte";
   import ProfilingPanel from "./components/ProfilingPanel.svelte";
+  import Isolation from "./components/Isolation.svelte";
   import Sections from "./components/Sections.svelte";
   import SettingsPanel from "./components/SettingsPanel.svelte";
-  import StemMixer from "./components/StemMixer.svelte";
   import Transport from "./components/Transport.svelte";
   import Tuner from "./components/Tuner.svelte";
   import Waveform from "./components/Waveform.svelte";
@@ -43,11 +42,6 @@
   };
   const tabs = ALL_TABS;
   let tab = $state<Tab>("structure");
-
-  // The stems + structure boxes are both products of one analyze action. Until a
-  // track has either, show a single analyze call-to-action instead of two empty
-  // boxes; once any data lands, swap in the detail boxes.
-  let anyResults = $derived(!!($openSong?.analysis || $openSong?.stems));
 
   $effect(() => {
     if ($settingsOpen) {
@@ -104,19 +98,16 @@
     <!-- boxes flow to fill the stage width and wrap to the next row as they run
          out of room; every row (even a lone box) spans the full width. The tuner
          is always present (useful with no song open); the song-scoped boxes join
-         the row once a track is open. -->
+         the row once a track is open. The drill sits last, after the standing
+         boxes, since it only appears mid-practice. -->
     <div class="boxes">
+      {#if $openSong}
+        <Isolation />
+      {/if}
+      <Tuner />
       {#if $openSong && $drillSpan}
         <Drill />
       {/if}
-      {#if $openSong}
-        {#if anyResults}
-          <StemMixer />
-        {:else}
-          <AnalyzePrompt />
-        {/if}
-      {/if}
-      <Tuner />
     </div>
   </main>
   <aside class="panels" class:collapsed={$panelsCollapsed}>

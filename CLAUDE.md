@@ -106,10 +106,13 @@ term maps to one thing. The three columns are **panes**:
 - **Stage** (center, `main.stage`) — the work surface. Down it sit the
   **waveform**, the **controls box** (`Transport.svelte`), then a flowing row
   of **boxes** built on the `Box` widget (`lib/ui/Box.svelte`, a label header
-  + body): the **stems box** (`StemMixer.svelte`) or, until a track has any
-  analysis/stems, the **analyze box** (`AnalyzePrompt.svelte`, a CTA), plus the
-  **tuner box** (`Tuner.svelte`, always present). Call them *boxes*, never
-  "containers" or "panels".
+  + body): the **isolation box** (`Isolation.svelte`) — ways to hear less of
+  the mix, from always-available **bass focus** (a low-pass) up to the separated
+  **stem channels** (vocals/drums/bass/other) once analysis has run; before
+  separation it carries the analyze CTA inline. Then the **tuner box**
+  (`Tuner.svelte`, always present), and the **drill box** (`Drill.svelte`) last,
+  only while a drill span is active. Call them *boxes*, never "containers" or
+  "panels".
 - **Panel** (right, `aside.panels`) — its switchable views are **tabs**
   (structure, loops, capture, export, profile, settings, guide), wired
   through the `TAB_VIEWS` registry in `App.svelte`. The **structure tab**

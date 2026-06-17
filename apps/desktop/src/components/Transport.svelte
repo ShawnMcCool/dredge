@@ -1,6 +1,6 @@
 <script lang="ts">
   import { fmtClock } from "../lib/format";
-  import { actions, bassFocus, muted, openSong, pitch, playbackVolume, position } from "../lib/stores";
+  import { actions, muted, openSong, pitch, playbackVolume, position } from "../lib/stores";
   import Fader from "../lib/ui/Fader.svelte";
 
   // pitch stepper: ± a semitone; scroll over it for ±5 cents
@@ -89,21 +89,6 @@
 
     <span class="vsep"></span>
 
-    <!-- bass focus: the whole cell toggles it -->
-    <button
-      class="seg bass"
-      class:on={$bassFocus}
-      onclick={() => actions.bassFocus(!$bassFocus)}
-      title="bass focus — low-pass + up an octave"
-      aria-label="bass focus"
-      aria-pressed={$bassFocus}
-    >
-      <span class="mlabel">bass focus</span>
-      <span class="mbody"><span class="toggle">{$bassFocus ? "on" : "off"}</span></span>
-    </button>
-
-    <span class="vsep"></span>
-
     <!-- speed -->
     <div class="seg">
       <span class="mlabel">speed <span class="val">{Math.round($position.rate * 100)}%</span></span>
@@ -169,10 +154,9 @@
     min-width: 0;
   }
 
-  /* the two cells that are themselves a single button (play, bass focus) —
-     strip the default button chrome so they read as plain cells */
-  .seg.player,
-  .seg.bass {
+  /* the play cell is itself a single button — strip the default button chrome
+     so it reads as a plain cell */
+  .seg.player {
     background: none;
     border: none;
     border-radius: 0;
@@ -283,20 +267,6 @@
   .iconbtn svg {
     width: 18px;
     height: 18px;
-  }
-
-  /* bass-focus: plain text state, amber when on, whole cell hover-highlights */
-  .toggle {
-    font-size: 13px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--muted);
-  }
-  .seg.bass:not(.on):hover .toggle {
-    color: var(--fg);
-  }
-  .seg.bass.on .toggle {
-    color: var(--accent);
   }
 
   /* pitch stepper: bare − value + — no surrounding box or internal rules */
