@@ -1319,7 +1319,7 @@ impl App {
                 position: s.position,
             })
             .collect();
-        let _ = self.commit_sections(p.song_id, &news)?;
+        self.commit_sections(p.song_id, &news)?;
         let (sections, orphan_notes) = self.sections_payload(p.song_id)?;
         Ok(json!({ "sections": sections, "orphan_notes": orphan_notes }))
     }
@@ -1335,7 +1335,7 @@ impl App {
             .open_song
             .as_ref()
             .map(|o| o.song.id)
-            .ok_or_else(|| "no open song".to_string())?;
+            .ok_or_else(|| "no song open".to_string())?;
         p.doc.validate()?;
         self.store
             .set_section_notes(song_id, &p.label, &p.doc)

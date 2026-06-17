@@ -136,5 +136,5 @@ fn section_notes_set_requires_open_song() {
         params: json!({ "label": "verse 1", "doc": doc }),
     });
     assert!(!resp.ok);
-    assert!(resp.error.unwrap().contains("no open song"));
+    assert!(resp.error.unwrap().contains("no song open"));
 }
