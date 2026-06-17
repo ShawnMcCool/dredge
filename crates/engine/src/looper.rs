@@ -45,14 +45,19 @@ impl Looper {
         }
     }
 
-    /// Set loop [start, end) in frames; jumps into the region if outside.
-    pub fn set_region(&mut self, start: usize, end: usize) {
+    /// Set loop [start, end) in frames; jumps into the region if the playhead
+    /// is outside it. Returns `true` only when the play position actually moved,
+    /// so callers can flush the stretcher solely on that discontinuity (a plain
+    /// resize that keeps the playhead inside must not reset — it cuts audio).
+    pub fn set_region(&mut self, start: usize, end: usize) -> bool {
         let end = end.min(self.set.frames());
         let start = start.min(end);
         self.region = Some((start, end));
         if self.pos < start || self.pos >= end {
             self.pos = start;
+            return true;
         }
+        false
     }
 
     pub fn clear_region(&mut self) {

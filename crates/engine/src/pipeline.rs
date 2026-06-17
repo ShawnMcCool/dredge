@@ -88,9 +88,16 @@ impl Pipeline {
                 self.stretch.reset();
             }
             EngineCmd::SetLoopSecs { start, end } => {
-                self.looper
-                    .set_region(secs_to_frames(start), secs_to_frames(end));
-                self.stretch.reset();
+                // Only flush the stretcher if the region change actually moved the
+                // playhead (it was outside the new region). A resize that keeps the
+                // playhead inside is seamless — resetting would drop the buffered
+                // stretch latency and audibly cut playback for ~a second.
+                if self
+                    .looper
+                    .set_region(secs_to_frames(start), secs_to_frames(end))
+                {
+                    self.stretch.reset();
+                }
             }
             EngineCmd::ClearLoop => self.looper.clear_region(),
             EngineCmd::SetRate(rate) => {
