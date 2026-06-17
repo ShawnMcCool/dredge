@@ -42,6 +42,14 @@ export async function initZoom(): Promise<void> {
   await apply(valid(legacy) ? legacy : firstRunDefault());
 }
 
+/** Re-assert the current zoom without persisting. WebKitGTK can desync the
+ *  render scale from the input/hit-test scale across a viewport resize (notably
+ *  entering/leaving fullscreen), which drifts click targets — worse the further
+ *  they sit from the top-left. Re-applying the zoom after a resize resyncs them. */
+export async function resyncZoom(): Promise<void> {
+  await getCurrentWebview().setZoom(current);
+}
+
 export const zoomIn = (): Promise<void> => apply(current + STEP);
 export const zoomOut = (): Promise<void> => apply(current - STEP);
 export const zoomReset = (): Promise<void> => apply(1.0);

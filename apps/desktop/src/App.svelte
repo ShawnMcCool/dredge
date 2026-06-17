@@ -17,7 +17,7 @@
   import { initTheme } from "./lib/theme";
   import { initTrace } from "./lib/trace";
   import { initDecorations } from "./lib/window";
-  import { initZoom } from "./lib/zoom";
+  import { initZoom, resyncZoom } from "./lib/zoom";
   import {
     actions,
     drillSpan,
@@ -80,10 +80,21 @@
     // resize) are driven by pointerdown, so this doesn't disturb them.
     const blockContextMenu = (e: MouseEvent) => e.preventDefault();
     window.addEventListener("contextmenu", blockContextMenu);
+    // A viewport resize (esp. fullscreen) can desync the webview's render scale
+    // from its hit-test scale, drifting clicks. Re-assert the zoom once the
+    // resize settles to resync them.
+    let zoomResync: ReturnType<typeof setTimeout> | undefined;
+    const onResize = () => {
+      clearTimeout(zoomResync);
+      zoomResync = setTimeout(() => void resyncZoom(), 150);
+    };
+    window.addEventListener("resize", onResize);
     return () => {
       uninstall();
       void unlisten.then((f) => f());
       window.removeEventListener("contextmenu", blockContextMenu);
+      window.removeEventListener("resize", onResize);
+      clearTimeout(zoomResync);
     };
   });
 </script>
