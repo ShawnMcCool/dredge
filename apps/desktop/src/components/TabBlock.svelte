@@ -35,7 +35,7 @@
   // outer reach is the wrapper padding). Bands, not halves — otherwise "nearest
   // edge" hands the top handle most of a wide grid.
   const RIGHT_REACH = 10; // px left of the | edge
-  const TOP_REACH = 12; // px below the first row
+  const TOP_REACH = 9; // px below the first row
 
   /** Which boundary a right-click here would grab, or null when over the grid
    *  body (not on a handle band). Each band spans its edge ± reach/margin; the
