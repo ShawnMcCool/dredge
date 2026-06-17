@@ -3,6 +3,17 @@
 All notable user-facing changes to earworm, newest first. Entries are written
 at release time by `scripts/ship release`.
 
+## v0.3.0 — 2026-06-17
+
+### Improved
+
+- **Bass focus now lives with the stems, in one "Isolation" box.** They do the same job — making one part of the song stand out — so they're together now instead of split across the screen. Bass focus is still a single click and works on any song right away, even before you separate it into stems.
+
+### Fixed
+
+- **Resizing a loop no longer cuts the sound.** Dragging a loop's edge while it played used to drop the audio for about a second; now it stays smooth as long as the playhead is still inside the loop.
+- **The loop button on a selection stays clickable** when a selection sits on top of an existing loop.
+
 ## v0.2.2 — 2026-06-16
 
 ### New
