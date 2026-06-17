@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Block {
-    Text { text: String },
+    Text {
+        text: String,
+    },
     Tab {
         strings: usize,
         width: usize,
@@ -33,7 +35,12 @@ impl NotesDoc {
     /// and every row is exactly `width` chars.
     pub fn validate(&self) -> Result<(), String> {
         for b in &self.blocks {
-            if let Block::Tab { strings, width, rows } = b {
+            if let Block::Tab {
+                strings,
+                width,
+                rows,
+            } = b
+            {
                 if rows.len() != *strings {
                     return Err(format!("tab: {} rows for {strings} strings", rows.len()));
                 }
@@ -54,8 +61,14 @@ mod tests {
     fn roundtrips_through_json() {
         let doc = NotesDoc {
             blocks: vec![
-                Block::Text { text: "intro riff".into() },
-                Block::Tab { strings: 2, width: 4, rows: vec!["--5-".into(), "7---".into()] },
+                Block::Text {
+                    text: "intro riff".into(),
+                },
+                Block::Tab {
+                    strings: 2,
+                    width: 4,
+                    rows: vec!["--5-".into(), "7---".into()],
+                },
             ],
         };
         let s = serde_json::to_string(&doc).unwrap();
@@ -66,17 +79,43 @@ mod tests {
     #[test]
     fn empty_doc_is_empty() {
         assert!(NotesDoc::default().is_empty());
-        assert!(NotesDoc { blocks: vec![Block::Text { text: "  \n".into() }] }.is_empty());
-        assert!(!NotesDoc { blocks: vec![Block::Text { text: "x".into() }] }.is_empty());
+        assert!(NotesDoc {
+            blocks: vec![Block::Text {
+                text: "  \n".into()
+            }]
+        }
+        .is_empty());
+        assert!(!NotesDoc {
+            blocks: vec![Block::Text { text: "x".into() }]
+        }
+        .is_empty());
     }
 
     #[test]
     fn validate_rejects_malformed_tab() {
-        let bad = NotesDoc { blocks: vec![Block::Tab { strings: 2, width: 4, rows: vec!["--5-".into()] }] };
+        let bad = NotesDoc {
+            blocks: vec![Block::Tab {
+                strings: 2,
+                width: 4,
+                rows: vec!["--5-".into()],
+            }],
+        };
         assert!(bad.validate().is_err());
-        let bad2 = NotesDoc { blocks: vec![Block::Tab { strings: 1, width: 4, rows: vec!["--".into()] }] };
+        let bad2 = NotesDoc {
+            blocks: vec![Block::Tab {
+                strings: 1,
+                width: 4,
+                rows: vec!["--".into()],
+            }],
+        };
         assert!(bad2.validate().is_err());
-        let ok = NotesDoc { blocks: vec![Block::Tab { strings: 1, width: 4, rows: vec!["----".into()] }] };
+        let ok = NotesDoc {
+            blocks: vec![Block::Tab {
+                strings: 1,
+                width: 4,
+                rows: vec!["----".into()],
+            }],
+        };
         assert!(ok.validate().is_ok());
     }
 }

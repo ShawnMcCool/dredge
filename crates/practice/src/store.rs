@@ -831,15 +831,31 @@ mod tests {
 
         assert_eq!(store.get_section_notes(song.id, "verse 1").unwrap(), None);
 
-        let doc = NotesDoc { blocks: vec![Block::Text { text: "hello".into() }] };
+        let doc = NotesDoc {
+            blocks: vec![Block::Text {
+                text: "hello".into(),
+            }],
+        };
         store.set_section_notes(song.id, "verse 1", &doc).unwrap();
-        assert_eq!(store.get_section_notes(song.id, "verse 1").unwrap(), Some(doc.clone()));
+        assert_eq!(
+            store.get_section_notes(song.id, "verse 1").unwrap(),
+            Some(doc.clone())
+        );
 
-        let doc2 = NotesDoc { blocks: vec![Block::Text { text: "world".into() }] };
+        let doc2 = NotesDoc {
+            blocks: vec![Block::Text {
+                text: "world".into(),
+            }],
+        };
         store.set_section_notes(song.id, "verse 1", &doc2).unwrap();
-        assert_eq!(store.get_section_notes(song.id, "verse 1").unwrap(), Some(doc2));
+        assert_eq!(
+            store.get_section_notes(song.id, "verse 1").unwrap(),
+            Some(doc2)
+        );
 
-        store.set_section_notes(song.id, "verse 1", &NotesDoc::default()).unwrap();
+        store
+            .set_section_notes(song.id, "verse 1", &NotesDoc::default())
+            .unwrap();
         assert_eq!(store.get_section_notes(song.id, "verse 1").unwrap(), None);
 
         store.set_section_notes(song.id, "chorus 1", &doc).unwrap();
