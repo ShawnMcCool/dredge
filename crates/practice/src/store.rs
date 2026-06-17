@@ -1,6 +1,7 @@
 use crate::error::Result;
 use crate::model::{Analysis, LoopId, LoopKind, LoopRegion, Section, SectionId, Song, SongId};
 use rusqlite::params;
+use rusqlite::OptionalExtension;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE songs (
@@ -95,6 +96,19 @@ const SCHEMA_V8: &str = "
 DROP TABLE IF EXISTS reps;
 DROP TABLE IF EXISTS resurfacing;
 DROP TABLE IF EXISTS plans;
+";
+
+/// v9: free-form per-section notes (text + tab blocks), keyed by the section's
+/// occurrence label ("verse 2") rather than its unstable row id. `doc_json` is
+/// a serialized `notes::NotesDoc`.
+const SCHEMA_V9: &str = "
+CREATE TABLE section_notes (
+    song_id    INTEGER NOT NULL,
+    label      TEXT    NOT NULL,
+    doc_json   TEXT    NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (song_id, label)
+);
 ";
 
 pub struct Store {
@@ -196,6 +210,10 @@ impl Store {
         if version < 8 {
             self.conn.execute_batch(SCHEMA_V8)?;
             self.conn.pragma_update(None, "user_version", 8)?;
+        }
+        if version < 9 {
+            self.conn.execute_batch(SCHEMA_V9)?;
+            self.conn.pragma_update(None, "user_version", 9)?;
         }
         Ok(())
     }
@@ -325,6 +343,69 @@ impl Store {
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(sections)
+    }
+
+    /// Upsert a section's notes by occurrence label. An empty doc deletes the row.
+    pub fn set_section_notes(
+        &self,
+        song_id: SongId,
+        label: &str,
+        doc: &crate::notes::NotesDoc,
+    ) -> Result<()> {
+        if doc.is_empty() {
+            self.conn.execute(
+                "DELETE FROM section_notes WHERE song_id = ?1 AND label = ?2",
+                params![song_id.0, label],
+            )?;
+            return Ok(());
+        }
+        let json = serde_json::to_string(doc)?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        self.conn.execute(
+            "INSERT INTO section_notes (song_id, label, doc_json, updated_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(song_id, label) DO UPDATE SET doc_json = ?3, updated_at = ?4",
+            params![song_id.0, label, json, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_section_notes(
+        &self,
+        song_id: SongId,
+        label: &str,
+    ) -> Result<Option<crate::notes::NotesDoc>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT doc_json FROM section_notes WHERE song_id = ?1 AND label = ?2",
+        )?;
+        let json: Option<String> = stmt
+            .query_row(params![song_id.0, label], |r| r.get(0))
+            .optional()?;
+        Ok(match json {
+            Some(j) => Some(serde_json::from_str(&j)?),
+            None => None,
+        })
+    }
+
+    /// All stored notes for a song as `(label, doc)`, label order.
+    pub fn list_section_notes(
+        &self,
+        song_id: SongId,
+    ) -> Result<Vec<(String, crate::notes::NotesDoc)>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT label, doc_json FROM section_notes WHERE song_id = ?1 ORDER BY label",
+        )?;
+        let rows = stmt
+            .query_map(params![song_id.0], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        rows.into_iter()
+            .map(|(label, json)| Ok((label, serde_json::from_str(&json)?)))
+            .collect()
     }
 
     pub fn insert_loop(&self, song_id: SongId, l: NewLoop) -> Result<LoopRegion> {
@@ -732,6 +813,38 @@ mod tests {
             store.song_by_id(b.id).unwrap().is_some(),
             "other song untouched"
         );
+    }
+
+    #[test]
+    fn section_notes_upsert_get_delete() {
+        use crate::notes::{Block, NotesDoc};
+        let store = Store::open_in_memory().unwrap();
+        let song = store
+            .insert_song(NewSong {
+                title: "t",
+                artist: None,
+                path: "/p",
+                file_hash: "h",
+                duration_secs: 1.0,
+            })
+            .unwrap();
+
+        assert_eq!(store.get_section_notes(song.id, "verse 1").unwrap(), None);
+
+        let doc = NotesDoc { blocks: vec![Block::Text { text: "hello".into() }] };
+        store.set_section_notes(song.id, "verse 1", &doc).unwrap();
+        assert_eq!(store.get_section_notes(song.id, "verse 1").unwrap(), Some(doc.clone()));
+
+        let doc2 = NotesDoc { blocks: vec![Block::Text { text: "world".into() }] };
+        store.set_section_notes(song.id, "verse 1", &doc2).unwrap();
+        assert_eq!(store.get_section_notes(song.id, "verse 1").unwrap(), Some(doc2));
+
+        store.set_section_notes(song.id, "verse 1", &NotesDoc::default()).unwrap();
+        assert_eq!(store.get_section_notes(song.id, "verse 1").unwrap(), None);
+
+        store.set_section_notes(song.id, "chorus 1", &doc).unwrap();
+        let all = store.list_section_notes(song.id).unwrap();
+        assert_eq!(all, vec![("chorus 1".to_string(), doc)]);
     }
 
     #[test]
