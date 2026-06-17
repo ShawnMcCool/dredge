@@ -109,10 +109,12 @@ term maps to one thing. The three columns are **panes**:
   + body): the **isolation box** (`Isolation.svelte`) — ways to hear less of
   the mix, from always-available **bass focus** (a low-pass) up to the separated
   **stem channels** (vocals/drums/bass/other) once analysis has run; before
-  separation it carries the analyze CTA inline. Then the **tuner box**
-  (`Tuner.svelte`, always present), and the **drill box** (`Drill.svelte`) last,
-  only while a drill span is active. Call them *boxes*, never "containers" or
-  "panels".
+  separation it carries the analyze CTA inline. Then the **notes box**
+  (`Notes.svelte`) — per-section notes (free text + inline `TabBlock`
+  tablature), keyed by the section's occurrence label ("verse 2") and shown once
+  a song has sections; the **tuner box** (`Tuner.svelte`, always present); and
+  the **drill box** (`Drill.svelte`) last, only while a drill span is active.
+  Call them *boxes*, never "containers" or "panels".
 - **Panel** (right, `aside.panels`) — its switchable views are **tabs**
   (structure, loops, capture, export, profile, settings, guide), wired
   through the `TAB_VIEWS` registry in `App.svelte`. The **structure tab**
