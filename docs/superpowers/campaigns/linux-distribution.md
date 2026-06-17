@@ -267,26 +267,38 @@ tarball + `SHA256SUMS`, `.deb` install-smoke-tested on the runner). `earworm-bin
 PKGBUILD stamped with the real tarball checksum and **validated end-to-end with
 `makepkg`** (downloads the release tarball, builds, correct /usr tree).
 
+**Updated (2026-06-17):** releases reached **v0.2.2**; advanced both AUR
+PKGBUILDs to v0.2.2 (real checksum, `ffmpeg` optdep, `earworm-doctor` in the
+source install), regenerated `.SRCINFO`, and `makepkg`-validated **both**
+packages end-to-end. The source `earworm` build — never run before — exposed and
+fixed the makepkg-LTO/rusqlite link bug (`options=('!lto')`). Both are now
+publish-ready; only the AUR push (maintainer's SSH) remains.
+
 ## Remaining follow-ups
 
 Deferred work, in rough priority order. None blocks the `.deb` / source-build
 paths, which already work for users.
 
-- [ ] **Publish `earworm-bin` to the AUR.** PKGBUILD is publish-ready (real
-  checksum, `.SRCINFO` regenerated, `makepkg`-validated). Blocked here only
-  because AUR SSH isn't set up on the build box (host key + registered key).
-  Needs the maintainer's AUR account:
+- [ ] **Publish `earworm-bin` to the AUR.** Bumped to **v0.2.2** + the published
+  tarball checksum; `.SRCINFO` regenerated; `makepkg`-validated end-to-end
+  against the v0.2.2 release (ships `earworm-doctor` via the tarball). Blocked
+  only on AUR SSH (the build box's key isn't registered). Needs the maintainer's
+  AUR account:
   ```bash
   git clone ssh://aur@aur.archlinux.org/earworm-bin.git /tmp/aur-earworm-bin
   cp packaging/aur/earworm-bin/{PKGBUILD,.SRCINFO} /tmp/aur-earworm-bin/
-  cd /tmp/aur-earworm-bin && git add -A && git commit -m "earworm-bin 0.1.0-1" && git push
+  cd /tmp/aur-earworm-bin && git add -A && git commit -m "earworm-bin 0.2.2-1" && git push
   ```
   This makes `yay -S earworm-bin` work.
-- [ ] **Validate + publish the source `earworm` AUR package.** It's
-  `bash -n`/`--printsrcinfo` clean but never `makepkg`-built (a full clean
-  from-source build, ~10 min: clones tag `v0.1.0`, `cargo build -p server` +
-  `pnpm tauri build --no-bundle`). Run `makepkg` once to confirm `build()` +
-  `package()`, then publish to `ssh://aur@aur.archlinux.org/earworm.git`.
+- [ ] **Publish the source `earworm` AUR package.** Now **`makepkg`-validated at
+  v0.2.2** (the first real build surfaced an rust-lld link failure on rusqlite's
+  bundled sqlite under makepkg LTO — fixed with `options=('!lto')`). Just needs
+  the push:
+  ```bash
+  git clone ssh://aur@aur.archlinux.org/earworm.git /tmp/aur-earworm
+  cp packaging/aur/earworm/{PKGBUILD,.SRCINFO} /tmp/aur-earworm/
+  cd /tmp/aur-earworm && git add -A && git commit -m "earworm 0.2.2-1" && git push
+  ```
 - [ ] **Automate the per-release AUR bump.** Each release currently needs a
   manual `pkgver` + `earworm-bin` `sha256sums` update + `.SRCINFO` regen + push.
   A CI step (AUR-deploy action keyed off the published tag, pulling the tarball
