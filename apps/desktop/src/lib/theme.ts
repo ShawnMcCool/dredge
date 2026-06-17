@@ -51,6 +51,11 @@ export function accentHex(theme: string): string {
   return PRESET_HEX[theme === "cyan" ? "cyan" : "amber"];
 }
 
+/** Fired on <window> after the accent vars change. DOM styled with var(--accent)
+ *  updates live, but canvas painters (the waveform) read the vars at draw time
+ *  and must repaint — they listen for this. */
+export const THEME_EVENT = "earworm:theme";
+
 export function applyTheme(theme: string): void {
   const root = document.documentElement;
   if (isCustom(theme)) {
@@ -64,6 +69,7 @@ export function applyTheme(theme: string): void {
     for (const v of ACCENT_VARS) root.style.removeProperty(v);
     root.setAttribute("data-accent", theme === "cyan" ? "cyan" : "amber");
   }
+  window.dispatchEvent(new Event(THEME_EVENT));
 }
 
 /** Call after `loadSettings()` — restore the saved accent. */

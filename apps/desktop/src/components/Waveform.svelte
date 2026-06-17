@@ -33,6 +33,7 @@
     type LaneSpan,
     type LoopEdge,
   } from "../lib/waveform-hit";
+  import { THEME_EVENT } from "../lib/theme";
   import { hexToHue, labelColor } from "../lib/waveform-colors";
   import {
     adjustWindow,
@@ -187,6 +188,14 @@
     void view;
     void activeSpan;
     requestRedraw();
+  });
+
+  // The canvas reads theme colors at draw time, so an accent change needs an
+  // explicit repaint (DOM styled with var(--accent) updates on its own).
+  $effect(() => {
+    const repaint = () => requestRedraw();
+    window.addEventListener(THEME_EVENT, repaint);
+    return () => window.removeEventListener(THEME_EVENT, repaint);
   });
 
   function draw() {
