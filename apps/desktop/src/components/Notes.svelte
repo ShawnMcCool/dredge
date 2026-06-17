@@ -195,8 +195,6 @@
           {/if}
         {/each}
       </div>
-    {:else}
-      <p class="empty mono">no notes — <span class="hint">✎ edit</span> to add</p>
     {/if}
 
     {#if $openSong.orphan_notes.length > 0}
@@ -288,15 +286,6 @@
     line-height: 20px;
     color: var(--fg);
   }
-  .empty {
-    font-size: 11px;
-    color: var(--muted);
-    margin: 0;
-  }
-  .empty .hint {
-    color: var(--accent);
-  }
-
   .orphan-toggle {
     margin-top: 8px;
     background: none;
