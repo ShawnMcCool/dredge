@@ -1,18 +1,22 @@
 <script lang="ts">
-  // The notes box: shows/edits the active section's note document. Active
-  // section is hybrid (lib/active-section): follow the playhead unless a label
-  // is pinned by clicking a section or focusing the editor. Edits debounce-
-  // autosave via actions.setSectionNotes; orphaned notes surface in a footer.
+  // The notes box for the active section. Two modes:
+  //   - display (default): read-only, tight — empty blocks omitted, no chrome;
+  //     follows the playhead (hybrid resolver in lib/active-section).
+  //   - edit: full editor (textareas, + text / + tab, right-drag tab resize,
+  //     delete); pins the section you entered on so it can't switch mid-edit,
+  //     saving + dropping the pin when you leave.
+  // A note is an ordered, flexible list of text and tab blocks (no fixed shape).
+  // Edits debounce-autosave via actions.setSectionNotes; orphans surface below.
   import { activeLabel } from "../lib/active-section";
-  import { emptyTab, type Block, type NotesDoc, type TabBlock } from "../lib/notes-doc";
+  import { emptyTab, type NotesDoc, type TabBlock } from "../lib/notes-doc";
   import { actions, openSong, position, selection, settings } from "../lib/stores";
   import Box from "../lib/ui/Box.svelte";
   import Button from "../lib/ui/Button.svelte";
-  // Component aliased to avoid colliding with the `TabBlock` type imported above.
   import TabBlockView from "./TabBlock.svelte";
 
-  let pinned = $state<string | null>(null);
-  let editing = $state(false);
+  let mode = $state<"display" | "edit">("display");
+  let editPin = $state<string | null>(null);
+  let pinned = $state<string | null>(null); // display-mode selection pin
   let showOrphans = $state(false);
 
   let spans = $derived(
@@ -21,35 +25,39 @@
       .map((s) => ({ label: s.label as string, start: s.start, end: s.end })),
   );
 
-  // Pin while editing so the active section can't switch mid-keystroke.
+  // In edit mode the pinned section wins; in display we follow the playhead
+  // (unless a selection pinned one).
   let active = $derived(
-    editing && pinned ? pinned : activeLabel(spans, $position.secs, pinned),
+    mode === "edit" && editPin ? editPin : activeLabel(spans, $position.secs, pinned),
   );
-
   let activeSection = $derived($openSong?.sections.find((s) => s.label === active) ?? null);
 
-  // Local edit buffer for the active section; mirrors the store doc otherwise.
+  // Local edit buffer; mirrors the stored doc except while editing.
   let doc = $state<NotesDoc>({ blocks: [] });
-  // Deliberately non-reactive: an effect-local latch so reseeding doesn't
-  // retrigger its own effect. Do NOT make this $state.
+  // Deliberately non-reactive: effect-local latch so reseeding doesn't retrigger
+  // its own effect. Do NOT make this $state.
   let bufferedLabel: string | null = null;
 
   function clone(d: NotesDoc): NotesDoc {
     return JSON.parse(JSON.stringify(d));
   }
 
+  /** A doc with at least one text block, so a fresh section has a place to type. */
+  function seedFrom(stored: NotesDoc | null | undefined): NotesDoc {
+    return clone(stored && stored.blocks.length ? stored : { blocks: [{ kind: "text", text: "" }] });
+  }
+
+  // Reseed the buffer when the active section changes — but never while editing
+  // (would clobber in-progress edits).
   $effect(() => {
-    // reseed the buffer when the active section changes (and we're not editing)
     const label = active;
-    if (label !== bufferedLabel && !editing) {
+    if (label !== bufferedLabel && mode !== "edit") {
       bufferedLabel = label ?? null;
-      const stored = activeSection?.notes;
-      // an empty-or-missing doc still gets one text block so there's a place to type
-      doc = clone(stored && stored.blocks.length ? stored : { blocks: [{ kind: "text", text: "" }] });
+      doc = seedFrom(activeSection?.notes);
     }
   });
 
-  // Pin when a section is selected on the waveform / structure tab.
+  // Display-mode: clicking a section (waveform / structure tab) pins it.
   $effect(() => {
     const sel = $selection;
     if (!sel) return;
@@ -57,28 +65,20 @@
     if (hit) pinned = hit.label;
   });
 
-  // Release the pin on the rising edge of playback (resume following the
-  // playhead). Edge-triggered, not level: `$position` is a fresh object every
-  // ~50ms tick, so a level check would clear `editing` 20×/s and yank the
-  // editor mid-keystroke. Flush first so a pending edit isn't lost.
+  // Release the display selection pin on the rising edge of playback so the box
+  // resumes following the playhead. Edge-triggered: `$position` is a fresh
+  // object every ~50ms tick, so a level check would fire continuously.
   let wasPlaying = false;
   $effect(() => {
     const playing = $position.playing;
-    if (playing && !wasPlaying) {
-      commit();
-      pinned = null;
-      editing = false;
-    }
+    if (playing && !wasPlaying) pinned = null;
     wasPlaying = playing;
   });
 
-  // Autosave holds the label+doc captured when the edit happened, so a flush or
-  // a section switch always persists the RIGHT content under the RIGHT label —
-  // never whatever `active`/`doc` have since become.
+  // --- autosave (captures label+doc when the edit happens) --------------------
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
   let pending: { label: string; snapshot: NotesDoc } | null = null;
 
-  /** Persist the pending edit immediately and disarm the timer. */
   function commit() {
     if (saveTimer) {
       clearTimeout(saveTimer);
@@ -89,75 +89,112 @@
       pending = null;
     }
   }
-
   function queueSave() {
     if (!active) return;
-    // a different section is already pending — persist it before re-arming, so
-    // switching sections within the debounce window can't drop or misroute it
     if (pending && pending.label !== active) commit();
     pending = { label: active, snapshot: clone(doc) };
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(commit, 500);
   }
 
+  // --- mode toggle ------------------------------------------------------------
+  function enterEdit() {
+    if (!active) return;
+    editPin = active;
+    bufferedLabel = active;
+    doc = seedFrom(activeSection?.notes);
+    mode = "edit";
+  }
+  function exitEdit() {
+    commit();
+    mode = "display";
+    editPin = null;
+  }
+
+  // --- block editing ----------------------------------------------------------
   function editText(i: number, text: string) {
     const blocks = doc.blocks.slice();
     blocks[i] = { kind: "text", text };
     doc = { ...doc, blocks };
     queueSave();
   }
-
   function editTab(i: number, b: TabBlock) {
     const blocks = doc.blocks.slice();
     blocks[i] = b;
     doc = { ...doc, blocks };
     queueSave();
   }
-
   function deleteBlock(i: number) {
-    let blocks = doc.blocks.filter((_, j) => j !== i);
-    if (blocks.length === 0 || blocks[blocks.length - 1].kind !== "text") {
-      blocks = [...blocks, { kind: "text", text: "" }];
-    }
-    doc = { ...doc, blocks };
+    doc = { ...doc, blocks: doc.blocks.filter((_, j) => j !== i) };
     queueSave();
   }
-
   function addTab() {
     const strings = Number($settings["default_tab_strings"] ?? 4);
     const width = Number($settings["default_tab_width"] ?? 16);
-    const blocks: Block[] = [...doc.blocks, emptyTab(strings, width), { kind: "text", text: "" }];
-    doc = { ...doc, blocks };
+    doc = { ...doc, blocks: [...doc.blocks, emptyTab(strings, width)] };
     queueSave();
   }
+  function addText() {
+    doc = { ...doc, blocks: [...doc.blocks, { kind: "text", text: "" }] };
+    queueSave();
+  }
+
+  // Display-mode: drop empty text blocks so the read view stays tight.
+  let displayBlocks = $derived(
+    doc.blocks.filter((b) => b.kind === "tab" || (b.kind === "text" && b.text.trim().length > 0)),
+  );
 </script>
 
 {#if $openSong && spans.length > 0}
   <Box label={active ? `notes — ${active}` : "notes"} wide>
     {#snippet tools()}
-      <button onclick={addTab} title="add a tablature block" aria-label="add tab">+ tab</button>
+      {#if mode === "edit"}
+        <button onclick={exitEdit} title="done editing — save & view" aria-label="done editing">done</button>
+      {:else}
+        <button onclick={enterEdit} title="edit notes for this section" aria-label="edit notes">✎ edit</button>
+      {/if}
     {/snippet}
 
-    <div class="doc">
-      {#each doc.blocks as block, i (i)}
-        {#if block.kind === "text"}
-          <textarea
-            class="text mono"
-            value={block.text}
-            placeholder={`jot tab or notes for ${active}…`}
-            onfocus={() => { editing = true; if (active) pinned = active; }}
-            onblur={() => { commit(); editing = false; }}
-            oninput={(e) => editText(i, e.currentTarget.value)}
-          ></textarea>
-        {:else}
-          <TabBlockView
-            block={block as TabBlock}
-            onchange={(b) => editTab(i, b)}
-            ondelete={() => deleteBlock(i)}
-          />
-        {/if}
-      {/each}
-    </div>
+    {#if mode === "edit"}
+      <div class="doc">
+        {#each doc.blocks as block, i (i)}
+          {#if block.kind === "text"}
+            <div class="text-row">
+              <textarea
+                class="text mono"
+                value={block.text}
+                placeholder={`notes for ${active}…`}
+                onblur={() => commit()}
+                oninput={(e) => editText(i, e.currentTarget.value)}
+              ></textarea>
+              <button class="del" onclick={() => deleteBlock(i)} title="delete text" aria-label="delete text">×</button>
+            </div>
+          {:else}
+            <TabBlockView
+              block={block as TabBlock}
+              onchange={(b) => editTab(i, b)}
+              ondelete={() => deleteBlock(i)}
+            />
+          {/if}
+        {/each}
+        <div class="inserter">
+          <button onclick={addText} title="add a text block">+ text</button>
+          <button onclick={addTab} title="add a tablature block">+ tab</button>
+        </div>
+      </div>
+    {:else if displayBlocks.length > 0}
+      <div class="doc display">
+        {#each displayBlocks as block, i (i)}
+          {#if block.kind === "text"}
+            <div class="text-ro">{block.text}</div>
+          {:else}
+            <pre class="tab-ro mono">{block.rows.map((r) => `|${r}|`).join("\n")}</pre>
+          {/if}
+        {/each}
+      </div>
+    {:else}
+      <p class="empty mono">no notes — <span class="hint">✎ edit</span> to add</p>
+    {/if}
 
     {#if $openSong.orphan_notes.length > 0}
       <button class="orphan-toggle mono" onclick={() => (showOrphans = !showOrphans)}>
@@ -185,8 +222,13 @@
     max-height: 280px;
     overflow-y: auto;
   }
+  .text-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+  }
   .text {
-    width: 100%;
+    flex: 1 1 auto;
     min-height: 44px;
     resize: vertical;
     background: var(--bg);
@@ -198,6 +240,60 @@
     line-height: 1.5;
     white-space: pre;
   }
+  .text-row .del {
+    flex: 0 0 auto;
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    line-height: 1;
+    padding: 2px;
+  }
+  .text-row .del:hover { color: var(--fg); }
+
+  .inserter {
+    display: flex;
+    gap: 8px;
+  }
+  .inserter button {
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 11px;
+    padding: 2px 8px;
+  }
+  .inserter button:hover {
+    color: var(--fg);
+    border-color: var(--muted);
+  }
+
+  /* display mode: tight, read-only */
+  .display {
+    gap: 4px;
+  }
+  .text-ro {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--fg);
+    white-space: pre-wrap;
+  }
+  .tab-ro {
+    margin: 2px 0;
+    font-size: 12px;
+    line-height: 20px;
+    color: var(--fg);
+  }
+  .empty {
+    font-size: 11px;
+    color: var(--muted);
+    margin: 0;
+  }
+  .empty .hint {
+    color: var(--accent);
+  }
+
   .orphan-toggle {
     margin-top: 8px;
     background: none;

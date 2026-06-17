@@ -1,8 +1,9 @@
 <script lang="ts">
-  // Interactive tab grid. Renders rows bounded by | and an overtype cell editor;
-  // a top handle resizes string count (growth prepends higher strings on top),
-  // a right handle resizes width (growth appends to the right). All grid math is
-  // in lib/notes-doc; this component only maps pointer/keyboard to those calls.
+  // Interactive tab grid (edit mode only). Left-click a cell to position the
+  // overtype cursor; type/arrow/backspace to edit. RIGHT-click + drag anywhere
+  // resizes — it grabs the nearest boundary (top edge → strings, right edge →
+  // width) from anywhere on the grid, the same "grab the nearest edge" feel as
+  // the waveform's right-drag loop resize. All grid math is in lib/notes-doc.
   import {
     clearCell,
     moveCursor,
@@ -21,6 +22,8 @@
 
   let cursor = $state<Cursor>({ row: 0, col: 0 });
   let gridEl: HTMLDivElement | undefined;
+  // which boundary is currently grabbed for resize (null = not resizing)
+  let grabbed = $state<"top" | "right" | null>(null);
 
   const CELL_W = 11; // px per column; keep in sync with .cell width
   const CELL_H = 20; // px per row
@@ -43,42 +46,30 @@
     }
   }
 
-  // Listeners live on the captured handle element (not window), so they tear
-  // down with the element if the block unmounts mid-drag — no leak. Each move
-  // applies an ABSOLUTE delta from the start size, so it's idempotent and jitter
-  // never accumulates.
-  function dragStrings(e: PointerEvent) {
+  // Right-drag resize: grab the nearer of the top edge (strings) or right edge
+  // (width) from wherever the press lands, then drag that boundary. Listeners
+  // live on the captured grid element so they tear down on unmount — no leak.
+  function onPointerDown(e: PointerEvent) {
+    if (e.button !== 2 || !gridEl) return;
     e.preventDefault();
-    const el = e.currentTarget as HTMLElement;
+    const rect = gridEl.getBoundingClientRect();
+    const axis: "top" | "right" =
+      Math.abs(e.clientY - rect.top) <= Math.abs(e.clientX - rect.right) ? "top" : "right";
+    grabbed = axis;
+    const el = gridEl;
     el.setPointerCapture(e.pointerId);
-    const startY = e.clientY;
-    const start = block.strings;
+    const anchorX = e.clientX;
+    const anchorY = e.clientY;
+    const start = axis === "top" ? block.strings : block.width;
     const move = (ev: PointerEvent) => {
-      const delta = Math.round((startY - ev.clientY) / CELL_H); // up = more
-      onchange(setStrings(block, start + delta));
+      if (axis === "top") {
+        onchange(setStrings(block, start + Math.round((anchorY - ev.clientY) / CELL_H))); // up = more
+      } else {
+        onchange(setWidth(block, start + Math.round((ev.clientX - anchorX) / CELL_W)));
+      }
     };
     const up = () => {
-      el.removeEventListener("pointermove", move);
-      el.removeEventListener("pointerup", up);
-      el.removeEventListener("pointercancel", up);
-    };
-    el.addEventListener("pointermove", move);
-    el.addEventListener("pointerup", up);
-    el.addEventListener("pointercancel", up);
-  }
-
-  // Drag the right edge: every CELL_W of horizontal travel = ±1 column.
-  function dragWidth(e: PointerEvent) {
-    e.preventDefault();
-    const el = e.currentTarget as HTMLElement;
-    el.setPointerCapture(e.pointerId);
-    const startX = e.clientX;
-    const start = block.width;
-    const move = (ev: PointerEvent) => {
-      const delta = Math.round((ev.clientX - startX) / CELL_W);
-      onchange(setWidth(block, start + delta));
-    };
-    const up = () => {
+      grabbed = null;
       el.removeEventListener("pointermove", move);
       el.removeEventListener("pointerup", up);
       el.removeEventListener("pointercancel", up);
@@ -89,10 +80,18 @@
   }
 </script>
 
-<div class="tabblock">
-  <button class="handle top" onpointerdown={dragStrings} title="drag: add/remove strings" aria-label="resize strings"></button>
+<div class="tabblock" oncontextmenu={(e) => e.preventDefault()}>
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-  <div class="grid mono" tabindex="0" role="grid" onkeydown={onKey} bind:this={gridEl}>
+  <div
+    class="grid mono"
+    class:grab-top={grabbed === "top"}
+    class:grab-right={grabbed === "right"}
+    tabindex="0"
+    role="grid"
+    bind:this={gridEl}
+    onkeydown={onKey}
+    onpointerdown={onPointerDown}
+  >
     {#each block.rows as row, r (r)}
       <div class="row" role="row">
         <span class="bar">|</span>
@@ -107,18 +106,21 @@
         <span class="bar">|</span>
       </div>
     {/each}
+    {#if grabbed === "top"}<span class="boundary top"></span>{/if}
+    {#if grabbed === "right"}<span class="boundary right"></span>{/if}
   </div>
-  <button class="handle right" onpointerdown={dragWidth} title="drag: add/remove width" aria-label="resize width"></button>
   <button class="del" onclick={ondelete} title="delete tab" aria-label="delete tab">×</button>
 </div>
 
 <style>
   .tabblock {
     position: relative;
-    display: inline-block;
-    padding: 6px 10px;
+    display: inline-flex;
+    align-self: flex-start; /* shrink-wrap the ASCII; don't stretch to the box */
+    padding: 6px 18px 6px 4px; /* room on the right for the × */
   }
   .grid {
+    position: relative;
     display: flex;
     flex-direction: column;
     outline: none;
@@ -127,6 +129,8 @@
     outline: 1px solid var(--accent-dim);
     outline-offset: 2px;
   }
+  .grid.grab-top { cursor: ns-resize; }
+  .grid.grab-right { cursor: ew-resize; }
   .row {
     display: flex;
     align-items: center;
@@ -150,32 +154,28 @@
     background: var(--accent);
     color: var(--bg);
   }
-  .handle {
+  /* the grabbed boundary, highlighted while dragging */
+  .boundary {
     position: absolute;
-    background: none;
-    border: none;
-    padding: 0;
+    background: var(--accent);
+    pointer-events: none;
   }
-  .handle.top {
+  .boundary.top {
+    top: -1px;
+    left: 0;
+    right: 0;
+    height: 2px;
+  }
+  .boundary.right {
     top: 0;
-    left: 10px;
-    right: 22px;
-    height: 6px;
-    cursor: ns-resize;
+    bottom: 0;
+    right: -1px;
+    width: 2px;
   }
-  .handle.top:hover { background: var(--accent-dim); }
-  .handle.right {
-    top: 6px;
-    bottom: 6px;
-    right: 10px;
-    width: 6px;
-    cursor: ew-resize;
-  }
-  .handle.right:hover { background: var(--accent-dim); }
   .del {
     position: absolute;
     top: 2px;
-    right: 0;
+    right: 2px;
     background: none;
     border: none;
     color: var(--muted);
