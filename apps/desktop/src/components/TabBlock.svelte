@@ -80,18 +80,20 @@
   }
 </script>
 
-<div class="tabblock">
+<div
+  class="tabblock"
+  class:grab-top={grabbed === "top"}
+  class:grab-right={grabbed === "right"}
+  onpointerdown={onPointerDown}
+  oncontextmenu={(e) => e.preventDefault()}
+>
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div
     class="grid mono"
-    class:grab-top={grabbed === "top"}
-    class:grab-right={grabbed === "right"}
     tabindex="0"
     role="grid"
     bind:this={gridEl}
     onkeydown={onKey}
-    onpointerdown={onPointerDown}
-    oncontextmenu={(e) => e.preventDefault()}
   >
     {#each block.rows as row, r (r)}
       <div class="row" role="row">
@@ -118,8 +120,13 @@
     position: relative;
     display: inline-flex;
     align-self: flex-start; /* shrink-wrap the ASCII; don't stretch to the box */
-    padding: 6px 18px 6px 4px; /* room on the right for the × */
+    /* the padding doubles as the resize grab margin: you can right-press in this
+       band just outside the ASCII (above the top row / right of the | edge) and
+       it still snaps to that boundary, not only on the edge itself */
+    padding: 14px 22px 14px 10px;
   }
+  .tabblock.grab-top { cursor: ns-resize; }
+  .tabblock.grab-right { cursor: ew-resize; }
   .grid {
     position: relative;
     display: flex;
@@ -130,8 +137,6 @@
     outline: 1px solid var(--accent-dim);
     outline-offset: 2px;
   }
-  .grid.grab-top { cursor: ns-resize; }
-  .grid.grab-right { cursor: ew-resize; }
   .row {
     display: flex;
     align-items: center;
