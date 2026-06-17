@@ -113,6 +113,8 @@
   }
 </script>
 
+<!-- pointer-only resize-gesture surface; the semantics live in the inner grid -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="tabblock"
   class:cursor-top={shown === "top"}
