@@ -1,4 +1,6 @@
-// Keyboard-first: global bindings, skipped while typing in a field.
+// Keyboard-first: global bindings. Focus-aware by design — a focused editor
+// owns the keyboard, and the keymap never acts on a key another handler already
+// consumed. Custom keyboard widgets declare themselves with data-keys="capture".
 
 import { get } from "svelte/store";
 import { quit } from "./ipc";
@@ -18,17 +20,26 @@ import {
   workingLoop,
 } from "./stores";
 
-function isTyping(target: EventTarget | null): boolean {
+/** True when the keyboard belongs to a focused editor — a native field, a
+ *  contenteditable, or any custom widget that opts in with data-keys="capture"
+ *  (e.g. the tablature grid). Global shortcuts never fire in these. */
+function isEditingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
-  return (
+  if (
     target instanceof HTMLInputElement ||
     target instanceof HTMLTextAreaElement ||
     target instanceof HTMLSelectElement ||
     target.isContentEditable
-  );
+  ) {
+    return true;
+  }
+  return target.closest('[data-keys="capture"]') !== null;
 }
 
 async function handle(e: KeyboardEvent): Promise<void> {
+  // Never act on a key another handler already consumed — a modal, the tab
+  // editor, anything that called preventDefault as it bubbled up to us.
+  if (e.defaultPrevented) return;
   // UI zoom works everywhere, even while typing
   if (e.ctrlKey && !e.metaKey && !e.altKey) {
     if (e.key === "=" || e.key === "+") {
@@ -40,16 +51,16 @@ async function handle(e: KeyboardEvent): Promise<void> {
     } else if (e.key === "0") {
       e.preventDefault();
       await zoomReset();
-    } else if (e.key === "[" && !isTyping(e.target)) {
+    } else if (e.key === "[" && !isEditingTarget(e.target)) {
       e.preventDefault();
       await actions.toggleLibrary();
-    } else if (e.key === "]" && !isTyping(e.target)) {
+    } else if (e.key === "]" && !isEditingTarget(e.target)) {
       e.preventDefault();
       await actions.togglePanels();
     }
     return;
   }
-  if (isTyping(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (isEditingTarget(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
 
   switch (e.key) {
     case " ": {

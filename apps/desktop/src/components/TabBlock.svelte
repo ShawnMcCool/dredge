@@ -127,6 +127,7 @@
     class="grid mono"
     tabindex="0"
     role="grid"
+    data-keys="capture"
     bind:this={gridEl}
     onkeydown={onKey}
   >
