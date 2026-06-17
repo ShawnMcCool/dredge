@@ -12,8 +12,9 @@ use crate::model::Section;
 const EPS: f64 = 0.05;
 
 /// `name occurrence` for a section — 1-based count among same-named sections, in
-/// `position` order. The only section named `chorus` is `chorus 1`.
-fn occurrence_label(section: &Section, sections: &[Section]) -> String {
+/// `position` order. The only section named `chorus` is `chorus 1`. Public so
+/// the server can key section notes on this same label.
+pub fn occurrence_label(section: &Section, sections: &[Section]) -> String {
     let mut ordered: Vec<&Section> = sections.iter().collect();
     ordered.sort_by_key(|s| s.position);
     let n = ordered
