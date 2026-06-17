@@ -3,6 +3,21 @@
 All notable user-facing changes to earworm, newest first. Entries are written
 at release time by `scripts/ship release`.
 
+## v0.4.0 — 2026-06-17
+
+### New
+
+- **Per-section notes, with tablature.** Every song section now has its own notes — free text plus inline tab you type into and resize by dragging its edges. A clean display mode for reading while you play, an edit mode for changing things. Notes autosave and stay attached to the section by name (your "verse 2" notes follow verse 2), and typing in them never triggers playback or other shortcuts.
+
+### Improved
+
+- **Feels like a real desktop app.** The web-style right-click menu (Back, Reload, Inspect…) no longer pops up anywhere in the app.
+
+### Fixed
+
+- **Accent color changes apply instantly on the waveform.** Picking a new theme color now recolors the loop, section, and selection markings right away, instead of only after you next touch the waveform.
+- **Controls stay clickable in fullscreen.** Going fullscreen could make some controls — like the right-hand tabs — unreliable to click; they're solid again.
+
 ## v0.3.0 — 2026-06-17
 
 ### Improved
