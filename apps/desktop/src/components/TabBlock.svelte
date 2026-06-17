@@ -129,9 +129,8 @@
     align-self: flex-start; /* shrink-wrap the ASCII; don't stretch to the box */
     /* the padding doubles as the resize grab margin: you can right-press in this
        band just outside the ASCII (above the top row / right of the | edge) and
-       it still snaps to that boundary. Right is deliberately overshot for now —
-       dial back once the feel is right. */
-    padding: 16px 72px 16px 10px;
+       it still snaps to that boundary. */
+    padding: 16px 45px 16px 10px;
   }
   .tabblock.grab-top { cursor: ns-resize; }
   .tabblock.grab-right { cursor: ew-resize; }
