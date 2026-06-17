@@ -30,6 +30,8 @@
 
   // Local edit buffer for the active section; mirrors the store doc otherwise.
   let doc = $state<NotesDoc>({ blocks: [] });
+  // Deliberately non-reactive: an effect-local latch so reseeding doesn't
+  // retrigger its own effect. Do NOT make this $state.
   let bufferedLabel: string | null = null;
 
   function clone(d: NotesDoc): NotesDoc {
@@ -41,7 +43,9 @@
     const label = active;
     if (label !== bufferedLabel && !editing) {
       bufferedLabel = label ?? null;
-      doc = clone(activeSection?.notes ?? { blocks: [{ kind: "text", text: "" }] });
+      const stored = activeSection?.notes;
+      // an empty-or-missing doc still gets one text block so there's a place to type
+      doc = clone(stored && stored.blocks.length ? stored : { blocks: [{ kind: "text", text: "" }] });
     }
   });
 
@@ -53,33 +57,47 @@
     if (hit) pinned = hit.label;
   });
 
-  // Release the pin when playback starts (resume following the playhead).
+  // Release the pin on the rising edge of playback (resume following the
+  // playhead). Edge-triggered, not level: `$position` is a fresh object every
+  // ~50ms tick, so a level check would clear `editing` 20×/s and yank the
+  // editor mid-keystroke. Flush first so a pending edit isn't lost.
+  let wasPlaying = false;
   $effect(() => {
-    if ($position.playing) {
+    const playing = $position.playing;
+    if (playing && !wasPlaying) {
+      commit();
       pinned = null;
       editing = false;
     }
+    wasPlaying = playing;
   });
 
+  // Autosave holds the label+doc captured when the edit happened, so a flush or
+  // a section switch always persists the RIGHT content under the RIGHT label —
+  // never whatever `active`/`doc` have since become.
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
-  function queueSave() {
-    if (!active) return;
-    const label = active;
-    const snapshot = clone(doc);
-    if (saveTimer) clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
+  let pending: { label: string; snapshot: NotesDoc } | null = null;
+
+  /** Persist the pending edit immediately and disarm the timer. */
+  function commit() {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
       saveTimer = null;
-      void actions.setSectionNotes(label, snapshot);
-    }, 500);
+    }
+    if (pending) {
+      void actions.setSectionNotes(pending.label, pending.snapshot);
+      pending = null;
+    }
   }
 
-  // Flush a pending save immediately (on blur / navigate-away) so a debounce
-  // window never drops the last edits.
-  function flushSave() {
-    if (!saveTimer) return;
-    clearTimeout(saveTimer);
-    saveTimer = null;
-    if (active) void actions.setSectionNotes(active, clone(doc));
+  function queueSave() {
+    if (!active) return;
+    // a different section is already pending — persist it before re-arming, so
+    // switching sections within the debounce window can't drop or misroute it
+    if (pending && pending.label !== active) commit();
+    pending = { label: active, snapshot: clone(doc) };
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(commit, 500);
   }
 
   function editText(i: number, text: string) {
@@ -128,7 +146,7 @@
             value={block.text}
             placeholder={`jot tab or notes for ${active}…`}
             onfocus={() => { editing = true; if (active) pinned = active; }}
-            onblur={() => { flushSave(); editing = false; }}
+            onblur={() => { commit(); editing = false; }}
             oninput={(e) => editText(i, e.currentTarget.value)}
           ></textarea>
         {:else}

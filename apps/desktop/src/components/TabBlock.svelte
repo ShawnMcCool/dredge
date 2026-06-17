@@ -20,6 +20,7 @@
   } = $props();
 
   let cursor = $state<Cursor>({ row: 0, col: 0 });
+  let gridEl: HTMLDivElement | undefined;
 
   const CELL_W = 11; // px per column; keep in sync with .cell width
   const CELL_H = 20; // px per row
@@ -42,9 +43,14 @@
     }
   }
 
-  // Drag the top edge: every CELL_H of vertical travel = ±1 string.
+  // Listeners live on the captured handle element (not window), so they tear
+  // down with the element if the block unmounts mid-drag — no leak. Each move
+  // applies an ABSOLUTE delta from the start size, so it's idempotent and jitter
+  // never accumulates.
   function dragStrings(e: PointerEvent) {
     e.preventDefault();
+    const el = e.currentTarget as HTMLElement;
+    el.setPointerCapture(e.pointerId);
     const startY = e.clientY;
     const start = block.strings;
     const move = (ev: PointerEvent) => {
@@ -52,16 +58,20 @@
       onchange(setStrings(block, start + delta));
     };
     const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+      el.removeEventListener("pointercancel", up);
     };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
   }
 
   // Drag the right edge: every CELL_W of horizontal travel = ±1 column.
   function dragWidth(e: PointerEvent) {
     e.preventDefault();
+    const el = e.currentTarget as HTMLElement;
+    el.setPointerCapture(e.pointerId);
     const startX = e.clientX;
     const start = block.width;
     const move = (ev: PointerEvent) => {
@@ -69,18 +79,20 @@
       onchange(setWidth(block, start + delta));
     };
     const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+      el.removeEventListener("pointercancel", up);
     };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
   }
 </script>
 
 <div class="tabblock">
   <button class="handle top" onpointerdown={dragStrings} title="drag: add/remove strings" aria-label="resize strings"></button>
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-  <div class="grid mono" tabindex="0" role="grid" onkeydown={onKey}>
+  <div class="grid mono" tabindex="0" role="grid" onkeydown={onKey} bind:this={gridEl}>
     {#each block.rows as row, r (r)}
       <div class="row" role="row">
         <span class="bar">|</span>
@@ -89,7 +101,7 @@
             class="cell"
             class:active={cursor.row === r && cursor.col === c}
             role="gridcell"
-            onclick={() => (cursor = { row: r, col: c })}
+            onclick={() => { cursor = { row: r, col: c }; gridEl?.focus(); }}
           >{ch}</button>
         {/each}
         <span class="bar">|</span>
