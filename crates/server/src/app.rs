@@ -8,6 +8,7 @@ use engine::pipeline::{EngineCmd, EngineEvent};
 use practice::model::{
     Analysis, AnalysisSection, LoopId, LoopKind, ProfileRun, Section, SectionId, Song, SongId,
 };
+use practice::notes::NotesDoc;
 use practice::store::{NewLoop, NewSection, NewSong, Store};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -395,6 +396,7 @@ impl App {
             "song.delete" => self.song_delete(p),
             "song.open" => self.song_open(p),
             "section.replace" => self.section_replace(p),
+            "section.notes.set" => self.section_notes_set(p),
             "loop.create" => self.loop_create(p),
             "loop.update" => self.loop_update(p),
             "loop.delete" => self.loop_delete(p),
@@ -1244,19 +1246,53 @@ impl App {
     fn finish_open(&mut self, song: Song, decoded: OpenDecoded) -> Result<Value, String> {
         let song_id = song.id;
         self.audio.load(decoded.set);
+        let (sections, orphan_notes) = self.sections_payload(song_id)?;
         let out = json!({
             "song": song,
-            "sections": self.store.list_sections(song_id).err_str()?,
+            "sections": sections,
             "loops": self.store.list_loops(song_id).err_str()?,
             "peaks": decoded.peaks,
             "stems": decoded.stems,
             "analysis": self.store.get_analysis(song_id).err_str()?,
+            "orphan_notes": orphan_notes,
         });
         self.open_song = Some(OpenSong {
             song,
             stems: decoded.stems,
         });
         Ok(out)
+    }
+
+    /// Build the open-song `sections` array (each section enriched with its
+    /// occurrence `label` and stored `notes`) plus the `orphan_notes` list
+    /// (stored notes whose label matches no current section). Shared by
+    /// `song.open`, `section.replace`, and `section.notes.set`.
+    fn sections_payload(&self, song_id: SongId) -> Result<(Value, Value), String> {
+        let sections = self.store.list_sections(song_id).err_str()?;
+        let notes: std::collections::HashMap<String, NotesDoc> = self
+            .store
+            .list_section_notes(song_id)
+            .err_str()?
+            .into_iter()
+            .collect();
+        let mut used: HashSet<String> = HashSet::new();
+        let enriched: Vec<Value> = sections
+            .iter()
+            .map(|s| {
+                let label = practice::naming::occurrence_label(s, &sections);
+                used.insert(label.clone());
+                let mut v = serde_json::to_value(s).expect("section serializes");
+                v["label"] = json!(label);
+                v["notes"] = serde_json::to_value(notes.get(&label)).expect("doc serializes");
+                v
+            })
+            .collect();
+        let orphans: Vec<Value> = notes
+            .iter()
+            .filter(|(label, _)| !used.contains(label.as_str()))
+            .map(|(label, doc)| json!({ "label": label, "doc": doc }))
+            .collect();
+        Ok((json!(enriched), json!(orphans)))
     }
 
     fn section_replace(&mut self, p: Value) -> Result<Value, String> {
@@ -1283,8 +1319,29 @@ impl App {
                 position: s.position,
             })
             .collect();
-        let sections = self.commit_sections(p.song_id, &news)?;
-        Ok(json!({ "sections": sections }))
+        let _ = self.commit_sections(p.song_id, &news)?;
+        let (sections, orphan_notes) = self.sections_payload(p.song_id)?;
+        Ok(json!({ "sections": sections, "orphan_notes": orphan_notes }))
+    }
+
+    fn section_notes_set(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            label: String,
+            doc: NotesDoc,
+        }
+        let p: P = from_params(p)?;
+        let song_id = self
+            .open_song
+            .as_ref()
+            .map(|o| o.song.id)
+            .ok_or_else(|| "no open song".to_string())?;
+        p.doc.validate()?;
+        self.store
+            .set_section_notes(song_id, &p.label, &p.doc)
+            .err_str()?;
+        let (sections, orphan_notes) = self.sections_payload(song_id)?;
+        Ok(json!({ "sections": sections, "orphan_notes": orphan_notes }))
     }
 
     /// Persist a section layout, rename the dynamic loops, and write the
