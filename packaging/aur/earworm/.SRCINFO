@@ -22,6 +22,7 @@ pkgbase = earworm
 	optdepends = demucs: 4-stem separation (vocals/drums/bass/other)
 	provides = earworm
 	conflicts = earworm-bin
+	options = !lto
 	source = git+https://github.com/ShawnMcCool/earworm.git#tag=v0.2.2
 	sha256sums = SKIP
 

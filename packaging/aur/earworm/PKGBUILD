@@ -14,6 +14,9 @@ optdepends=('ffmpeg: MP3 export, extra container formats, and demucs stem export
             'demucs: 4-stem separation (vocals/drums/bass/other)')
 provides=('earworm')
 conflicts=('earworm-bin')
+# rusqlite bundles + cc-compiles sqlite3.c; makepkg's default LTO makes that a
+# GCC LTO object that Rust's lld can't link (undefined sqlite3_* symbols).
+options=('!lto')
 source=("git+https://github.com/ShawnMcCool/earworm.git#tag=v${pkgver}")
 sha256sums=('SKIP')
 
