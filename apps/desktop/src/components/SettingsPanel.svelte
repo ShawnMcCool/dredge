@@ -49,6 +49,15 @@
   let shownScale = $derived(preview ?? scale);
   let snapDefault = $derived($settings[GRID_SNAP_DEFAULT] !== false);
   let device = $derived(($settings[ANALYSIS_DEVICE] as string) ?? "auto");
+  // Defaults a fresh tablature block starts at; both optional (fall back 4 / 16).
+  let tabStrings = $derived(Number($settings["default_tab_strings"] ?? 4));
+  let tabWidth = $derived(Number($settings["default_tab_width"] ?? 16));
+
+  function setTabDefault(key: string, raw: string, lo: number, hi: number, fallback: number) {
+    const n = Math.round(Number(raw));
+    const clamped = Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : fallback;
+    void actions.setSetting(key, clamped);
+  }
   // default on: only an explicit false hides the frame
   let decorations = $derived($settings[WINDOW_DECORATIONS] !== false);
   let themeValue = $derived(
@@ -140,6 +149,40 @@
     <Button variant="toggle" active={snapDefault} onclick={toggleSnap}>
       {snapDefault ? "on" : "off"}
     </Button>
+  </div>
+</section>
+
+<section class="group">
+  <h3 class="group-head">notes</h3>
+
+  <div class="setting">
+    <div class="text">
+      <span class="name">default tab strings</span>
+      <span class="desc">rows a new tablature block starts with (1–12)</span>
+    </div>
+    <input
+      class="num"
+      type="number"
+      min="1"
+      max="12"
+      value={tabStrings}
+      onchange={(e) => setTabDefault("default_tab_strings", e.currentTarget.value, 1, 12, 4)}
+    />
+  </div>
+
+  <div class="setting">
+    <div class="text">
+      <span class="name">default tab width</span>
+      <span class="desc">columns a new tablature block starts with (1–256)</span>
+    </div>
+    <input
+      class="num"
+      type="number"
+      min="1"
+      max="256"
+      value={tabWidth}
+      onchange={(e) => setTabDefault("default_tab_width", e.currentTarget.value, 1, 256, 16)}
+    />
   </div>
 </section>
 
@@ -260,6 +303,24 @@
     gap: calc(var(--space) / 2);
     flex-wrap: wrap;
     min-width: 0;
+  }
+
+  /* compact numeric setting input (tab defaults) */
+  .num {
+    flex: 0 0 auto;
+    width: 4.5em;
+    font: inherit;
+    font-size: 12px;
+    text-align: right;
+    color: var(--fg);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 3px 6px;
+  }
+  .num:focus-visible {
+    outline: 1px solid var(--accent-dim);
+    outline-offset: -1px;
   }
 
   /* curated accent palette — colour dots, active gets a neutral ring */

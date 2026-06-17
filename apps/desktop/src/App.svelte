@@ -7,6 +7,7 @@
   import Loops from "./components/Loops.svelte";
   import ProfilingPanel from "./components/ProfilingPanel.svelte";
   import Isolation from "./components/Isolation.svelte";
+  import Notes from "./components/Notes.svelte";
   import Sections from "./components/Sections.svelte";
   import SettingsPanel from "./components/SettingsPanel.svelte";
   import Transport from "./components/Transport.svelte";
@@ -103,6 +104,7 @@
     <div class="boxes">
       {#if $openSong}
         <Isolation />
+        <Notes />
       {/if}
       <Tuner />
       {#if $openSong && $drillSpan}
