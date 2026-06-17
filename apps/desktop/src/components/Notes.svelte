@@ -90,9 +90,12 @@
     }
   }
   function queueSave() {
-    if (!active) return;
-    if (pending && pending.label !== active) commit();
-    pending = { label: active, snapshot: clone(doc) };
+    // Always target the pinned section being edited — never the live `active`,
+    // so a save can't be misrouted by a section change or mode switch.
+    const label = editPin;
+    if (!label) return;
+    if (pending && pending.label !== label) commit();
+    pending = { label, snapshot: clone(doc) };
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(commit, 500);
   }

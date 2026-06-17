@@ -80,7 +80,7 @@
   }
 </script>
 
-<div class="tabblock" oncontextmenu={(e) => e.preventDefault()}>
+<div class="tabblock">
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div
     class="grid mono"
@@ -91,6 +91,7 @@
     bind:this={gridEl}
     onkeydown={onKey}
     onpointerdown={onPointerDown}
+    oncontextmenu={(e) => e.preventDefault()}
   >
     {#each block.rows as row, r (r)}
       <div class="row" role="row">
