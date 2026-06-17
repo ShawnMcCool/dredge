@@ -53,14 +53,15 @@
     if (e.button !== 2 || !gridEl) return;
     e.preventDefault();
     const rect = gridEl.getBoundingClientRect();
-    // Zone-based: the right margin always resizes width, the top margin always
-    // resizes strings; inside the grid the nearer edge wins. Keeps a wide right
-    // grab band unambiguous — raw nearest-distance would flip to "top" for a
-    // mid-height press far to the right.
-    let axis: "top" | "right";
-    if (e.clientX > rect.right) axis = "right";
-    else if (e.clientY < rect.top) axis = "top";
-    else axis = rect.right - e.clientX <= e.clientY - rect.top ? "right" : "top";
+    const dTop = Math.abs(e.clientY - rect.top);
+    const dRight = Math.abs(e.clientX - rect.right);
+    const inRight = e.clientX > rect.right; // right margin (past the | edge)
+    const inTop = e.clientY < rect.top; // top margin (above the first row)
+    // In exactly one margin → that boundary owns the press. In the top-right
+    // corner where the two grab zones overlap (or inside the grid, where neither
+    // margin owns it) → start on the nearer boundary by perpendicular distance.
+    const axis: "top" | "right" =
+      inRight !== inTop ? (inRight ? "right" : "top") : dRight <= dTop ? "right" : "top";
     grabbed = axis;
     const el = gridEl;
     el.setPointerCapture(e.pointerId);
@@ -129,8 +130,9 @@
     align-self: flex-start; /* shrink-wrap the ASCII; don't stretch to the box */
     /* the padding doubles as the resize grab margin: you can right-press in this
        band just outside the ASCII (above the top row / right of the | edge) and
-       it still snaps to that boundary. */
-    padding: 16px 45px 16px 10px;
+       it still snaps to that boundary. The top and right bands overlap in the
+       corner, where the nearer boundary wins. */
+    padding: 22px 45px 22px 12px;
   }
   .tabblock.grab-top { cursor: ns-resize; }
   .tabblock.grab-right { cursor: ew-resize; }
