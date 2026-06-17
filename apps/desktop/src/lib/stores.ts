@@ -7,6 +7,7 @@ import { trace } from "./trace";
 import { subdivisionTimes, type GridSubdivision } from "./waveform-math";
 import { bisect, nudgeEdge, rateForRep, runUp, type Span } from "./drill";
 import { deriveLoopName } from "./loop-name";
+import type { NotesDoc } from "./notes-doc";
 
 // --- wire types ----------------------------------------------------------
 
@@ -26,6 +27,15 @@ export interface Section {
   start: number;
   end: number;
   position: number;
+  /** Occurrence label ("verse 2") — present on open-song payloads. */
+  label?: string;
+  /** Stored notes for this section, if any. */
+  notes?: NotesDoc | null;
+}
+
+export interface OrphanNote {
+  label: string;
+  doc: NotesDoc;
 }
 
 export type LoopKind =
@@ -111,6 +121,8 @@ export interface OpenSong {
   /** True when the engine was loaded with the song's 4 cached stems. */
   stems: boolean;
   analysis: Analysis | null;
+  /** Notes whose label matches no current section. Never auto-deleted. */
+  orphan_notes: OrphanNote[];
 }
 
 /** Fixed stem order contract: vocals/drums/bass/other. */
@@ -825,12 +837,27 @@ export const actions = {
   ): Promise<void> {
     const open = get(openSong);
     if (!open) return;
-    const out = await cmd<{ sections: Section[] }>("section.replace", {
+    const out = await cmd<{ sections: Section[]; orphan_notes: OrphanNote[] }>("section.replace", {
       song_id: open.song.id,
       sections,
     });
-    openSong.update((o) => (o ? { ...o, sections: out.sections } : o));
+    openSong.update((o) =>
+      o ? { ...o, sections: out.sections, orphan_notes: out.orphan_notes } : o,
+    );
     await this.refreshLoops();
+  },
+
+  /** Save a section's notes by occurrence label; empty doc clears it. The
+   *  server returns the refreshed sections + orphan list, which we mirror. */
+  async setSectionNotes(label: string, doc: NotesDoc): Promise<void> {
+    if (!get(openSong)) return;
+    const out = await cmd<{ sections: Section[]; orphan_notes: OrphanNote[] }>(
+      "section.notes.set",
+      { label, doc },
+    );
+    openSong.update((o) =>
+      o ? { ...o, sections: out.sections, orphan_notes: out.orphan_notes } : o,
+    );
   },
 
   // --- tuner ---
