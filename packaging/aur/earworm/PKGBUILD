@@ -1,6 +1,6 @@
 # Maintainer: Shawn McCool <shawn@mccool.email>
 pkgname=earworm
-pkgver=0.1.0
+pkgver=0.2.2
 pkgrel=1
 pkgdesc="Ear-first practice looper: loop sections, slow them down pitch-preserving, drill passages"
 arch=('x86_64')
@@ -8,7 +8,8 @@ url="https://github.com/ShawnMcCool/earworm"
 license=('MIT')
 depends=('rubberband' 'pipewire' 'webkit2gtk-4.1' 'gtk3')
 makedepends=('rust' 'nodejs' 'pnpm' 'just' 'clang' 'pkgconf' 'git')
-optdepends=('uv: bootstrap the analyze/songformer ML venvs (beats, sections)'
+optdepends=('ffmpeg: MP3 export, extra container formats, and demucs stem export'
+            'uv: bootstrap the analyze/songformer ML venvs (beats, sections)'
             'python: ML analysis runtime'
             'demucs: 4-stem separation (vocals/drums/bass/other)')
 provides=('earworm')
@@ -33,6 +34,7 @@ package() {
   install -Dm755 target/release/earwormd                      "${pkgdir}/usr/bin/earwormd"
   install -Dm755 scripts/analyze                              "${pkgdir}/usr/bin/earworm-analyze"
   install -Dm755 scripts/earworm-enable-ml                    "${pkgdir}/usr/bin/earworm-enable-ml"
+  install -Dm755 scripts/earworm-doctor                       "${pkgdir}/usr/bin/earworm-doctor"
   install -Dm644 scripts/analyze_impl.py                      "${pkgdir}/usr/lib/earworm/analyze_impl.py"
   install -Dm644 scripts/songformer_impl.py                   "${pkgdir}/usr/lib/earworm/songformer_impl.py"
   install -Dm644 earworm.desktop                              "${pkgdir}/usr/share/applications/earworm.desktop"
