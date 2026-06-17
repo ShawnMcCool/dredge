@@ -31,19 +31,25 @@
   const CELL_W = 11; // px per column; keep in sync with .cell width
   const CELL_H = 20; // px per row
 
-  /** Which boundary a right-click here would grab — matches the resize logic
-   *  exactly, so the hover highlight covers ALL the draggable space, not just
-   *  the margin past the edge. The right handle's space extends left of the |
-   *  edge (any point closer to the right edge than the top edge); the top
-   *  handle's extends down. Right/top margins always own their axis; the
-   *  overlapping corner picks the nearer boundary. */
-  function grabAxis(clientX: number, clientY: number): "top" | "right" {
+  // How far each handle's grab band reaches INSIDE the grid from its edge (the
+  // outer reach is the wrapper padding). Bands, not halves — otherwise "nearest
+  // edge" hands the top handle most of a wide grid.
+  const RIGHT_REACH = 10; // px left of the | edge
+  const TOP_REACH = 12; // px below the first row
+
+  /** Which boundary a right-click here would grab, or null when over the grid
+   *  body (not on a handle band). Each band spans its edge ± reach/margin; the
+   *  overlapping corner picks the nearer edge. */
+  function grabAxis(clientX: number, clientY: number): "top" | "right" | null {
     const rect = gridEl!.getBoundingClientRect();
-    const dTop = Math.abs(clientY - rect.top);
-    const dRight = Math.abs(clientX - rect.right);
-    const inRight = clientX > rect.right;
-    const inTop = clientY < rect.top;
-    return inRight !== inTop ? (inRight ? "right" : "top") : dRight <= dTop ? "right" : "top";
+    const nearRight = clientX >= rect.right - RIGHT_REACH; // band around the right edge
+    const nearTop = clientY <= rect.top + TOP_REACH; // band around the top edge
+    if (nearRight && nearTop) {
+      return Math.abs(clientX - rect.right) <= Math.abs(clientY - rect.top) ? "right" : "top";
+    }
+    if (nearRight) return "right";
+    if (nearTop) return "top";
+    return null;
   }
 
   function onPointerMove(e: PointerEvent) {
