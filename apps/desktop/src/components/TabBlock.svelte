@@ -22,11 +22,33 @@
 
   let cursor = $state<Cursor>({ row: 0, col: 0 });
   let gridEl: HTMLDivElement | undefined;
-  // which boundary is currently grabbed for resize (null = not resizing)
+  // boundary currently grabbed for resize, and the one a hover would grab; the
+  // shown highlight/cursor prefers an active grab over the hover hint.
   let grabbed = $state<"top" | "right" | null>(null);
+  let hovered = $state<"top" | "right" | null>(null);
+  let shown = $derived(grabbed ?? hovered);
 
   const CELL_W = 11; // px per column; keep in sync with .cell width
   const CELL_H = 20; // px per row
+
+  /** Which boundary a hover at this point targets, or null when over the ASCII
+   *  body (not on a handle margin). Right margin → width, top margin → strings;
+   *  in the overlapping corner the nearer boundary wins. */
+  function hoverAxis(clientX: number, clientY: number): "top" | "right" | null {
+    if (!gridEl) return null;
+    const rect = gridEl.getBoundingClientRect();
+    const inRight = clientX > rect.right;
+    const inTop = clientY < rect.top;
+    if (!inRight && !inTop) return null;
+    const dTop = Math.abs(clientY - rect.top);
+    const dRight = Math.abs(clientX - rect.right);
+    return inRight !== inTop ? (inRight ? "right" : "top") : dRight <= dTop ? "right" : "top";
+  }
+
+  function onPointerMove(e: PointerEvent) {
+    if (grabbed) return; // dragging — the grabbed highlight already shows
+    hovered = hoverAxis(e.clientX, e.clientY);
+  }
 
   function onKey(e: KeyboardEvent) {
     if (e.key === "ArrowUp") { cursor = moveCursor(block, cursor, "up"); e.preventDefault(); return; }
@@ -89,9 +111,11 @@
 
 <div
   class="tabblock"
-  class:grab-top={grabbed === "top"}
-  class:grab-right={grabbed === "right"}
+  class:cursor-top={shown === "top"}
+  class:cursor-right={shown === "right"}
   onpointerdown={onPointerDown}
+  onpointermove={onPointerMove}
+  onpointerleave={() => (hovered = null)}
   oncontextmenu={(e) => e.preventDefault()}
 >
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -116,8 +140,8 @@
         <span class="bar">|</span>
       </div>
     {/each}
-    {#if grabbed === "top"}<span class="boundary top"></span>{/if}
-    {#if grabbed === "right"}<span class="boundary right"></span>{/if}
+    {#if shown === "top"}<span class="boundary top" class:active={grabbed === "top"}></span>{/if}
+    {#if shown === "right"}<span class="boundary right" class:active={grabbed === "right"}></span>{/if}
   </div>
   <button class="del" onclick={ondelete} title="delete tab" aria-label="delete tab">×</button>
 </div>
@@ -132,10 +156,10 @@
        band just outside the ASCII (above the top row / right of the | edge) and
        it still snaps to that boundary. The top and right bands overlap in the
        corner, where the nearer boundary wins. */
-    padding: 22px 45px 22px 12px;
+    padding: 15px 30px 15px 12px;
   }
-  .tabblock.grab-top { cursor: ns-resize; }
-  .tabblock.grab-right { cursor: ew-resize; }
+  .tabblock.cursor-top { cursor: ns-resize; }
+  .tabblock.cursor-right { cursor: ew-resize; }
   .grid {
     position: relative;
     display: flex;
@@ -169,11 +193,14 @@
     background: var(--accent);
     color: var(--bg);
   }
-  /* the grabbed boundary, highlighted while dragging */
+  /* the boundary a right-click would grab: dim on hover, bright while dragging */
   .boundary {
     position: absolute;
-    background: var(--accent);
+    background: var(--accent-dim);
     pointer-events: none;
+  }
+  .boundary.active {
+    background: var(--accent);
   }
   .boundary.top {
     top: -1px;
