@@ -1,5 +1,6 @@
 //! Practice domain core: domain model, loop naming, persistence.
 
+pub mod bundle;
 pub mod error;
 pub mod model;
 pub mod naming;

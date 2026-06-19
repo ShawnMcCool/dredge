@@ -52,6 +52,14 @@ pub struct LoopRegion {
     pub kind: LoopKind,
 }
 
+/// One section's notes, keyed by occurrence label (e.g. "verse 2"). Mirrors a
+/// row of the old `section_notes` table; lives in the bundle manifest now.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SectionNote {
+    pub label: String,
+    pub doc: crate::notes::NotesDoc,
+}
+
 /// One suggested section from the analysis pipeline (not user truth — the
 /// user edits suggestions into real `Section`s).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
