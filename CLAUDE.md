@@ -64,26 +64,44 @@ clients. When adding a heavy command, follow the `*_phased` pattern in `app.rs`.
   `pipeline.rs` (`EngineCmd`/`EngineEvent`).
 - **`practice`** (`crates/practice`) — domain + persistence. `model.rs` holds
   the wire types (Song, Section, LoopRegion, Analysis…), `naming.rs` derives
-  dynamic loop names from sections, and `store.rs` owns all SQLite I/O.
+  dynamic loop names from sections, `bundle.rs` defines the on-disk song bundle
+  (`BundleManifest` + manifest/scan I/O), `library.rs` is the in-memory index
+  over the bundle library (the source of truth for song data), and `store.rs`
+  owns the small settings/profiles SQLite DB.
 - **`server`** (`crates/server`) — the dispatcher + transports above, plus
   the bridges to external work: `analysis.rs`, `stems.rs`, `capture_control.rs`.
 
 The desktop app (`apps/desktop/src-tauri`, binary name `dredge`) depends on all
 three and embeds the built Svelte frontend.
 
-### Persistence
+### Persistence — song bundles are canonical
 
-Single SQLite DB (rusqlite, bundled) at `~/.local/share/dredge/dredge.db`.
-Schema is **embedded in `crates/practice/src/store.rs`** — no migration files;
-versioning is incremental via `PRAGMA user_version` (V1 core tables → V2
-`analysis` cache → V3 `settings` → … → V8 drops the retired practice-plan
-tables). To evolve the schema, add a new version block in `store.rs` rather
-than editing existing ones. App settings live in the
-SQLite `settings` table as JSON; there are no TOML/JSON config files. Override
-the DB path with `--db` (daemon) or `DREDGE_DB` (desktop).
+Each song is a **directory bundle** and the bundle is the source of truth.
+Default library root is `<music dir>/dredge` (`dirs::audio_dir()/dredge`, e.g.
+`~/Music/dredge`), overridable by the `library_root` setting. A bundle holds:
 
-Complex sub-objects (LoopKind, PlanStep arrays, analysis vectors) are stored as
-`serde_json` in `*_json` columns, not normalized.
+```
+<library root>/<Artist — Title>/
+  dredge.json      # BundleManifest: song, sections, loops, notes, analysis
+  audio.<ext>      # the imported audio, copied in once on import
+  stems/{vocals,drums,bass,other}.wav
+```
+
+Bundles are self-contained and portable: copy the folder to another machine and
+dredge there loads the song with its stems, analysis, sections, loops, and notes
+— no recomputation. `library.rs` scans the library into an in-memory index at
+startup; every edit rewrites the affected `dredge.json` atomically (no save
+button). On load, each manifest's audio path is rebased onto the actual bundle
+dir, so a copied bundle resolves regardless of the origin machine's paths. IDs
+are assigned at import and stored in the manifest. `song.import` copies the
+source audio into a new bundle (the original is never touched again); dedup is by
+content hash.
+
+A small **SQLite DB** (rusqlite, bundled) at `~/.local/share/dredge/dredge.db`
+holds *only* the `settings` and `profiles` tables — no song data. Schema is
+embedded in `store.rs` (single `user_version` 1). App settings live in the
+`settings` table as JSON; there are no TOML/JSON config files. Override the DB
+path with `--db` (daemon) or `DREDGE_DB` (desktop).
 
 ### Frontend (Svelte 5 + Tauri)
 
