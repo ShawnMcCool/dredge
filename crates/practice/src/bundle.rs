@@ -184,7 +184,10 @@ mod tests {
 
     #[test]
     fn slug_title_and_artist() {
-        assert_eq!(slug("Weird Fishes", Some("Radiohead")), "Weird Fishes \u{2014} Radiohead");
+        assert_eq!(
+            slug("Weird Fishes", Some("Radiohead")),
+            "Weird Fishes \u{2014} Radiohead"
+        );
     }
 
     #[test]

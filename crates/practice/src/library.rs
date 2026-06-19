@@ -301,10 +301,7 @@ impl Library {
             .map(|n| n.doc.clone())
     }
 
-    pub fn list_section_notes(
-        &self,
-        song_id: SongId,
-    ) -> Vec<(String, crate::notes::NotesDoc)> {
+    pub fn list_section_notes(&self, song_id: SongId) -> Vec<(String, crate::notes::NotesDoc)> {
         self.entries
             .get(&song_id.0)
             .map(|e| {
@@ -424,7 +421,10 @@ mod tests {
         // bundle dir is <root>/My Song — Me/ (em-dash U+2014)
         let expected_slug = "My Song \u{2014} Me";
         let bundle_dir = lib_dir.path().join(expected_slug);
-        assert!(bundle_dir.is_dir(), "bundle dir should exist: {bundle_dir:?}");
+        assert!(
+            bundle_dir.is_dir(),
+            "bundle dir should exist: {bundle_dir:?}"
+        );
 
         // audio.flac exists with correct content
         let audio_dest = bundle_dir.join("audio.flac");
@@ -470,7 +470,10 @@ mod tests {
         let lib = Library::load(lib_dir.path().to_path_buf()).unwrap();
         let song = lib.song_by_id(SongId(1)).unwrap();
         assert_eq!(song.path, bundle_dir.join("audio.flac").to_string_lossy());
-        assert!(Path::new(&song.path).exists(), "rebased audio path must exist");
+        assert!(
+            Path::new(&song.path).exists(),
+            "rebased audio path must exist"
+        );
     }
 
     // ── Task 2.3: mutators + accessors + write-through ──

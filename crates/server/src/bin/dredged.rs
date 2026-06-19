@@ -71,10 +71,7 @@ fn main() {
     let _handle = match serve(app, &socket_path, |_| {}) {
         Ok(h) => h,
         Err(e) => {
-            eprintln!(
-                "dredged: cannot bind socket {}: {e}",
-                socket_path.display()
-            );
+            eprintln!("dredged: cannot bind socket {}: {e}", socket_path.display());
             std::process::exit(1);
         }
     };

@@ -17,8 +17,7 @@ fn start_server(
     Arc<Mutex<MockEngine>>,
     std::path::PathBuf,
 ) {
-    let path =
-        std::env::temp_dir().join(format!("dredge-test-{}-{name}.sock", std::process::id()));
+    let path = std::env::temp_dir().join(format!("dredge-test-{}-{name}.sock", std::process::id()));
     let mock = Arc::new(Mutex::new(MockEngine::default()));
     let app = App::new(
         Store::open_in_memory().unwrap(),

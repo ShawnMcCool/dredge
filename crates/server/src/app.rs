@@ -5,11 +5,11 @@ use crate::sampler::{SharedWork, WorkReporter, WorkSample};
 use crate::stems::{StemSeparator, STEM_NAMES};
 use crate::tuner::{RealTuner, TunerControl, TunerReading};
 use engine::pipeline::{EngineCmd, EngineEvent};
+use practice::library::{LoopRename, NewLoop, NewSection};
 use practice::model::{
     Analysis, AnalysisSection, LoopId, LoopKind, ProfileRun, Section, SectionId, Song, SongId,
 };
 use practice::notes::NotesDoc;
-use practice::library::{LoopRename, NewLoop, NewSection};
 use practice::store::Store;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -727,7 +727,9 @@ impl App {
         }
         let p: P = from_params(p)?;
         let song = self.song_row(p.song_id)?;
-        let cache = self.stems_cache_dir(p.song_id).ok_or("song not in library")?;
+        let cache = self
+            .stems_cache_dir(p.song_id)
+            .ok_or("song not in library")?;
         if Self::stems_cached(&cache) {
             return Ok(json!({"state": "cached"}));
         }
@@ -805,7 +807,9 @@ impl App {
             song_id: SongId,
         }
         let p: P = from_params(p)?;
-        let cache = self.stems_cache_dir(p.song_id).ok_or("song not in library")?;
+        let cache = self
+            .stems_cache_dir(p.song_id)
+            .ok_or("song not in library")?;
         let state = if self.separating.lock().unwrap().contains(&p.song_id.0) {
             "running"
         } else if Self::stems_cached(&cache) {
@@ -877,7 +881,9 @@ impl App {
         validate_export_target(&dir, &p.filename)?;
         let filename = p.filename.trim().to_string();
         let song = self.song_row(p.song_id)?;
-        let stems_cache = self.stems_cache_dir(p.song_id).ok_or("song not in library")?;
+        let stems_cache = self
+            .stems_cache_dir(p.song_id)
+            .ok_or("song not in library")?;
         let cfg = engine::export::RenderConfig {
             start_secs: p.start_secs.unwrap_or(0.0),
             end_secs: p.end_secs,

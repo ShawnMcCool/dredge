@@ -46,8 +46,8 @@ fn main() {
         std::fs::create_dir_all(dir)
             .unwrap_or_else(|e| panic!("dredge: cannot create data dir {}: {e}", dir.display()));
     }
-    let store = Store::open(&db)
-        .unwrap_or_else(|e| panic!("dredge: cannot open db {}: {e}", db.display()));
+    let store =
+        Store::open(&db).unwrap_or_else(|e| panic!("dredge: cannot open db {}: {e}", db.display()));
     let engine = engine::Engine::start()
         .unwrap_or_else(|e| panic!("dredge: cannot start audio engine (PipeWire running?): {e}"));
     let app = Arc::new(Mutex::new(App::new(
