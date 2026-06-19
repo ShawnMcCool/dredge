@@ -2,6 +2,7 @@
 
 pub mod bundle;
 pub mod error;
+pub mod library;
 pub mod model;
 pub mod naming;
 pub mod notes;
