@@ -48,7 +48,14 @@ impl Library {
     pub fn load(root: PathBuf) -> Result<Self> {
         let mut entries = HashMap::new();
         let mut max_id = 0i64;
-        for (dir, m) in bundle::scan_library(&root)? {
+        for (dir, mut m) in bundle::scan_library(&root)? {
+            // The manifest stores an absolute audio path from whatever machine
+            // wrote it. A bundle copied to another PC (or a different library
+            // root / home dir) keeps that stale prefix, so rebase the audio
+            // path onto THIS bundle dir — the file name is all that's portable.
+            if let Some(fname) = Path::new(&m.song.path).file_name() {
+                m.song.path = dir.join(fname).to_string_lossy().into_owned();
+            }
             max_id = max_id.max(m.song.id.0);
             max_id = m.sections.iter().fold(max_id, |a, s| a.max(s.id.0));
             max_id = m.loops.iter().fold(max_id, |a, l| a.max(l.id.0));
@@ -428,6 +435,42 @@ mod tests {
         // dredge.json exists
         let manifest_path = bundle_dir.join("dredge.json");
         assert!(manifest_path.exists(), "dredge.json should exist");
+    }
+
+    // ── portability: a copied bundle's audio path is rebased on load ──
+
+    #[test]
+    fn load_rebases_stale_audio_path_onto_actual_dir() {
+        // Simulate a bundle authored on another machine: its manifest records
+        // an absolute audio path under a foreign library root that does not
+        // exist here. On load, song.path must point at the real audio file in
+        // this bundle dir, not the stale prefix.
+        let lib_dir = tempfile::tempdir().unwrap();
+        let bundle_dir = lib_dir.path().join("Foreign Song");
+        std::fs::create_dir_all(&bundle_dir).unwrap();
+        std::fs::write(bundle_dir.join("audio.flac"), b"AUDIO").unwrap();
+
+        let manifest = BundleManifest {
+            version: bundle::MANIFEST_VERSION,
+            song: Song {
+                id: SongId(1),
+                title: "Foreign Song".into(),
+                artist: None,
+                path: "/home/someone-else/Music/dredge/Foreign Song/audio.flac".into(),
+                file_hash: "abc".into(),
+                duration_secs: 10.0,
+            },
+            sections: vec![],
+            loops: vec![],
+            notes: vec![],
+            analysis: None,
+        };
+        bundle::write_manifest(&bundle_dir, &manifest).unwrap();
+
+        let lib = Library::load(lib_dir.path().to_path_buf()).unwrap();
+        let song = lib.song_by_id(SongId(1)).unwrap();
+        assert_eq!(song.path, bundle_dir.join("audio.flac").to_string_lossy());
+        assert!(Path::new(&song.path).exists(), "rebased audio path must exist");
     }
 
     // ── Task 2.3: mutators + accessors + write-through ──
