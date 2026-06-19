@@ -9,10 +9,10 @@ use practice::model::{
     Analysis, AnalysisSection, LoopId, LoopKind, ProfileRun, Section, SectionId, Song, SongId,
 };
 use practice::notes::NotesDoc;
-use practice::store::{NewLoop, NewSection, NewSong, Store};
+use practice::store::{NewLoop, NewSection, Store};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
@@ -229,12 +229,11 @@ struct ImportPrepared {
     title: String,
     hash: String,
     duration_secs: f64,
-    sidecar: Option<practice::sidecar::Sidecar>,
 }
 
-/// Slow phase of `song.import` (pure, no lock): decode for the duration and
-/// read the sidecar. The hash is computed by the caller — it gates the
-/// dedupe lookup that decides whether this phase runs at all.
+/// Slow phase of `song.import` (pure, no lock): decode for the duration. The
+/// hash is computed by the caller — it gates the dedupe lookup that decides
+/// whether this phase runs at all.
 fn import_decode(
     path: String,
     title: Option<String>,
@@ -249,21 +248,19 @@ fn import_decode(
             .unwrap_or("untitled")
             .to_owned()
     });
-    let sidecar = practice::sidecar::read_sidecar(p).err_str()?;
     Ok(ImportPrepared {
         duration_secs: buf.duration_secs(),
         title,
         hash,
-        sidecar,
         path,
     })
 }
 
 pub struct App {
     store: Store,
+    library: practice::library::Library,
     audio: Box<dyn AudioControl>,
     separator: Arc<dyn StemSeparator>,
-    stems_dir: PathBuf,
     open_song: Option<OpenSong>,
     last_position: Option<(f64, f64, bool)>, // secs, rate, playing
     /// Background-job events (stem separation); drained by `tick()`.
@@ -313,11 +310,16 @@ impl App {
         let (profile_tx, profile_rx) = mpsc::channel();
         let (work_sample_tx, work_sample_rx) = mpsc::channel();
         let (tuner_tx, tuner_rx) = mpsc::channel();
+        let root = Self::library_root(&store);
+        let library = practice::library::Library::load(root.clone()).unwrap_or_else(|e| {
+            eprintln!("dredge: library load failed at {}: {e}", root.display());
+            practice::library::Library::empty(root)
+        });
         Self {
             store,
+            library,
             audio,
             separator,
-            stems_dir: default_stems_dir(),
             open_song: None,
             last_position: None,
             job_tx,
@@ -360,22 +362,44 @@ impl App {
         WorkReporter::new(self.work_state.clone())
     }
 
-    /// Override the stems cache root (tests use a tempdir).
-    pub fn set_stems_dir(&mut self, dir: PathBuf) {
-        self.stems_dir = dir;
+    /// Library root: the `library_root` setting if set, else the OS default.
+    fn library_root(store: &Store) -> PathBuf {
+        if let Ok(Some(v)) = store.get_setting("library_root") {
+            if let Some(s) = v.as_str() {
+                if !s.trim().is_empty() {
+                    return PathBuf::from(s);
+                }
+            }
+        }
+        practice::bundle::default_library_root().unwrap_or_else(|| PathBuf::from("dredge-library"))
+    }
+
+    /// Point the library at `root` (tests use a tempdir; also used if the
+    /// library_root setting changes and the app reloads).
+    pub fn set_library_root(&mut self, root: std::path::PathBuf) {
+        self.library = practice::library::Library::load(root.clone())
+            .unwrap_or_else(|_| practice::library::Library::empty(root));
+    }
+
+    /// Bundle directory for a song — test/diagnostic helper.
+    pub fn song_bundle_dir(&self, song_id: SongId) -> Option<std::path::PathBuf> {
+        self.library.bundle_dir(song_id)
     }
 
     /// Remove any Demucs staging dirs left by a separation that was killed
     /// mid-run (e.g. the app quit). The committed stem cache uses atomic rename,
     /// so only the hidden `.demucs-tmp` staging can survive — sweep it at start.
     pub fn sweep_stem_staging(&self) {
-        let Ok(entries) = std::fs::read_dir(&self.stems_dir) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            let tmp = entry.path().join(".demucs-tmp");
-            if tmp.is_dir() {
-                let _ = std::fs::remove_dir_all(&tmp);
+        for bundle in self.library.bundle_dirs() {
+            let stems = bundle.join("stems");
+            let Ok(entries) = std::fs::read_dir(&stems) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let tmp = entry.path().join(".demucs-tmp");
+                if tmp.is_dir() {
+                    let _ = std::fs::remove_dir_all(&tmp);
+                }
             }
         }
     }
@@ -391,7 +415,7 @@ impl App {
     fn dispatch_inner(&mut self, cmd: &str, p: Value) -> Result<Value, String> {
         match cmd {
             "song.import" => self.song_import(p),
-            "song.list" => serde_json::to_value(self.store.list_songs().err_str()?).err_str(),
+            "song.list" => serde_json::to_value(self.library.list_songs()).err_str(),
             "song.update" => self.song_update(p),
             "song.delete" => self.song_delete(p),
             "song.open" => self.song_open(p),
@@ -587,7 +611,7 @@ impl App {
         while let Ok((song_id, result)) = self.analysis_rx.try_recv() {
             self.analyzing.remove(&song_id.0);
             let data = match result {
-                Ok(a) => match self.store.save_analysis(song_id, &a) {
+                Ok(a) => match self.library.save_analysis(song_id, &a) {
                     Ok(()) => {
                         // commit the model's section layout as real sections so
                         // structure + loop names are correct with no manual save.
@@ -683,8 +707,9 @@ impl App {
 
     // --- stems -------------------------------------------------------------
 
-    fn stems_cache_dir(&self, file_hash: &str) -> PathBuf {
-        self.stems_dir.join(file_hash)
+    /// The stems cache dir for a song: `<bundle>/stems`.
+    fn stems_cache_dir(&self, song_id: SongId) -> Option<PathBuf> {
+        self.library.bundle_dir(song_id).map(|d| d.join("stems"))
     }
 
     /// All four stem WAVs present in the song's cache dir?
@@ -701,7 +726,7 @@ impl App {
         }
         let p: P = from_params(p)?;
         let song = self.song_row(p.song_id)?;
-        let cache = self.stems_cache_dir(&song.file_hash);
+        let cache = self.stems_cache_dir(p.song_id).ok_or("song not in library")?;
         if Self::stems_cached(&cache) {
             return Ok(json!({"state": "cached"}));
         }
@@ -779,10 +804,10 @@ impl App {
             song_id: SongId,
         }
         let p: P = from_params(p)?;
-        let song = self.song_row(p.song_id)?;
+        let cache = self.stems_cache_dir(p.song_id).ok_or("song not in library")?;
         let state = if self.separating.lock().unwrap().contains(&p.song_id.0) {
             "running"
-        } else if Self::stems_cached(&self.stems_cache_dir(&song.file_hash)) {
+        } else if Self::stems_cached(&cache) {
             "cached"
         } else {
             "none"
@@ -851,7 +876,7 @@ impl App {
         validate_export_target(&dir, &p.filename)?;
         let filename = p.filename.trim().to_string();
         let song = self.song_row(p.song_id)?;
-        let stems_cache = self.stems_cache_dir(&song.file_hash);
+        let stems_cache = self.stems_cache_dir(p.song_id).ok_or("song not in library")?;
         let cfg = engine::export::RenderConfig {
             start_secs: p.start_secs.unwrap_or(0.0),
             end_secs: p.end_secs,
@@ -950,7 +975,7 @@ impl App {
         }
         let p: P = from_params(p)?;
         let song = self.song_row(p.song_id)?;
-        if !p.force && self.store.has_analysis(p.song_id).err_str()? {
+        if !p.force && self.library.has_analysis(p.song_id) {
             return Ok(json!({"state": "cached"}));
         }
         if self.analyzing.contains(&p.song_id.0) {
@@ -1024,7 +1049,7 @@ impl App {
         let p: P = from_params(p)?;
         let state = if self.analyzing.contains(&p.song_id.0) {
             "running"
-        } else if self.store.has_analysis(p.song_id).err_str()? {
+        } else if self.library.has_analysis(p.song_id) {
             "cached"
         } else {
             "none"
@@ -1038,7 +1063,7 @@ impl App {
             song_id: SongId,
         }
         let p: P = from_params(p)?;
-        serde_json::to_value(self.store.get_analysis(p.song_id).err_str()?).err_str()
+        serde_json::to_value(self.library.get_analysis(p.song_id)).err_str()
     }
 
     // --- tuner -------------------------------------------------------------
@@ -1076,7 +1101,7 @@ impl App {
         }
         let p: P = from_params(p)?;
         let song = self
-            .store
+            .library
             .update_song(p.song_id, &p.title, p.artist.as_deref())
             .err_str()?;
         // keep the open song's header in sync if it's the one we renamed
@@ -1085,7 +1110,6 @@ impl App {
                 o.song = song.clone();
             }
         }
-        self.write_sidecar_for(p.song_id);
         let _ = self.job_tx.send(Event {
             event: "library_changed".into(),
             data: Value::Null,
@@ -1108,22 +1132,13 @@ impl App {
             self.open_song = None;
         }
 
-        // DB rows cascade (sections, loops, analysis)
-        self.store.delete_song(p.song_id).err_str()?;
+        // remove the whole bundle dir (audio + stems + manifest)
+        self.library.delete_song(p.song_id).err_str()?;
 
-        // best-effort off-DB cleanup; the DB is the source of truth, so a
-        // failed file removal logs but does not fail the command
+        // peaks live outside the bundle as a recomputable cache; best-effort
+        // cleanup so a failed removal logs but does not fail the command
         if let Err(e) = engine::peaks::remove_cache(&song.file_hash) {
             eprintln!("dredge: peaks cleanup failed for {}: {e}", song.file_hash);
-        }
-        let stems = self.stems_cache_dir(&song.file_hash);
-        if let Err(e) = std::fs::remove_dir_all(&stems) {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                eprintln!("dredge: stems cleanup failed for {}: {e}", song.file_hash);
-            }
-        }
-        if let Err(e) = practice::sidecar::remove_sidecar(Path::new(&song.path)) {
-            eprintln!("dredge: sidecar cleanup failed for {}: {e}", song.path);
         }
 
         let _ = self.job_tx.send(Event {
@@ -1136,94 +1151,33 @@ impl App {
     /// `song.import` dedupe check (needs the lock): a song with this content
     /// hash already exists → return it instead of re-importing.
     fn import_lookup(&self, hash: &str) -> Result<Option<Song>, String> {
-        self.store.song_by_hash(hash).err_str()
+        Ok(self.library.song_by_hash(hash))
     }
 
-    /// `song.import` final phase (needs the lock): insert the row, restore
-    /// the sidecar, announce the library change.
+    /// `song.import` final phase (needs the lock): create the bundle and
+    /// announce the library change.
     fn import_prepared(&mut self, prep: ImportPrepared) -> Result<Value, String> {
         // re-check the hash: under `dispatch_shared` another client may have
         // imported the same file between the lookup and this phase
-        if let Some(existing) = self.store.song_by_hash(&prep.hash).err_str()? {
+        if let Some(existing) = self.library.song_by_hash(&prep.hash) {
             return serde_json::to_value(existing).err_str();
         }
         let song = self
-            .store
-            .insert_song(NewSong {
-                title: &prep.title,
-                artist: None,
-                path: &prep.path,
-                file_hash: &prep.hash,
-                duration_secs: prep.duration_secs,
-            })
+            .library
+            .create_song(
+                Path::new(&prep.path),
+                &prep.title,
+                None,
+                &prep.hash,
+                prep.duration_secs,
+            )
             .err_str()?;
-        if let Some(sc) = &prep.sidecar {
-            self.restore_sidecar(song.id, sc)?;
-        }
         // socket-driven imports refresh every client's library on the next tick
         let _ = self.job_tx.send(Event {
             event: "library_changed".into(),
             data: Value::Null,
         });
         serde_json::to_value(song).err_str()
-    }
-
-    /// Restore annotations from a sidecar into a freshly imported song.
-    /// Ids are re-assigned by insertion; junction references are remapped.
-    fn restore_sidecar(
-        &mut self,
-        song_id: SongId,
-        sc: &practice::sidecar::Sidecar,
-    ) -> Result<(), String> {
-        let new_sections = self
-            .store
-            .replace_sections(
-                song_id,
-                &sc.sections
-                    .iter()
-                    .map(|s| NewSection {
-                        name: &s.name,
-                        start: s.start,
-                        end: s.end,
-                        position: s.position,
-                    })
-                    .collect::<Vec<_>>(),
-            )
-            .err_str()?;
-        let sec_map: HashMap<_, _> = sc
-            .sections
-            .iter()
-            .filter_map(|old| {
-                let new = new_sections.iter().find(|n| n.position == old.position)?;
-                Some((old.id, new.id))
-            })
-            .collect();
-        for l in &sc.loops {
-            let kind = match l.kind {
-                LoopKind::Manual => LoopKind::Manual,
-                LoopKind::Junction {
-                    from_section,
-                    to_section,
-                } => LoopKind::Junction {
-                    from_section: *sec_map.get(&from_section).unwrap_or(&from_section),
-                    to_section: *sec_map.get(&to_section).unwrap_or(&to_section),
-                },
-            };
-            self.store
-                .insert_loop(
-                    song_id,
-                    NewLoop {
-                        name: &l.name,
-                        name_override: l.name_override.as_deref(),
-                        start: l.start,
-                        end: l.end,
-                        kind,
-                    },
-                )
-                .err_str()?;
-        }
-        self.write_sidecar_for(song_id);
-        Ok(())
     }
 
     fn song_open(&mut self, p: Value) -> Result<Value, String> {
@@ -1237,7 +1191,7 @@ impl App {
     /// stems cache dir for it.
     fn open_lookup(&self, song_id: SongId) -> Result<(Song, PathBuf), String> {
         let song = self.song_row(song_id)?;
-        let cache = self.stems_cache_dir(&song.file_hash);
+        let cache = self.stems_cache_dir(song_id).ok_or("song not in library")?;
         Ok((song, cache))
     }
 
@@ -1250,10 +1204,10 @@ impl App {
         let out = json!({
             "song": song,
             "sections": sections,
-            "loops": self.store.list_loops(song_id).err_str()?,
+            "loops": self.library.list_loops(song_id),
             "peaks": decoded.peaks,
             "stems": decoded.stems,
-            "analysis": self.store.get_analysis(song_id).err_str()?,
+            "analysis": self.library.get_analysis(song_id),
             "orphan_notes": orphan_notes,
         });
         self.open_song = Some(OpenSong {
@@ -1268,11 +1222,10 @@ impl App {
     /// (stored notes whose label matches no current section). Shared by
     /// `song.open`, `section.replace`, and `section.notes.set`.
     fn sections_payload(&self, song_id: SongId) -> Result<(Value, Value), String> {
-        let sections = self.store.list_sections(song_id).err_str()?;
+        let sections = self.library.list_sections(song_id);
         let notes: std::collections::HashMap<String, NotesDoc> = self
-            .store
+            .library
             .list_section_notes(song_id)
-            .err_str()?
             .into_iter()
             .collect();
         let mut used: HashSet<String> = HashSet::new();
@@ -1337,34 +1290,32 @@ impl App {
             .map(|o| o.song.id)
             .ok_or_else(|| "no song open".to_string())?;
         p.doc.validate()?;
-        self.store
+        self.library
             .set_section_notes(song_id, &p.label, &p.doc)
             .err_str()?;
         let (sections, orphan_notes) = self.sections_payload(song_id)?;
         Ok(json!({ "sections": sections, "orphan_notes": orphan_notes }))
     }
 
-    /// Persist a section layout, rename the dynamic loops, and write the
-    /// sidecar. Shared by the `section.replace` command and the post-analysis
-    /// auto-commit. Also clears any auto-derived transition loops left over from
+    /// Persist a section layout and rename the dynamic loops. Shared by the
+    /// `section.replace` command and the post-analysis auto-commit. Also clears
+    /// any auto-derived transition loops left over from
     /// when those were created automatically (the app no longer makes them).
     fn commit_sections(
         &mut self,
         song_id: SongId,
         sections: &[NewSection],
     ) -> Result<Vec<Section>, String> {
-        let saved = self.store.replace_sections(song_id, sections).err_str()?;
+        let saved = self.library.replace_sections(song_id, sections).err_str()?;
         let stale_junctions: Vec<LoopId> = self
-            .store
+            .library
             .list_loops(song_id)
-            .err_str()?
             .into_iter()
             .filter(|l| matches!(l.kind, LoopKind::Junction { .. }))
             .map(|l| l.id)
             .collect();
-        self.store.delete_loops(&stale_junctions).err_str()?;
+        self.library.delete_loops(&stale_junctions).err_str()?;
         self.recompute_loop_names(song_id)?;
-        self.write_sidecar_for(song_id);
         Ok(saved)
     }
 
@@ -1377,7 +1328,7 @@ impl App {
         suggestions: &[AnalysisSection],
     ) -> Result<Vec<Section>, String> {
         if suggestions.is_empty() {
-            return self.store.list_sections(song_id).err_str();
+            return Ok(self.library.list_sections(song_id));
         }
         let news: Vec<NewSection> = suggestions
             .iter()
@@ -1400,11 +1351,11 @@ impl App {
     /// Suggestions get synthetic ids/positions in their natural order, which is
     /// all `naming::loop_name` needs.
     fn naming_sections(&self, song_id: SongId) -> Result<Vec<Section>, String> {
-        let saved = self.store.list_sections(song_id).err_str()?;
+        let saved = self.library.list_sections(song_id);
         if !saved.is_empty() {
             return Ok(saved);
         }
-        let Some(analysis) = self.store.get_analysis(song_id).err_str()? else {
+        let Some(analysis) = self.library.get_analysis(song_id) else {
             return Ok(saved); // empty — namer falls back to the timestamp form
         };
         Ok(analysis
@@ -1433,9 +1384,8 @@ impl App {
     ) -> Result<String, String> {
         let sections = self.naming_sections(song_id)?;
         let existing: Vec<String> = self
-            .store
+            .library
             .list_loops(song_id)
-            .err_str()?
             .into_iter()
             .filter(|l| Some(l.id) != exclude)
             .map(|l| l.name)
@@ -1449,7 +1399,7 @@ impl App {
     /// song (called when sections change). Overridden and junction loops are
     /// left untouched.
     fn recompute_loop_names(&mut self, song_id: SongId) -> Result<(), String> {
-        let loops = self.store.list_loops(song_id).err_str()?;
+        let loops = self.library.list_loops(song_id);
         let sections = self.naming_sections(song_id)?;
         // Compute every rename against the original snapshot (whose names don't
         // change as we go), then apply them in one transaction.
@@ -1473,7 +1423,7 @@ impl App {
                 });
             }
         }
-        self.store.rename_loops(&renames).err_str()?;
+        self.library.rename_loops(&renames).err_str()?;
         Ok(())
     }
 
@@ -1487,7 +1437,7 @@ impl App {
         let p: P = from_params(p)?;
         let name = self.auto_name_loop(p.song_id, p.start, p.end, None)?;
         let l = self
-            .store
+            .library
             .insert_loop(
                 p.song_id,
                 NewLoop {
@@ -1499,7 +1449,6 @@ impl App {
                 },
             )
             .err_str()?;
-        self.write_sidecar_for(p.song_id);
         serde_json::to_value(l).err_str()
     }
 
@@ -1513,9 +1462,8 @@ impl App {
         }
         let p: P = from_params(p)?;
         let old = self
-            .store
+            .library
             .loop_by_id(p.loop_id)
-            .err_str()?
             .ok_or_else(|| format!("loop not found: {}", p.loop_id.0))?;
         let start = p.start.unwrap_or(old.start);
         let end = p.end.unwrap_or(old.end);
@@ -1536,10 +1484,9 @@ impl App {
         };
 
         let updated = self
-            .store
+            .library
             .update_loop(p.loop_id, &name, override_after.as_deref(), start, end)
             .err_str()?;
-        self.write_sidecar_for(old.song_id);
         serde_json::to_value(updated).err_str()
     }
 
@@ -1552,11 +1499,10 @@ impl App {
         }
         let p: P = from_params(p)?;
         let old = self
-            .store
+            .library
             .loop_by_id(p.loop_id)
-            .err_str()?
             .ok_or_else(|| format!("loop not found: {}", p.loop_id.0))?;
-        let sections = self.store.list_sections(old.song_id).err_str()?;
+        let sections = self.library.list_sections(old.song_id);
         // gather every section boundary, snap each edge to the nearest one
         let mut bounds: Vec<f64> = Vec::new();
         for s in &sections {
@@ -1585,10 +1531,9 @@ impl App {
             None => self.auto_name_loop(old.song_id, start, end, Some(p.loop_id))?,
         };
         let updated = self
-            .store
+            .library
             .update_loop(p.loop_id, &name, old.name_override.as_deref(), start, end)
             .err_str()?;
-        self.write_sidecar_for(old.song_id);
         serde_json::to_value(updated).err_str()
     }
 
@@ -1598,13 +1543,10 @@ impl App {
             loop_id: LoopId,
         }
         let p: P = from_params(p)?;
-        let l = self
-            .store
+        self.library
             .loop_by_id(p.loop_id)
-            .err_str()?
             .ok_or_else(|| format!("loop not found: {}", p.loop_id.0))?;
-        self.store.delete_loop(p.loop_id).err_str()?;
-        self.write_sidecar_for(l.song_id);
+        self.library.delete_loop(p.loop_id).err_str()?;
         Ok(Value::Null)
     }
 
@@ -1614,37 +1556,15 @@ impl App {
             song_id: SongId,
         }
         let p: P = from_params(p)?;
-        serde_json::to_value(self.store.list_loops(p.song_id).err_str()?).err_str()
+        serde_json::to_value(self.library.list_loops(p.song_id)).err_str()
     }
 
     // --- shared helpers ---------------------------------------------------
 
     fn song_row(&self, id: SongId) -> Result<Song, String> {
-        self.store
-            .list_songs()
-            .err_str()?
-            .into_iter()
-            .find(|s| s.id == id)
+        self.library
+            .song_by_id(id)
             .ok_or_else(|| format!("song not found: {}", id.0))
-    }
-
-    /// Mirror annotations to the JSON sidecar; DB is primary, so IO errors
-    /// only log to stderr.
-    fn write_sidecar_for(&self, song_id: SongId) {
-        let write = || -> Result<(), String> {
-            let song = self.song_row(song_id)?;
-            let sc = practice::sidecar::Sidecar {
-                version: 1,
-                sections: self.store.list_sections(song_id).err_str()?,
-                loops: self.store.list_loops(song_id).err_str()?,
-                song,
-            };
-            practice::sidecar::write_sidecar(&sc).err_str()?;
-            Ok(())
-        };
-        if let Err(e) = write() {
-            eprintln!("dredge: sidecar write failed for song {}: {e}", song_id.0);
-        }
     }
 }
 
@@ -1662,13 +1582,6 @@ fn canonical_wav_for_tools(src: &Path) -> Result<(tempfile::TempDir, PathBuf), S
     let wav = dir.path().join("audio.wav");
     engine::decode::decode_to_wav(src, &wav).err_str()?;
     Ok((dir, wav))
-}
-
-/// `~/.local/share/dredge/stems/<file_hash>/{vocals,drums,bass,other}.wav`
-fn default_stems_dir() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("dredge/stems")
 }
 
 #[cfg(test)]

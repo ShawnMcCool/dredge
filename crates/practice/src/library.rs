@@ -38,6 +38,20 @@ impl Library {
         })
     }
 
+    /// An empty library rooted at `root` (used as a fallback when a scan fails).
+    pub fn empty(root: PathBuf) -> Self {
+        Self {
+            root,
+            entries: std::collections::HashMap::new(),
+            next_id: 1,
+        }
+    }
+
+    /// All bundle directories currently indexed.
+    pub fn bundle_dirs(&self) -> Vec<PathBuf> {
+        self.entries.values().map(|e| e.dir.clone()).collect()
+    }
+
     fn next_id(&mut self) -> i64 {
         let id = self.next_id;
         self.next_id += 1;
