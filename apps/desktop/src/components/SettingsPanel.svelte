@@ -8,6 +8,7 @@
     COLOR_THEME,
     GRID_SNAP_DEFAULT,
     gridSnap,
+    LIBRARY_ROOT,
     settings,
     UI_SCALE,
     WINDOW_DECORATIONS,
@@ -52,6 +53,13 @@
   // Defaults a fresh tablature block starts at; both optional (fall back 4 / 16).
   let tabStrings = $derived(Number($settings["default_tab_strings"] ?? 4));
   let tabWidth = $derived(Number($settings["default_tab_width"] ?? 16));
+  // Library location override; empty means the OS default. Write-through trims;
+  // a blank value clears the override. Takes effect on the next launch.
+  let libraryRoot = $derived(($settings[LIBRARY_ROOT] as string) ?? "");
+
+  function setLibraryRoot(raw: string) {
+    void actions.setSetting(LIBRARY_ROOT, raw.trim());
+  }
 
   function setTabDefault(key: string, raw: string, lo: number, hi: number, fallback: number) {
     const n = Math.round(Number(raw));
@@ -149,6 +157,24 @@
     <Button variant="toggle" active={snapDefault} onclick={toggleSnap}>
       {snapDefault ? "on" : "off"}
     </Button>
+  </div>
+</section>
+
+<section class="group">
+  <h3 class="group-head">library</h3>
+
+  <div class="setting stacked">
+    <div class="text">
+      <span class="name">library folder</span>
+      <span class="desc">where song bundles are stored · blank = default · applies on restart</span>
+    </div>
+    <input
+      class="path"
+      type="text"
+      placeholder="~/Music/dredge"
+      value={libraryRoot}
+      onchange={(e) => setLibraryRoot(e.currentTarget.value)}
+    />
   </div>
 </section>
 
@@ -319,6 +345,23 @@
     padding: 3px 6px;
   }
   .num:focus-visible {
+    outline: 1px solid var(--accent-dim);
+    outline-offset: -1px;
+  }
+
+  /* full-width path input (library folder) */
+  .path {
+    width: 100%;
+    box-sizing: border-box;
+    font: inherit;
+    font-size: 12px;
+    color: var(--fg);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 5px 8px;
+  }
+  .path:focus-visible {
     outline: 1px solid var(--accent-dim);
     outline-offset: -1px;
   }

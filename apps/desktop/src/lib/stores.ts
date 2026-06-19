@@ -308,6 +308,9 @@ export const TUNER_INPUT_NAME = "tuner_input_name";
 /** Export tab: last-used target folder + format, restored across sessions. */
 export const EXPORT_DIR = "export_dir";
 export const EXPORT_FORMAT = "export_format";
+/** Where song bundles live. Empty = the OS default (`<music dir>/dredge`).
+ *  Applies on restart. */
+export const LIBRARY_ROOT = "library_root";
 
 /** Side-column collapse state — persisted to settings, restored at launch. */
 export const libraryCollapsed = writable(false);
