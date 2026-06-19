@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 dirs = "6"
+getrandom = "0.2"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

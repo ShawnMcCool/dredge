@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use crate::bundle::{self, BundleManifest};
@@ -39,15 +39,16 @@ struct Entry {
 pub struct Library {
     root: PathBuf,
     entries: HashMap<i64, Entry>, // keyed by SongId.0
-    next_id: i64,
 }
 
 impl Library {
-    /// Load every bundle under `root`. `next_id` continues past the largest id
-    /// seen across songs, sections, and loops so generated ids never collide.
+    /// Load every bundle under `root`. Ids are read from the manifests (assigned
+    /// at creation, so they travel with the bundle). On the vanishingly rare id
+    /// clash between independently authored bundles, the newcomer is reassigned
+    /// a fresh id and its manifest rewritten, so neither song is silently lost.
     pub fn load(root: PathBuf) -> Result<Self> {
         let mut entries = HashMap::new();
-        let mut max_id = 0i64;
+        let mut used: HashSet<i64> = HashSet::new();
         for (dir, mut m) in bundle::scan_library(&root)? {
             // The manifest stores an absolute audio path from whatever machine
             // wrote it. A bundle copied to another PC (or a different library
@@ -56,24 +57,27 @@ impl Library {
             if let Some(fname) = Path::new(&m.song.path).file_name() {
                 m.song.path = dir.join(fname).to_string_lossy().into_owned();
             }
-            max_id = max_id.max(m.song.id.0);
-            max_id = m.sections.iter().fold(max_id, |a, s| a.max(s.id.0));
-            max_id = m.loops.iter().fold(max_id, |a, l| a.max(l.id.0));
+            if entries.contains_key(&m.song.id.0) {
+                m.song.id = SongId(Self::fresh_id(&mut used));
+                bundle::write_manifest(&dir, &m)?;
+            }
+            used.insert(m.song.id.0);
+            for sec in &m.sections {
+                used.insert(sec.id.0);
+            }
+            for lp in &m.loops {
+                used.insert(lp.id.0);
+            }
             entries.insert(m.song.id.0, Entry { dir, manifest: m });
         }
-        Ok(Self {
-            root,
-            entries,
-            next_id: max_id + 1,
-        })
+        Ok(Self { root, entries })
     }
 
     /// An empty library rooted at `root` (used as a fallback when a scan fails).
     pub fn empty(root: PathBuf) -> Self {
         Self {
             root,
-            entries: std::collections::HashMap::new(),
-            next_id: 1,
+            entries: HashMap::new(),
         }
     }
 
@@ -82,10 +86,35 @@ impl Library {
         self.entries.values().map(|e| e.dir.clone()).collect()
     }
 
-    fn next_id(&mut self) -> i64 {
-        let id = self.next_id;
-        self.next_id += 1;
-        id
+    /// Every id currently in use across songs, sections, and loops — the set a
+    /// freshly minted id must avoid.
+    fn used_ids(&self) -> HashSet<i64> {
+        let mut s = HashSet::new();
+        for e in self.entries.values() {
+            s.insert(e.manifest.song.id.0);
+            for sec in &e.manifest.sections {
+                s.insert(sec.id.0);
+            }
+            for lp in &e.manifest.loops {
+                s.insert(lp.id.0);
+            }
+        }
+        s
+    }
+
+    /// A random id in `[1, 2^53)` not already in `used` (and recorded into it).
+    /// Bounded below 2^53 so it round-trips losslessly through JSON/JS float64;
+    /// 53 bits of entropy makes collisions negligible for a personal library,
+    /// and `used` guarantees uniqueness regardless.
+    fn fresh_id(used: &mut HashSet<i64>) -> i64 {
+        loop {
+            let mut b = [0u8; 8];
+            getrandom::getrandom(&mut b).expect("system RNG unavailable");
+            let id = (1 + (u64::from_le_bytes(b) % ((1u64 << 53) - 1))) as i64;
+            if used.insert(id) {
+                return id;
+            }
+        }
     }
 
     pub fn list_songs(&self) -> Vec<Song> {
@@ -134,7 +163,7 @@ impl Library {
         std::fs::copy(src_audio, &dest)?;
 
         let song = Song {
-            id: SongId(self.next_id()),
+            id: SongId(Self::fresh_id(&mut self.used_ids())),
             title: title.to_string(),
             artist: artist.map(str::to_string),
             path: dest.to_string_lossy().into_owned(),
@@ -180,9 +209,10 @@ impl Library {
         song_id: SongId,
         sections: &[NewSection],
     ) -> Result<Vec<Section>> {
+        let mut used = self.used_ids();
         let mut ids = Vec::with_capacity(sections.len());
         for _ in sections {
-            ids.push(self.next_id());
+            ids.push(Self::fresh_id(&mut used));
         }
         let mut out: Vec<Section> = sections
             .iter()
@@ -222,7 +252,7 @@ impl Library {
 
     pub fn insert_loop(&mut self, song_id: SongId, l: NewLoop) -> Result<LoopRegion> {
         let region = LoopRegion {
-            id: LoopId(self.next_id()),
+            id: LoopId(Self::fresh_id(&mut self.used_ids())),
             song_id,
             name: l.name.to_owned(),
             name_override: l.name_override.map(str::to_owned),
@@ -394,9 +424,55 @@ mod tests {
     #[test]
     fn empty_root_loads_clean() {
         let dir = tempfile::tempdir().unwrap();
-        let mut lib = Library::load(dir.path().to_path_buf()).unwrap();
+        let lib = Library::load(dir.path().to_path_buf()).unwrap();
         assert!(lib.list_songs().is_empty());
-        assert_eq!(lib.next_id(), 1);
+    }
+
+    #[test]
+    fn fresh_ids_are_unique_and_js_safe() {
+        // 2^53 is the largest integer JS float64 represents exactly; ids must
+        // stay below it to survive the JSON round-trip to the frontend.
+        const JS_MAX: i64 = 1 << 53;
+        let mut used = HashSet::new();
+        for _ in 0..10_000 {
+            let id = Library::fresh_id(&mut used);
+            assert!((1..JS_MAX).contains(&id), "id {id} out of JS-safe range");
+        }
+        assert_eq!(used.len(), 10_000, "all 10k ids were distinct");
+    }
+
+    #[test]
+    fn load_reassigns_colliding_song_ids() {
+        // Two independently authored bundles that happen to share song id 1:
+        // both must survive the load, with one reassigned.
+        let lib_dir = tempfile::tempdir().unwrap();
+        for name in ["First", "Second"] {
+            let bundle_dir = lib_dir.path().join(name);
+            std::fs::create_dir_all(&bundle_dir).unwrap();
+            std::fs::write(bundle_dir.join("audio.flac"), b"A").unwrap();
+            let manifest = BundleManifest {
+                version: bundle::MANIFEST_VERSION,
+                song: Song {
+                    id: SongId(1),
+                    title: name.into(),
+                    artist: None,
+                    path: bundle_dir.join("audio.flac").to_string_lossy().into_owned(),
+                    file_hash: name.into(),
+                    duration_secs: 1.0,
+                },
+                sections: vec![],
+                loops: vec![],
+                notes: vec![],
+                analysis: None,
+            };
+            bundle::write_manifest(&bundle_dir, &manifest).unwrap();
+        }
+
+        let lib = Library::load(lib_dir.path().to_path_buf()).unwrap();
+        let songs = lib.list_songs();
+        assert_eq!(songs.len(), 2, "both bundles survived the id clash");
+        let ids: HashSet<i64> = songs.iter().map(|s| s.id.0).collect();
+        assert_eq!(ids.len(), 2, "the colliding id was reassigned");
     }
 
     // ── Task 2.2: create_song ──
