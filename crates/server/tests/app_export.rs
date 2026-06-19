@@ -41,6 +41,9 @@ fn dispatch(app: &mut App, cmd: &str, params: Value) -> Response {
 }
 
 fn import_fixture(app: &mut App, wav: &std::path::Path) -> i64 {
+    // root the bundle library beside the fixture so import never writes into
+    // the real ~/Music/dredge
+    app.set_library_root(wav.parent().unwrap().join("library"));
     let imported = dispatch(app, "song.import", json!({ "path": wav }));
     assert!(imported.ok, "import failed: {:?}", imported.error);
     imported.data["id"].as_i64().unwrap()

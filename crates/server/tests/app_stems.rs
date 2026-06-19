@@ -36,10 +36,18 @@ fn write_test_wav(path: &std::path::Path) {
 struct Ctx {
     app: App,
     mock: Arc<Mutex<MockEngine>>,
-    stems_dir: PathBuf,
     song_id: i64,
-    file_hash: String,
     _dir: tempfile::TempDir,
+}
+
+impl Ctx {
+    /// The song's stem cache dir: `<bundle>/stems`.
+    fn stems_cache(&self) -> PathBuf {
+        self.app
+            .song_bundle_dir(practice::model::SongId(self.song_id))
+            .unwrap()
+            .join("stems")
+    }
 }
 
 fn setup(separator: Arc<dyn StemSeparator>) -> Ctx {
@@ -52,22 +60,18 @@ fn setup(separator: Arc<dyn StemSeparator>) -> Ctx {
         Box::new(mock.clone()),
         separator,
     );
-    let stems_dir = dir.path().join("stems");
-    app.set_stems_dir(stems_dir.clone());
+    app.set_library_root(dir.path().join("library"));
     let song = req(
         &mut app,
         "song.import",
         json!({"path": wav.to_string_lossy()}),
     );
     let song_id = song["id"].as_i64().unwrap();
-    let file_hash = song["file_hash"].as_str().unwrap().to_owned();
     req(&mut app, "song.open", json!({"song_id": song_id}));
     Ctx {
         app,
         mock,
-        stems_dir,
         song_id,
-        file_hash,
         _dir: dir,
     }
 }
@@ -108,7 +112,7 @@ fn separate_runs_and_reports_done() {
     );
     assert_eq!(status["state"], "cached");
 
-    let cache = ctx.stems_dir.join(&ctx.file_hash);
+    let cache = ctx.stems_cache();
     for name in STEM_NAMES {
         assert!(
             cache.join(format!("{name}.wav")).is_file(),
@@ -171,7 +175,7 @@ fn open_lazy_upgrades_legacy_44k_cache_to_48k() {
     let mut ctx = setup(Arc::new(FakeSeparator));
 
     // seed a legacy 44.1 kHz cache by hand (pre-normalization separations)
-    let cache = ctx.stems_dir.join(&ctx.file_hash);
+    let cache = ctx.stems_cache();
     std::fs::create_dir_all(&cache).unwrap();
     for name in STEM_NAMES {
         write_44k_stem(&cache.join(format!("{name}.wav")));

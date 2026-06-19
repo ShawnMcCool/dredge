@@ -43,6 +43,7 @@ fn song_open_parity_with_app_dispatch() {
         Box::new(MockEngine::default()),
         Arc::new(FakeSeparator),
     );
+    app.set_library_root(dir.path().join("library"));
 
     let imported = app.dispatch(req("song.import", json!({"path": wav})));
     assert!(imported.ok, "{:?}", imported.error);

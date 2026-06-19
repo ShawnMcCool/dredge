@@ -48,6 +48,7 @@ fn setup(analyzer: Arc<dyn Analyzer>) -> Ctx {
         Arc::new(FakeSeparator),
     );
     app.set_analyzer(analyzer);
+    app.set_library_root(dir.path().join("library"));
     let song = req(
         &mut app,
         "song.import",

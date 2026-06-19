@@ -85,8 +85,7 @@ fn time_song_open() {
         Box::new(MockEngine::default()),
         Arc::new(FakeSeparator),
     );
-    let stems_dir = dir.path().join("stems");
-    app.set_stems_dir(stems_dir.clone());
+    app.set_library_root(dir.path().join("library"));
 
     let socket = dir.path().join("dredge.sock");
     let _handle = serve(Arc::new(Mutex::new(app)), &socket, |_| {}).unwrap();
@@ -108,8 +107,13 @@ fn time_song_open() {
     let plain_id = plain_song["id"].as_i64().unwrap();
     let stemmed_id = stemmed_song["id"].as_i64().unwrap();
 
-    // seed a pre-plan-13 stems cache: 44.1 kHz WAVs straight into the dir
-    let cache = stems_dir.join(stemmed_song["file_hash"].as_str().unwrap());
+    // seed a pre-plan-13 stems cache inside the song's bundle (<bundle>/stems).
+    // The imported audio lives at <bundle>/audio.<ext>, so its parent is the
+    // bundle dir.
+    let bundle = std::path::Path::new(stemmed_song["path"].as_str().unwrap())
+        .parent()
+        .unwrap();
+    let cache = bundle.join("stems");
     std::fs::create_dir_all(&cache).unwrap();
     for (name, scale) in STEM_NAMES.iter().zip(STEM_SCALES) {
         write_44k_wav(&cache.join(format!("{name}.wav")), scale);

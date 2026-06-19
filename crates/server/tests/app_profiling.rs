@@ -45,6 +45,7 @@ fn setup(analyzer: Arc<dyn Analyzer>) -> Ctx {
         Arc::new(FakeSeparator),
     );
     app.set_analyzer(analyzer);
+    app.set_library_root(dir.path().join("library"));
     let song = req(
         &mut app,
         "song.import",
@@ -136,7 +137,6 @@ fn analysis_auto_recovers_to_cpu_when_songformer_present() {
 #[test]
 fn stems_separate_records_a_profile() {
     let mut ctx = setup(Arc::new(FakeAnalyzer));
-    ctx.app.set_stems_dir(ctx._dir.path().join("stems"));
     req(
         &mut ctx.app,
         "stems.separate",

@@ -26,11 +26,12 @@ fn test_app() -> (App, tempfile::TempDir, std::path::PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let wav = dir.path().join("riff.wav");
     write_test_wav(&wav);
-    let app = App::new(
+    let mut app = App::new(
         Store::open_in_memory().unwrap(),
         Box::new(MockEngine::default()),
         Arc::new(FakeSeparator),
     );
+    app.set_library_root(dir.path().join("library"));
     (app, dir, wav)
 }
 

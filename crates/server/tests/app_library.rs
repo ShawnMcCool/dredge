@@ -27,11 +27,12 @@ fn test_app() -> (App, tempfile::TempDir, std::path::PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let wav = dir.path().join("riff.wav");
     write_test_wav(&wav);
-    let app = App::new(
+    let mut app = App::new(
         Store::open_in_memory().unwrap(),
         Box::new(MockEngine::default()),
         Arc::new(FakeSeparator),
     );
+    app.set_library_root(dir.path().join("library"));
     (app, dir, wav)
 }
 
@@ -86,7 +87,7 @@ fn sections_replace_creates_no_junction_loops() {
 }
 
 #[test]
-fn loops_roundtrip_to_sidecar() {
+fn loops_persist_to_the_bundle_manifest() {
     let (mut app, _dir, wav) = test_app();
     let song = req(&mut app, "song.import", json!({"path": wav}));
     let id = song["id"].as_i64().unwrap();
@@ -97,9 +98,12 @@ fn loops_roundtrip_to_sidecar() {
         json!({"song_id": id, "name": "intro", "start": 0.0, "end": 1.0}),
     );
 
-    // sidecar written next to the audio file and parses
-    let sc = practice::sidecar::read_sidecar(&wav).unwrap().unwrap();
-    assert_eq!(sc.loops.len(), 1);
+    // the loop is written through to the bundle manifest on disk
+    let bundle = std::path::Path::new(song["path"].as_str().unwrap())
+        .parent()
+        .unwrap();
+    let m = practice::bundle::read_manifest(bundle).unwrap();
+    assert_eq!(m.loops.len(), 1);
 }
 
 #[test]
@@ -148,11 +152,14 @@ fn loop_update_moves_and_renames() {
     assert_eq!(renamed["start"], 0.25);
     assert_eq!(renamed["end"], 1.5);
 
-    // persisted + mirrored to the sidecar
+    // persisted + written through to the bundle manifest
     let loops = req(&mut app, "loop.list", json!({"song_id": id}));
     assert_eq!(loops[0]["name"], "verse");
-    let sc = practice::sidecar::read_sidecar(&wav).unwrap().unwrap();
-    assert_eq!(sc.loops[0].name, "verse");
+    let bundle = std::path::Path::new(song["path"].as_str().unwrap())
+        .parent()
+        .unwrap();
+    let m = practice::bundle::read_manifest(bundle).unwrap();
+    assert_eq!(m.loops[0].name, "verse");
 
     // unknown loop errors cleanly
     let resp = app.dispatch(Request {
@@ -215,17 +222,15 @@ fn loop_naming_dynamic_override_and_fit() {
 }
 
 #[test]
-fn update_changes_metadata_and_syncs_sidecar() {
+fn update_changes_metadata_and_syncs_manifest() {
     let (mut app, _dir, wav) = test_app();
     let song = req(&mut app, "song.import", json!({"path": wav}));
     let id = song["id"].as_i64().unwrap();
     req(&mut app, "song.open", json!({"song_id": id}));
-    // create a loop so a sidecar exists to be rewritten
-    req(
-        &mut app,
-        "loop.create",
-        json!({"song_id": id, "name": "x", "start": 0.0, "end": 1.0}),
-    );
+    let bundle = std::path::Path::new(song["path"].as_str().unwrap())
+        .parent()
+        .unwrap()
+        .to_path_buf();
 
     let updated = req(
         &mut app,
@@ -238,10 +243,10 @@ fn update_changes_metadata_and_syncs_sidecar() {
     // persisted in the library list
     let listed = req(&mut app, "song.list", Value::Null);
     assert_eq!(listed[0]["title"], "Renamed");
-    // sidecar reflects the new title
-    let sc = practice::sidecar::read_sidecar(&wav).unwrap().unwrap();
-    assert_eq!(sc.song.title, "Renamed");
-    assert_eq!(sc.song.artist.as_deref(), Some("New Band"));
+    // bundle manifest reflects the new title
+    let m = practice::bundle::read_manifest(&bundle).unwrap();
+    assert_eq!(m.song.title, "Renamed");
+    assert_eq!(m.song.artist.as_deref(), Some("New Band"));
 
     // a socket/script client may omit `artist` entirely — that clears it
     let cleared = req(
@@ -269,18 +274,16 @@ fn import_emits_library_changed() {
 }
 
 #[test]
-fn delete_removes_song_clears_open_and_sweeps_sidecar() {
+fn delete_removes_song_clears_open_and_drops_bundle() {
     let (mut app, _dir, wav) = test_app();
     let song = req(&mut app, "song.import", json!({"path": wav}));
     let id = song["id"].as_i64().unwrap();
     req(&mut app, "song.open", json!({"song_id": id}));
-    // a loop write produces a sidecar next to the audio file
-    req(
-        &mut app,
-        "loop.create",
-        json!({"song_id": id, "name": "x", "start": 0.0, "end": 1.0}),
-    );
-    assert!(practice::sidecar::read_sidecar(&wav).unwrap().is_some());
+    let bundle = std::path::Path::new(song["path"].as_str().unwrap())
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    assert!(bundle.is_dir());
     let _ = app.tick(); // drain the import's library_changed
 
     req(&mut app, "song.delete", json!({"song_id": id}));
@@ -291,9 +294,9 @@ fn delete_removes_song_clears_open_and_sweeps_sidecar() {
     // open song cleared (status reports a null song_id)
     let status = req(&mut app, "status", Value::Null);
     assert!(status["song_id"].is_null());
-    // sidecar swept
-    assert!(practice::sidecar::read_sidecar(&wav).unwrap().is_none());
-    // the original audio file is untouched
+    // the whole bundle dir is removed
+    assert!(!bundle.exists());
+    // the original imported audio file (outside the library) is untouched
     assert!(wav.exists());
     // library_changed announced
     let events = app.tick();
