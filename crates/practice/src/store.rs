@@ -1,58 +1,11 @@
 use crate::error::Result;
-use crate::model::{Analysis, LoopId, LoopKind, LoopRegion, Section, SectionId, Song, SongId};
 use rusqlite::params;
-use rusqlite::OptionalExtension;
 
 const SCHEMA_V1: &str = "
-CREATE TABLE songs (
-    id INTEGER PRIMARY KEY,
-    title TEXT NOT NULL,
-    artist TEXT,
-    path TEXT NOT NULL,
-    file_hash TEXT NOT NULL UNIQUE,
-    duration_secs REAL NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-CREATE TABLE sections (
-    id INTEGER PRIMARY KEY,
-    song_id INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    start_secs REAL NOT NULL,
-    end_secs REAL NOT NULL,
-    position INTEGER NOT NULL
-);
-CREATE TABLE loops (
-    id INTEGER PRIMARY KEY,
-    song_id INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    start_secs REAL NOT NULL,
-    end_secs REAL NOT NULL,
-    kind_json TEXT NOT NULL
-);
-";
-
-/// v2: cached analysis results (one row per song, JSON columns).
-const SCHEMA_V2: &str = "
-CREATE TABLE analysis (
-    song_id INTEGER PRIMARY KEY REFERENCES songs(id) ON DELETE CASCADE,
-    bpm REAL,
-    beats_json TEXT NOT NULL,
-    downbeats_json TEXT NOT NULL,
-    sections_json TEXT NOT NULL,
-    engine TEXT NOT NULL
-);
-";
-
-/// v3: durable app settings (arbitrary JSON values per key).
-const SCHEMA_V3: &str = "
 CREATE TABLE settings (
     key TEXT PRIMARY KEY,
     value_json TEXT NOT NULL
 );
-";
-
-/// v4: per-operation profiling runs (heavy ops). `stages` is JSON.
-const SCHEMA_V4: &str = "
 CREATE TABLE profiles (
     id INTEGER PRIMARY KEY,
     op TEXT NOT NULL,
@@ -63,92 +16,20 @@ CREATE TABLE profiles (
     error TEXT,
     device TEXT,
     engine TEXT,
+    max_cpu_pct INTEGER,
+    max_gpu_util INTEGER,
+    max_vram_used_mb INTEGER,
+    vram_total_mb INTEGER,
     stages_json TEXT NOT NULL
 );
 ";
 
-/// v5: per-run max resource metrics on profiles.
-const SCHEMA_V5: &str = "
-ALTER TABLE profiles ADD COLUMN max_cpu_pct INTEGER;
-ALTER TABLE profiles ADD COLUMN max_gpu_util INTEGER;
-ALTER TABLE profiles ADD COLUMN max_vram_used_mb INTEGER;
-ALTER TABLE profiles ADD COLUMN vram_total_mb INTEGER;
-";
-
-/// v6: optional manual name override on loops (NULL = dynamic name).
-const SCHEMA_V6: &str = "
-ALTER TABLE loops ADD COLUMN name_override TEXT;
-";
-
-/// v7: indexes on the foreign-key / lookup columns used by hot queries. Without
-/// these, every `WHERE song_id = ?` is a full-table scan.
-const SCHEMA_V7: &str = "
-CREATE INDEX IF NOT EXISTS idx_sections_song ON sections(song_id);
-CREATE INDEX IF NOT EXISTS idx_loops_song ON loops(song_id);
-CREATE INDEX IF NOT EXISTS idx_profiles_song ON profiles(song_id);
-";
-
-/// v8: drop the retired practice-plan / spaced-repetition tables. Fresh DBs
-/// never create them (the v1 schema above no longer does); legacy DBs that ran
-/// the old v1 still have them, so clear them here. Child tables first so no
-/// foreign-key reference dangles mid-drop.
-const SCHEMA_V8: &str = "
-DROP TABLE IF EXISTS reps;
-DROP TABLE IF EXISTS resurfacing;
-DROP TABLE IF EXISTS plans;
-";
-
-/// v9: free-form per-section notes (text + tab blocks), keyed by the section's
-/// occurrence label ("verse 2") rather than its unstable row id. `doc_json` is
-/// a serialized `notes::NotesDoc`.
-const SCHEMA_V9: &str = "
-CREATE TABLE section_notes (
-    song_id    INTEGER NOT NULL,
-    label      TEXT    NOT NULL,
-    doc_json   TEXT    NOT NULL,
-    updated_at INTEGER NOT NULL,
-    PRIMARY KEY (song_id, label)
-);
-";
+fn json_err(e: serde_json::Error) -> rusqlite::Error {
+    rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
+}
 
 pub struct Store {
     conn: rusqlite::Connection,
-}
-
-pub struct NewSong<'a> {
-    pub title: &'a str,
-    pub artist: Option<&'a str>,
-    pub path: &'a str,
-    pub file_hash: &'a str,
-    pub duration_secs: f64,
-}
-
-pub struct NewSection<'a> {
-    pub name: &'a str,
-    pub start: f64,
-    pub end: f64,
-    pub position: i32,
-}
-
-pub struct NewLoop<'a> {
-    pub name: &'a str,
-    pub name_override: Option<&'a str>,
-    pub start: f64,
-    pub end: f64,
-    pub kind: LoopKind,
-}
-
-/// A recomputed dynamic-loop name (override is reset to NULL). Used by the
-/// batched `rename_loops`.
-pub struct LoopRename {
-    pub id: LoopId,
-    pub name: String,
-    pub start: f64,
-    pub end: f64,
-}
-
-fn json_err(e: serde_json::Error) -> rusqlite::Error {
-    rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
 }
 
 impl Store {
@@ -183,416 +64,7 @@ impl Store {
             self.conn.execute_batch(SCHEMA_V1)?;
             self.conn.pragma_update(None, "user_version", 1)?;
         }
-        if version < 2 {
-            self.conn.execute_batch(SCHEMA_V2)?;
-            self.conn.pragma_update(None, "user_version", 2)?;
-        }
-        if version < 3 {
-            self.conn.execute_batch(SCHEMA_V3)?;
-            self.conn.pragma_update(None, "user_version", 3)?;
-        }
-        if version < 4 {
-            self.conn.execute_batch(SCHEMA_V4)?;
-            self.conn.pragma_update(None, "user_version", 4)?;
-        }
-        if version < 5 {
-            self.conn.execute_batch(SCHEMA_V5)?;
-            self.conn.pragma_update(None, "user_version", 5)?;
-        }
-        if version < 6 {
-            self.conn.execute_batch(SCHEMA_V6)?;
-            self.conn.pragma_update(None, "user_version", 6)?;
-        }
-        if version < 7 {
-            self.conn.execute_batch(SCHEMA_V7)?;
-            self.conn.pragma_update(None, "user_version", 7)?;
-        }
-        if version < 8 {
-            self.conn.execute_batch(SCHEMA_V8)?;
-            self.conn.pragma_update(None, "user_version", 8)?;
-        }
-        if version < 9 {
-            self.conn.execute_batch(SCHEMA_V9)?;
-            self.conn.pragma_update(None, "user_version", 9)?;
-        }
         Ok(())
-    }
-
-    pub fn insert_song(&self, s: NewSong) -> Result<Song> {
-        self.conn.execute(
-            "INSERT INTO songs (title, artist, path, file_hash, duration_secs)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![s.title, s.artist, s.path, s.file_hash, s.duration_secs],
-        )?;
-        Ok(Song {
-            id: SongId(self.conn.last_insert_rowid()),
-            title: s.title.to_owned(),
-            artist: s.artist.map(str::to_owned),
-            path: s.path.to_owned(),
-            file_hash: s.file_hash.to_owned(),
-            duration_secs: s.duration_secs,
-        })
-    }
-
-    fn song_from_row(row: &rusqlite::Row) -> rusqlite::Result<Song> {
-        Ok(Song {
-            id: SongId(row.get(0)?),
-            title: row.get(1)?,
-            artist: row.get(2)?,
-            path: row.get(3)?,
-            file_hash: row.get(4)?,
-            duration_secs: row.get(5)?,
-        })
-    }
-
-    pub fn song_by_hash(&self, hash: &str) -> Result<Option<Song>> {
-        let mut stmt = self.conn.prepare_cached(
-            "SELECT id, title, artist, path, file_hash, duration_secs
-             FROM songs WHERE file_hash = ?1",
-        )?;
-        let mut rows = stmt.query_map(params![hash], Self::song_from_row)?;
-        rows.next().transpose().map_err(Into::into)
-    }
-
-    pub fn list_songs(&self) -> Result<Vec<Song>> {
-        let mut stmt = self.conn.prepare_cached(
-            "SELECT id, title, artist, path, file_hash, duration_secs
-             FROM songs ORDER BY id",
-        )?;
-        let songs = stmt
-            .query_map([], Self::song_from_row)?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(songs)
-    }
-
-    pub fn song_by_id(&self, id: SongId) -> Result<Option<Song>> {
-        let mut stmt = self.conn.prepare_cached(
-            "SELECT id, title, artist, path, file_hash, duration_secs
-             FROM songs WHERE id = ?1",
-        )?;
-        let mut rows = stmt.query_map(params![id.0], Self::song_from_row)?;
-        rows.next().transpose().map_err(Into::into)
-    }
-
-    pub fn delete_song(&self, id: SongId) -> Result<()> {
-        // profiles.song_id has no FK (it's nullable — some runs aren't
-        // song-scoped), so cascade won't reach it; clear this song's rows
-        // explicitly. Everything else cascades via ON DELETE CASCADE.
-        self.conn
-            .execute("DELETE FROM profiles WHERE song_id = ?1", params![id.0])?;
-        self.conn
-            .execute("DELETE FROM songs WHERE id = ?1", params![id.0])?;
-        Ok(())
-    }
-
-    pub fn update_song(&self, id: SongId, title: &str, artist: Option<&str>) -> Result<Song> {
-        self.conn.execute(
-            "UPDATE songs SET title = ?1, artist = ?2 WHERE id = ?3",
-            params![title, artist, id.0],
-        )?;
-        self.song_by_id(id)?.ok_or(crate::error::Error::NotFound)
-    }
-
-    /// Replace all sections for a song atomically (UI saves whole lane).
-    pub fn replace_sections(
-        &mut self,
-        song_id: SongId,
-        sections: &[NewSection],
-    ) -> Result<Vec<Section>> {
-        let tx = self.conn.transaction()?;
-        tx.execute(
-            "DELETE FROM sections WHERE song_id = ?1",
-            params![song_id.0],
-        )?;
-        let mut out = Vec::with_capacity(sections.len());
-        for s in sections {
-            tx.execute(
-                "INSERT INTO sections (song_id, name, start_secs, end_secs, position)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![song_id.0, s.name, s.start, s.end, s.position],
-            )?;
-            out.push(Section {
-                id: SectionId(tx.last_insert_rowid()),
-                song_id,
-                name: s.name.to_owned(),
-                start: s.start,
-                end: s.end,
-                position: s.position,
-            });
-        }
-        tx.commit()?;
-        out.sort_by_key(|s| s.position);
-        Ok(out)
-    }
-
-    pub fn list_sections(&self, song_id: SongId) -> Result<Vec<Section>> {
-        let mut stmt = self.conn.prepare_cached(
-            "SELECT id, song_id, name, start_secs, end_secs, position
-             FROM sections WHERE song_id = ?1 ORDER BY position",
-        )?;
-        let sections = stmt
-            .query_map(params![song_id.0], |row| {
-                Ok(Section {
-                    id: SectionId(row.get(0)?),
-                    song_id: SongId(row.get(1)?),
-                    name: row.get(2)?,
-                    start: row.get(3)?,
-                    end: row.get(4)?,
-                    position: row.get(5)?,
-                })
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(sections)
-    }
-
-    /// Upsert a section's notes by occurrence label. An empty doc deletes the row.
-    pub fn set_section_notes(
-        &self,
-        song_id: SongId,
-        label: &str,
-        doc: &crate::notes::NotesDoc,
-    ) -> Result<()> {
-        if doc.is_empty() {
-            self.conn.execute(
-                "DELETE FROM section_notes WHERE song_id = ?1 AND label = ?2",
-                params![song_id.0, label],
-            )?;
-            return Ok(());
-        }
-        let json = serde_json::to_string(doc)?;
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
-        self.conn.execute(
-            "INSERT INTO section_notes (song_id, label, doc_json, updated_at)
-             VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(song_id, label) DO UPDATE SET doc_json = ?3, updated_at = ?4",
-            params![song_id.0, label, json, now],
-        )?;
-        Ok(())
-    }
-
-    pub fn get_section_notes(
-        &self,
-        song_id: SongId,
-        label: &str,
-    ) -> Result<Option<crate::notes::NotesDoc>> {
-        let mut stmt = self.conn.prepare_cached(
-            "SELECT doc_json FROM section_notes WHERE song_id = ?1 AND label = ?2",
-        )?;
-        let json: Option<String> = stmt
-            .query_row(params![song_id.0, label], |r| r.get(0))
-            .optional()?;
-        Ok(match json {
-            Some(j) => Some(serde_json::from_str(&j)?),
-            None => None,
-        })
-    }
-
-    /// All stored notes for a song as `(label, doc)`, label order.
-    pub fn list_section_notes(
-        &self,
-        song_id: SongId,
-    ) -> Result<Vec<(String, crate::notes::NotesDoc)>> {
-        let mut stmt = self.conn.prepare_cached(
-            "SELECT label, doc_json FROM section_notes WHERE song_id = ?1 ORDER BY label",
-        )?;
-        let rows = stmt
-            .query_map(params![song_id.0], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        rows.into_iter()
-            .map(|(label, json)| Ok((label, serde_json::from_str(&json)?)))
-            .collect()
-    }
-
-    pub fn insert_loop(&self, song_id: SongId, l: NewLoop) -> Result<LoopRegion> {
-        let kind_json = serde_json::to_string(&l.kind)?;
-        self.conn.execute(
-            "INSERT INTO loops (song_id, name, name_override, start_secs, end_secs, kind_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![
-                song_id.0,
-                l.name,
-                l.name_override,
-                l.start,
-                l.end,
-                kind_json
-            ],
-        )?;
-        Ok(LoopRegion {
-            id: LoopId(self.conn.last_insert_rowid()),
-            song_id,
-            name: l.name.to_owned(),
-            name_override: l.name_override.map(str::to_owned),
-            start: l.start,
-            end: l.end,
-            kind: l.kind,
-        })
-    }
-
-    const LOOP_COLS: &'static str =
-        "id, song_id, name, name_override, start_secs, end_secs, kind_json";
-
-    fn loop_from_row(row: &rusqlite::Row) -> rusqlite::Result<LoopRegion> {
-        let kind_json: String = row.get(6)?;
-        Ok(LoopRegion {
-            id: LoopId(row.get(0)?),
-            song_id: SongId(row.get(1)?),
-            name: row.get(2)?,
-            name_override: row.get(3)?,
-            start: row.get(4)?,
-            end: row.get(5)?,
-            kind: serde_json::from_str(&kind_json).map_err(json_err)?,
-        })
-    }
-
-    pub fn loop_by_id(&self, id: LoopId) -> Result<Option<LoopRegion>> {
-        let mut stmt = self.conn.prepare_cached(
-            "SELECT id, song_id, name, name_override, start_secs, end_secs, kind_json
-             FROM loops WHERE id = ?1",
-        )?;
-        let mut rows = stmt.query_map(params![id.0], Self::loop_from_row)?;
-        rows.next().transpose().map_err(Into::into)
-    }
-
-    /// Batch loop fetch by id (single `IN (...)` query) — avoids the N+1 of
-    /// calling `loop_by_id` in a loop. Result order is unspecified; callers that
-    /// need a specific order should index by `id`.
-    pub fn loops_by_ids(&self, ids: &[LoopId]) -> Result<Vec<LoopRegion>> {
-        if ids.is_empty() {
-            return Ok(Vec::new());
-        }
-        let placeholders = vec!["?"; ids.len()].join(",");
-        // Dynamic placeholder count → not prepare_cached (SQL varies by len).
-        let mut stmt = self.conn.prepare(&format!(
-            "SELECT {} FROM loops WHERE id IN ({placeholders})",
-            Self::LOOP_COLS
-        ))?;
-        let params: Vec<&dyn rusqlite::ToSql> =
-            ids.iter().map(|id| &id.0 as &dyn rusqlite::ToSql).collect();
-        let loops = stmt
-            .query_map(params.as_slice(), Self::loop_from_row)?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(loops)
-    }
-
-    /// Rename and/or move a loop in place; kind is untouched. `name` is the
-    /// effective display name; `name_override` is the pinned manual name (NULL
-    /// reverts to dynamic).
-    pub fn update_loop(
-        &self,
-        id: LoopId,
-        name: &str,
-        name_override: Option<&str>,
-        start: f64,
-        end: f64,
-    ) -> Result<LoopRegion> {
-        self.conn.execute(
-            "UPDATE loops SET name = ?2, name_override = ?3, start_secs = ?4, end_secs = ?5
-             WHERE id = ?1",
-            params![id.0, name, name_override, start, end],
-        )?;
-        self.loop_by_id(id)?.ok_or(crate::error::Error::NotFound)
-    }
-
-    pub fn delete_loop(&self, id: LoopId) -> Result<()> {
-        self.conn
-            .execute("DELETE FROM loops WHERE id = ?1", params![id.0])?;
-        Ok(())
-    }
-
-    /// Delete many loops in one transaction (one fsync instead of N).
-    pub fn delete_loops(&mut self, ids: &[LoopId]) -> Result<()> {
-        if ids.is_empty() {
-            return Ok(());
-        }
-        let tx = self.conn.transaction()?;
-        for id in ids {
-            tx.execute("DELETE FROM loops WHERE id = ?1", params![id.0])?;
-        }
-        tx.commit()?;
-        Ok(())
-    }
-
-    /// Apply recomputed dynamic names in one transaction (resets name_override
-    /// to NULL). Batches what was previously a write-per-loop.
-    pub fn rename_loops(&mut self, renames: &[LoopRename]) -> Result<()> {
-        if renames.is_empty() {
-            return Ok(());
-        }
-        let tx = self.conn.transaction()?;
-        for r in renames {
-            tx.execute(
-                "UPDATE loops SET name = ?2, name_override = NULL, start_secs = ?3, end_secs = ?4
-                 WHERE id = ?1",
-                params![r.id.0, r.name, r.start, r.end],
-            )?;
-        }
-        tx.commit()?;
-        Ok(())
-    }
-
-    pub fn list_loops(&self, song_id: SongId) -> Result<Vec<LoopRegion>> {
-        let mut stmt = self.conn.prepare_cached(
-            "SELECT id, song_id, name, name_override, start_secs, end_secs, kind_json
-             FROM loops WHERE song_id = ?1 ORDER BY id",
-        )?;
-        let loops = stmt
-            .query_map(params![song_id.0], Self::loop_from_row)?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(loops)
-    }
-
-    /// Upsert the cached analysis for a song (re-analysis overwrites).
-    pub fn save_analysis(&self, song_id: SongId, a: &Analysis) -> Result<()> {
-        self.conn.execute(
-            "INSERT INTO analysis (song_id, bpm, beats_json, downbeats_json, sections_json, engine)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-             ON CONFLICT(song_id) DO UPDATE SET bpm = ?2, beats_json = ?3,
-                 downbeats_json = ?4, sections_json = ?5, engine = ?6",
-            params![
-                song_id.0,
-                a.bpm,
-                serde_json::to_string(&a.beats)?,
-                serde_json::to_string(&a.downbeats)?,
-                serde_json::to_string(&a.sections)?,
-                a.engine,
-            ],
-        )?;
-        Ok(())
-    }
-
-    /// Cheap presence check — avoids `get_analysis`'s full JSON parse of the
-    /// beats/downbeats/sections vectors when the caller only needs a yes/no.
-    pub fn has_analysis(&self, song_id: SongId) -> Result<bool> {
-        let mut stmt = self
-            .conn
-            .prepare_cached("SELECT 1 FROM analysis WHERE song_id = ?1")?;
-        let exists = stmt.exists(params![song_id.0])?;
-        Ok(exists)
-    }
-
-    pub fn get_analysis(&self, song_id: SongId) -> Result<Option<Analysis>> {
-        let mut stmt = self.conn.prepare_cached(
-            "SELECT bpm, beats_json, downbeats_json, sections_json, engine
-             FROM analysis WHERE song_id = ?1",
-        )?;
-        let mut rows = stmt.query_map(params![song_id.0], |row| {
-            let beats: String = row.get(1)?;
-            let downbeats: String = row.get(2)?;
-            let sections: String = row.get(3)?;
-            Ok(Analysis {
-                bpm: row.get(0)?,
-                beats: serde_json::from_str(&beats).map_err(json_err)?,
-                downbeats: serde_json::from_str(&downbeats).map_err(json_err)?,
-                sections: serde_json::from_str(&sections).map_err(json_err)?,
-                engine: row.get(4)?,
-            })
-        })?;
-        rows.next().transpose().map_err(Into::into)
     }
 
     /// Upsert one durable setting (arbitrary JSON value).
@@ -754,116 +226,6 @@ mod tests {
     }
 
     #[test]
-    fn delete_song_clears_its_profiles_only() {
-        let store = Store::open_in_memory().unwrap();
-        let a = store
-            .insert_song(NewSong {
-                title: "A",
-                artist: None,
-                path: "/a",
-                file_hash: "ha",
-                duration_secs: 1.0,
-            })
-            .unwrap();
-        let b = store
-            .insert_song(NewSong {
-                title: "B",
-                artist: None,
-                path: "/b",
-                file_hash: "hb",
-                duration_secs: 1.0,
-            })
-            .unwrap();
-
-        let mk = |sid: Option<SongId>| crate::model::ProfileRun {
-            op: "analysis".into(),
-            song_id: sid,
-            started_at: String::new(),
-            total_ms: 1,
-            ok: true,
-            error: None,
-            device: None,
-            engine: None,
-            max_cpu_pct: None,
-            max_gpu_util: None,
-            max_vram_used_mb: None,
-            vram_total_mb: None,
-            stages: vec![],
-        };
-        store.save_profile(&mk(Some(a.id))).unwrap();
-        store.save_profile(&mk(Some(b.id))).unwrap();
-        store.save_profile(&mk(None)).unwrap(); // not song-scoped
-
-        store.delete_song(a.id).unwrap();
-
-        let left = store.list_profiles(100).unwrap();
-        assert!(
-            !left.iter().any(|p| p.song_id.map(|s| s.0) == Some(a.id.0)),
-            "deleted song's profiles are cleared"
-        );
-        assert!(
-            left.iter().any(|p| p.song_id.map(|s| s.0) == Some(b.id.0)),
-            "another song's profiles are kept"
-        );
-        assert!(
-            left.iter().any(|p| p.song_id.is_none()),
-            "non-song-scoped profiles are kept"
-        );
-        assert!(
-            store.song_by_id(b.id).unwrap().is_some(),
-            "other song untouched"
-        );
-    }
-
-    #[test]
-    fn section_notes_upsert_get_delete() {
-        use crate::notes::{Block, NotesDoc};
-        let store = Store::open_in_memory().unwrap();
-        let song = store
-            .insert_song(NewSong {
-                title: "t",
-                artist: None,
-                path: "/p",
-                file_hash: "h",
-                duration_secs: 1.0,
-            })
-            .unwrap();
-
-        assert_eq!(store.get_section_notes(song.id, "verse 1").unwrap(), None);
-
-        let doc = NotesDoc {
-            blocks: vec![Block::Text {
-                text: "hello".into(),
-            }],
-        };
-        store.set_section_notes(song.id, "verse 1", &doc).unwrap();
-        assert_eq!(
-            store.get_section_notes(song.id, "verse 1").unwrap(),
-            Some(doc.clone())
-        );
-
-        let doc2 = NotesDoc {
-            blocks: vec![Block::Text {
-                text: "world".into(),
-            }],
-        };
-        store.set_section_notes(song.id, "verse 1", &doc2).unwrap();
-        assert_eq!(
-            store.get_section_notes(song.id, "verse 1").unwrap(),
-            Some(doc2)
-        );
-
-        store
-            .set_section_notes(song.id, "verse 1", &NotesDoc::default())
-            .unwrap();
-        assert_eq!(store.get_section_notes(song.id, "verse 1").unwrap(), None);
-
-        store.set_section_notes(song.id, "chorus 1", &doc).unwrap();
-        let all = store.list_section_notes(song.id).unwrap();
-        assert_eq!(all, vec![("chorus 1".to_string(), doc)]);
-    }
-
-    #[test]
     fn save_profile_caps_table_at_200_keeping_newest() {
         let store = Store::open_in_memory().unwrap();
         let mk = || crate::model::ProfileRun {
@@ -895,5 +257,35 @@ mod tests {
             .query_row("SELECT MIN(id) FROM profiles", [], |r| r.get(0))
             .unwrap();
         assert_eq!(min_id, 6, "the 5 oldest rows were trimmed");
+    }
+
+    #[test]
+    fn settings_roundtrip_arbitrary_json() {
+        let store = Store::open_in_memory().unwrap();
+        assert!(store.get_setting("ui_scale").unwrap().is_none());
+        assert!(store.all_settings().unwrap().is_empty());
+
+        store
+            .set_setting("ui_scale", &serde_json::json!(1.75))
+            .unwrap();
+        store
+            .set_setting("grid_snap_default", &serde_json::json!(false))
+            .unwrap();
+        assert_eq!(
+            store.get_setting("ui_scale").unwrap(),
+            Some(serde_json::json!(1.75))
+        );
+
+        // upsert overwrites in place
+        store
+            .set_setting("ui_scale", &serde_json::json!(2.0))
+            .unwrap();
+        assert_eq!(
+            store.all_settings().unwrap(),
+            vec![
+                ("grid_snap_default".into(), serde_json::json!(false)),
+                ("ui_scale".into(), serde_json::json!(2.0)),
+            ]
+        );
     }
 }

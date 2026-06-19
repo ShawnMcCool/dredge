@@ -9,7 +9,8 @@ use practice::model::{
     Analysis, AnalysisSection, LoopId, LoopKind, ProfileRun, Section, SectionId, Song, SongId,
 };
 use practice::notes::NotesDoc;
-use practice::store::{NewLoop, NewSection, Store};
+use practice::library::{LoopRename, NewLoop, NewSection};
+use practice::store::Store;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::HashSet;
@@ -1415,7 +1416,7 @@ impl App {
                 .collect();
             let name = practice::naming::loop_name(l.start, l.end, &sections, &existing);
             if name != l.name {
-                renames.push(practice::store::LoopRename {
+                renames.push(LoopRename {
                     id: l.id,
                     name,
                     start: l.start,

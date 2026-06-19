@@ -4,7 +4,30 @@ use std::path::{Path, PathBuf};
 use crate::bundle::{self, BundleManifest};
 use crate::error::Result;
 use crate::model::*;
-use crate::store::{LoopRename, NewLoop, NewSection};
+
+pub struct NewSection<'a> {
+    pub name: &'a str,
+    pub start: f64,
+    pub end: f64,
+    pub position: i32,
+}
+
+pub struct NewLoop<'a> {
+    pub name: &'a str,
+    pub name_override: Option<&'a str>,
+    pub start: f64,
+    pub end: f64,
+    pub kind: LoopKind,
+}
+
+/// A recomputed dynamic-loop name (override is reset to NULL). Used by the
+/// batched `rename_loops`.
+pub struct LoopRename {
+    pub id: LoopId,
+    pub name: String,
+    pub start: f64,
+    pub end: f64,
+}
 
 struct Entry {
     dir: PathBuf,
