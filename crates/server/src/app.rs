@@ -1112,8 +1112,9 @@ impl App {
 
     /// State phase of `song.update`: refuse while a job for this song is
     /// running, rename the bundle (via the library) so the folder tracks the
-    /// new name, and report whether the renamed song is the open one (so the
-    /// caller reopens it).
+    /// new name, and report whether the open song needs reopening. A reopen is
+    /// only needed when the folder actually moved — a metadata-only edit that
+    /// slugs to the same dir leaves playback untouched.
     fn update_apply(&mut self, p: Value) -> Result<(Song, Option<SongId>), String> {
         #[derive(Deserialize)]
         struct P {
@@ -1135,17 +1136,27 @@ impl App {
             return Err("can't rename while stems or analysis are running for this song".into());
         }
 
+        let before = self.library.bundle_dir(p.song_id);
         let song = self
             .library
             .update_song(p.song_id, &p.title, p.artist.as_deref())
             .err_str()?;
+        let moved = self.library.bundle_dir(p.song_id) != before;
         let _ = self.job_tx.send(Event {
             event: "library_changed".into(),
             data: Value::Null,
         });
 
-        let reopen =
-            (self.open_song.as_ref().map(|o| o.song.id) == Some(p.song_id)).then_some(p.song_id);
+        // Reopen only when the folder actually moved, and only for the open song.
+        let is_open = self.open_song.as_ref().map(|o| o.song.id) == Some(p.song_id);
+        let reopen = (moved && is_open).then_some(p.song_id);
+        // Metadata-only edit to the open song (no move, so no reopen): sync its
+        // header in place, since nothing else will.
+        if is_open && !moved {
+            if let Some(o) = self.open_song.as_mut() {
+                o.song = song.clone();
+            }
+        }
         Ok((song, reopen))
     }
 
@@ -1702,5 +1713,41 @@ mod rename_tests {
             dir.file_name().unwrap().to_str().unwrap(),
             "Title \u{2014} Band"
         );
+    }
+
+    #[test]
+    fn reopen_only_when_folder_moves() {
+        let lib_dir = tempfile::tempdir().unwrap();
+        let src = tempfile::tempdir().unwrap();
+        let audio = src.path().join("a.flac");
+        std::fs::write(&audio, b"AUDIO").unwrap();
+
+        let mut app = App::new(
+            Store::open_in_memory().unwrap(),
+            Box::new(MockEngine::default()),
+            Arc::new(FakeSeparator),
+        );
+        app.set_library_root(lib_dir.path().to_path_buf());
+        let song = app
+            .library
+            .create_song(&audio, "Title", Some("Band"), "hash", 1.0)
+            .unwrap();
+        // Pretend it's the open song without paying a real decode.
+        app.open_song = Some(OpenSong {
+            song: song.clone(),
+            stems: false,
+        });
+
+        // Same slug → no move → no reopen, but the open header still syncs.
+        let (_, reopen) = app
+            .update_apply(json!({ "song_id": song.id, "title": "Title", "artist": "Band" }))
+            .unwrap();
+        assert_eq!(reopen, None, "metadata-only edit must not reopen");
+
+        // Different slug → folder moves → reopen the open song.
+        let (_, reopen) = app
+            .update_apply(json!({ "song_id": song.id, "title": "Renamed", "artist": "Band" }))
+            .unwrap();
+        assert_eq!(reopen, Some(song.id), "a folder move must reopen");
     }
 }
