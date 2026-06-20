@@ -100,6 +100,5 @@ A GPU is optional throughout — CPU works, slower. The virtualenvs and model we
 
 ---
 
-Built with Rust, Tauri 2, and Svelte 5. The practice model follows motor-learning
-research; the spec is under [`docs/superpowers/`](docs/superpowers/). Building
-from source or hacking on it? See **[DEVELOPMENT.md](DEVELOPMENT.md)**. MIT licensed.
+Built with Rust, Tauri 2, and Svelte 5. Building from source or hacking on it?
+See **[DEVELOPMENT.md](DEVELOPMENT.md)**. MIT licensed.
