@@ -20,22 +20,34 @@
 
 ## Features
 
+### Basic
+
+These work with the installed app — no ML setup.
+
 - **Sample-accurate looping** — crossfaded loop seam, set by dragging on the waveform.
 - **Pitch-preserving speed** — 0.25–2.0× via Rubber Band R3; independent pitch shift, ±12 semitones plus cents.
-- **Auto-named loops** — loops take the name of the sections they span (`verse 2 → chorus 1`); edges snap to downbeats.
 - **Drill** — tempo trainer that raises speed across passes, with region shaping and a recall mode that mutes playback so you play from memory.
-- **Stems** — 4-stem separation (vocals / drums / bass / other) via Demucs, with per-stem faders. Runs locally.
-- **Bass focus** — octave-up plus low-pass to isolate basslines. No analysis required.
-- **Song structure** — beats, downbeats, BPM, and labelled sections detected and drawn on the waveform.
-- **Notes** — per-section free text with inline tablature, keyed to the section occurrence (`verse 2`).
+- **Bass focus** — octave-up plus low-pass to isolate basslines.
 - **Tuner** — chromatic tuner in the stage; note and cents with a hold-to-lock confirm. Works with no song loaded.
-- **Export** — render the current mix (stem balance, speed, pitch, bass focus) to WAV or MP3.
+- **Sections and notes** — add sections by hand; per-section free text with inline tablature, keyed to the section occurrence (`verse 2`).
+- **Auto-named loops** — loops take the name of the sections they span (`verse 2 → chorus 1`).
+- **Export** — render the current mix (stem balance, speed, pitch, bass focus) to WAV, or MP3 with `ffmpeg`.
 - **Song bundles** — each song is a self-contained directory (audio + `dredge.json` holding sections, loops, notes, analysis). Diffable, portable; copy the folder to another machine and it loads with everything.
 - **Control socket** — JSON commands over a Unix socket drive everything the UI can.
+
+### With ML enabled
+
+These require the optional Python tools in [Dependencies](#dependencies).
+
+- **Detected song structure** — beats, downbeats, BPM, and labelled sections detected and drawn on the waveform.
+- **Downbeat snapping** — loop and selection edges snap to detected downbeats.
+- **Stems** — 4-stem separation (vocals / drums / bass / other) with per-stem faders. Runs locally.
 
 ## Install
 
 Linux only. The audio engine is PipeWire-native: **PipeWire 1.0+ is required**, with no ALSA or PulseAudio fallback.
+
+### Basic
 
 **Arch / Arch-based**
 
@@ -52,20 +64,13 @@ Download the latest `dredge_*_amd64.deb` from the
 sudo apt install ./dredge_*_amd64.deb
 ```
 
-`apt` pulls the runtime libraries automatically. The core looper — load, loop, stretch, tuner, export to WAV — runs with nothing else installed.
+`apt` pulls the runtime libraries automatically. The basic features above run with nothing else installed.
 
 Run **`dredge-doctor`** at any time to print which optional tools are present and the command to install each missing one. The desktop app shows the same under Settings → capabilities.
 
-## Dependencies
+### ML enabled
 
-| Component | Required for | Install |
-|---|---|---|
-| **PipeWire 1.0+** | the app to run at all | system package (`pipewire`) |
-| **Runtime libraries** | the app to run | pulled automatically by `apt` / the AUR package |
-| **ffmpeg** | MP3 export, mkv/webm containers, stem export | `sudo apt install ffmpeg` · `sudo pacman -S ffmpeg` |
-| **uv** | any ML feature below | `sudo pacman -S uv` · Ubuntu: `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
-
-Beat/section analysis and stem separation are optional. They are off by default and self-bootstrap on first use; `dredge-enable-ml` does that bootstrap up front so the first run isn't a multi-minute download. Each is an isolated `uv` virtualenv (or tool) and requires `uv` on PATH.
+Beat/section analysis and stem separation are off by default and self-bootstrap on first use; `dredge-enable-ml` does that bootstrap up front so the first run isn't a multi-minute download. Each piece is an isolated `uv` virtualenv (or tool) and requires [`uv`](https://docs.astral.sh/uv/) on PATH.
 
 ```bash
 dredge-enable-ml all          # analyze + songformer + stems
@@ -74,7 +79,21 @@ dredge-enable-ml songformer   # higher-quality section labels
 dredge-enable-ml stems        # stem separation only
 ```
 
-A GPU is optional throughout — CPU works, slower. The virtualenvs and model weights take several GB of disk.
+A GPU is optional throughout — CPU works, slower. The virtualenvs and model weights take several GB of disk. See [Dependencies](#dependencies) for what each piece installs.
+
+## Dependencies
+
+### Basic
+
+| Component | Required for | Install |
+|---|---|---|
+| **PipeWire 1.0+** | the app to run at all | system package (`pipewire`) |
+| **Runtime libraries** | the app to run | pulled automatically by `apt` / the AUR package |
+| **ffmpeg** | MP3 export, mkv/webm containers, stem export | `sudo apt install ffmpeg` · `sudo pacman -S ffmpeg` |
+
+### ML enabled
+
+All ML pieces require **`uv`** on PATH: `sudo pacman -S uv`, or on Ubuntu `curl -LsSf https://astral.sh/uv/install.sh | sh`.
 
 **Beat / section analysis** (`dredge-enable-ml analyze`)
 
