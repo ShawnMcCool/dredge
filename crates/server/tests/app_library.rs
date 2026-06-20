@@ -227,7 +227,7 @@ fn update_changes_metadata_and_syncs_manifest() {
     let song = req(&mut app, "song.import", json!({"path": wav}));
     let id = song["id"].as_i64().unwrap();
     req(&mut app, "song.open", json!({"song_id": id}));
-    let bundle = std::path::Path::new(song["path"].as_str().unwrap())
+    let old_bundle = std::path::Path::new(song["path"].as_str().unwrap())
         .parent()
         .unwrap()
         .to_path_buf();
@@ -240,21 +240,35 @@ fn update_changes_metadata_and_syncs_manifest() {
     assert_eq!(updated["title"], "Renamed");
     assert_eq!(updated["artist"], "New Band");
 
+    // the bundle dir now tracks the displayed name; the old dir is gone
+    let bundle = std::path::Path::new(updated["path"].as_str().unwrap())
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    assert_eq!(bundle.file_name().unwrap(), "Renamed \u{2014} New Band");
+    assert!(!old_bundle.exists(), "old bundle dir should be gone");
+
     // persisted in the library list
     let listed = req(&mut app, "song.list", Value::Null);
     assert_eq!(listed[0]["title"], "Renamed");
-    // bundle manifest reflects the new title
+    // bundle manifest at the new path reflects the new title
     let m = practice::bundle::read_manifest(&bundle).unwrap();
     assert_eq!(m.song.title, "Renamed");
     assert_eq!(m.song.artist.as_deref(), Some("New Band"));
 
-    // a socket/script client may omit `artist` entirely — that clears it
+    // a socket/script client may omit `artist` entirely — that clears it and
+    // renames the folder again to the artist-less slug
     let cleared = req(
         &mut app,
         "song.update",
         json!({"song_id": id, "title": "Renamed"}),
     );
     assert!(cleared["artist"].is_null());
+    let cleared_bundle = std::path::Path::new(cleared["path"].as_str().unwrap())
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    assert_eq!(cleared_bundle.file_name().unwrap(), "Renamed");
 }
 
 #[test]

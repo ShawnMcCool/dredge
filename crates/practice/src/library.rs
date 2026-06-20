@@ -667,7 +667,10 @@ mod tests {
         let new_dir = lib_dir.path().join("New Title \u{2014} New Artist");
         assert!(new_dir.is_dir(), "renamed bundle dir should exist");
         assert!(!old_dir.exists(), "old bundle dir should be gone");
-        assert!(new_dir.join("audio.flac").exists(), "audio moved with the dir");
+        assert!(
+            new_dir.join("audio.flac").exists(),
+            "audio moved with the dir"
+        );
         assert_eq!(updated.path, new_dir.join("audio.flac").to_string_lossy());
         assert_eq!(lib.bundle_dir(song.id).unwrap(), new_dir);
         let m = bundle::read_manifest(&new_dir).unwrap();
