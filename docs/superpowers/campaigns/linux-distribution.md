@@ -274,31 +274,31 @@ packages end-to-end. The source `dredge` build — never run before — exposed 
 fixed the makepkg-LTO/rusqlite link bug (`options=('!lto')`). Both are now
 publish-ready; only the AUR push (maintainer's SSH) remains.
 
+**Completed (2026-06-20): AUR published.** All releases through v0.4.0 shipped
+`earworm-*` assets (pre-rename), so the `-bin` source URL couldn't resolve — cut
+**v0.4.1**, the first release with `dredge-*` artifacts. Two surprises at publish
+time: the AUR name **`dredge-bin` is taken by an unrelated project** ("encrypted
+vault for the terminal"), and the maintainer box uses the **1Password SSH agent**
+(needed an AUR key + per-host pin to stop "too many authentication failures").
+Resolution: the prebuilt is **`dredge-looper-bin`** (still provides/conflicts
+`dredge`); package and binary stay `dredge`; the README brands the app as
+"Dredge Looper". Both package bases pushed and live under the maintainer's AUR
+account at v0.4.1-1. `dredge-bin` is **not** ours — do not push to it.
+
 ## Remaining follow-ups
 
 Deferred work, in rough priority order. None blocks the `.deb` / source-build
 paths, which already work for users.
 
-- [ ] **Publish `dredge-bin` to the AUR.** Bumped to **v0.2.2** + the published
-  tarball checksum; `.SRCINFO` regenerated; `makepkg`-validated end-to-end
-  against the v0.2.2 release (ships `dredge-doctor` via the tarball). Blocked
-  only on AUR SSH (the build box's key isn't registered). Needs the maintainer's
-  AUR account:
-  ```bash
-  git clone ssh://aur@aur.archlinux.org/dredge-bin.git /tmp/aur-dredge-bin
-  cp packaging/aur/dredge-bin/{PKGBUILD,.SRCINFO} /tmp/aur-dredge-bin/
-  cd /tmp/aur-dredge-bin && git add -A && git commit -m "dredge-bin 0.2.2-1" && git push
-  ```
-  This makes `yay -S dredge-bin` work.
-- [ ] **Publish the source `dredge` AUR package.** Now **`makepkg`-validated at
-  v0.2.2** (the first real build surfaced an rust-lld link failure on rusqlite's
-  bundled sqlite under makepkg LTO — fixed with `options=('!lto')`). Just needs
-  the push:
-  ```bash
-  git clone ssh://aur@aur.archlinux.org/dredge.git /tmp/aur-dredge
-  cp packaging/aur/dredge/{PKGBUILD,.SRCINFO} /tmp/aur-dredge/
-  cd /tmp/aur-dredge && git add -A && git commit -m "dredge 0.2.2-1" && git push
-  ```
+- [x] **Publish `dredge-looper-bin` to the AUR.** Done 2026-06-20 at v0.4.1-1
+  (`yay -S dredge-looper-bin`). Renamed from `dredge-bin` (taken on the AUR by an
+  unrelated project); `source` points at the v0.4.1 release tarball,
+  `--verifysource` passed. Per-release bump is still manual (see automation
+  follow-up).
+- [x] **Publish the source `dredge` AUR package.** Done 2026-06-20 at v0.4.1-1
+  (`yay -S dredge`). The makepkg-LTO/rusqlite link bug stays fixed with
+  `options=('!lto')`. Builds from `git+...#tag=v${pkgver}`, so a per-release bump
+  only needs `pkgver` + `.SRCINFO`.
 - [ ] **Automate the per-release AUR bump.** Each release currently needs a
   manual `pkgver` + `dredge-bin` `sha256sums` update + `.SRCINFO` regen + push.
   A CI step (AUR-deploy action keyed off the published tag, pulling the tarball
