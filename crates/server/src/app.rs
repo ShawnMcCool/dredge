@@ -51,6 +51,7 @@ pub fn dispatch_shared(app: &Arc<Mutex<App>>, req: Request) -> Response {
     let phased = match req.cmd.as_str() {
         "song.open" => open_phased(app, req.params),
         "song.import" => import_phased(app, req.params),
+        "song.update" => update_phased(app, req.params),
         _ => return app.lock().unwrap().dispatch(req),
     };
     match phased {
@@ -64,6 +65,18 @@ fn open_phased(app: &Arc<Mutex<App>>, p: Value) -> Result<Value, String> {
     let (song, stems_cache) = app.lock().unwrap().open_lookup(p.song_id)?;
     let decoded = open_decode(&song, &stems_cache)?;
     app.lock().unwrap().finish_open(song, decoded)
+}
+
+fn update_phased(app: &Arc<Mutex<App>>, p: Value) -> Result<Value, String> {
+    let (song, reopen) = app.lock().unwrap().update_apply(p)?;
+    if let Some(song_id) = reopen {
+        // Reopen the renamed song with the heavy decode off-lock, exactly like
+        // `open_phased`, so the pump never waits behind it.
+        let (s, stems_cache) = app.lock().unwrap().open_lookup(song_id)?;
+        let decoded = open_decode(&s, &stems_cache)?;
+        app.lock().unwrap().finish_open(s, decoded)?;
+    }
+    serde_json::to_value(song).err_str()
 }
 
 fn import_phased(app: &Arc<Mutex<App>>, p: Value) -> Result<Value, String> {
@@ -1097,7 +1110,11 @@ impl App {
         self.import_prepared(prep)
     }
 
-    fn song_update(&mut self, p: Value) -> Result<Value, String> {
+    /// State phase of `song.update`: refuse while a job for this song is
+    /// running, rename the bundle (via the library) so the folder tracks the
+    /// new name, and report whether the renamed song is the open one (so the
+    /// caller reopens it).
+    fn update_apply(&mut self, p: Value) -> Result<(Song, Option<SongId>), String> {
         #[derive(Deserialize)]
         struct P {
             song_id: SongId,
@@ -1107,20 +1124,41 @@ impl App {
             artist: Option<String>,
         }
         let p: P = from_params(p)?;
+
+        // A rename moves the bundle dir; a stems/analysis job for this song
+        // captured the old path up front and writes into it from another
+        // thread. Moving the dir under it would silently lose its output, so
+        // refuse.
+        if self.analyzing.contains(&p.song_id.0)
+            || self.separating.lock().unwrap().contains(&p.song_id.0)
+        {
+            return Err("can't rename while stems or analysis are running for this song".into());
+        }
+
         let song = self
             .library
             .update_song(p.song_id, &p.title, p.artist.as_deref())
             .err_str()?;
-        // keep the open song's header in sync if it's the one we renamed
-        if let Some(o) = self.open_song.as_mut() {
-            if o.song.id == p.song_id {
-                o.song = song.clone();
-            }
-        }
         let _ = self.job_tx.send(Event {
             event: "library_changed".into(),
             data: Value::Null,
         });
+
+        let reopen =
+            (self.open_song.as_ref().map(|o| o.song.id) == Some(p.song_id)).then_some(p.song_id);
+        Ok((song, reopen))
+    }
+
+    fn song_update(&mut self, p: Value) -> Result<Value, String> {
+        // Inline fallback (direct `App::dispatch`): decode under the lock, the
+        // same accepted tradeoff as the inline `song_open`. The pump path uses
+        // the phased `update_phased` instead.
+        let (song, reopen) = self.update_apply(p)?;
+        if let Some(song_id) = reopen {
+            let (s, stems_cache) = self.open_lookup(song_id)?;
+            let decoded = open_decode(&s, &stems_cache)?;
+            self.finish_open(s, decoded)?;
+        }
         serde_json::to_value(song).err_str()
     }
 
@@ -1622,5 +1660,47 @@ mod export_dir_tests {
         assert!(resolve_export_dir("downloads").is_err());
         assert!(resolve_export_dir("./out").is_err());
         assert!(resolve_export_dir("").is_err());
+    }
+}
+
+#[cfg(test)]
+mod rename_tests {
+    use super::*;
+    use crate::control::MockEngine;
+    use crate::stems::FakeSeparator;
+    use practice::store::Store;
+
+    #[test]
+    fn rename_rejected_while_analysis_running() {
+        let lib_dir = tempfile::tempdir().unwrap();
+        let src = tempfile::tempdir().unwrap();
+        let audio = src.path().join("a.flac");
+        std::fs::write(&audio, b"AUDIO").unwrap();
+
+        let mut app = App::new(
+            Store::open_in_memory().unwrap(),
+            Box::new(MockEngine::default()),
+            Arc::new(FakeSeparator),
+        );
+        app.set_library_root(lib_dir.path().to_path_buf());
+        let song = app
+            .library
+            .create_song(&audio, "Title", Some("Band"), "hash", 1.0)
+            .unwrap();
+
+        // A stems/analysis job for this song captured the old path; renaming
+        // would move the dir under it. The guard must refuse.
+        app.analyzing.insert(song.id.0);
+        let err = app
+            .update_apply(json!({ "song_id": song.id, "title": "New", "artist": "X" }))
+            .unwrap_err();
+        assert!(err.contains("running"), "got: {err}");
+
+        // Nothing moved: the bundle dir keeps its original slug.
+        let dir = app.song_bundle_dir(song.id).unwrap();
+        assert_eq!(
+            dir.file_name().unwrap().to_str().unwrap(),
+            "Title \u{2014} Band"
+        );
     }
 }
