@@ -2,7 +2,7 @@
   <img src="docs/dredge.png" alt="dredge — a waveform with detected song sections, a stem mixer, a tuner, and the song-structure panel" width="820">
 </p>
 
-<h1 align="center">dredge</h1>
+<h1 align="center">Dredge Looper</h1>
 
 <p align="center">
   An ear-first practice looper for Linux: load a song, loop a section, slow it
@@ -55,7 +55,7 @@ Linux only. The audio engine is PipeWire-native: **PipeWire 1.0+ is required**, 
 **Arch / Arch-based**
 
 ```bash
-yay -S dredge-bin      # prebuilt; or `yay -S dredge` to build from source
+yay -S dredge-looper-bin   # prebuilt; or `yay -S dredge` to build from source
 ```
 
 **Debian / Ubuntu** (24.04+ / Debian 13+)

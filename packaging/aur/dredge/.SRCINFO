@@ -21,7 +21,7 @@ pkgbase = dredge
 	optdepends = python: ML analysis runtime
 	optdepends = demucs: 4-stem separation (vocals/drums/bass/other)
 	provides = dredge
-	conflicts = dredge-bin
+	conflicts = dredge-looper-bin
 	options = !lto
 	source = git+https://github.com/ShawnMcCool/dredge.git#tag=v0.4.1
 	sha256sums = SKIP

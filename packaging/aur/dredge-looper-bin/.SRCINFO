@@ -1,4 +1,4 @@
-pkgbase = dredge-bin
+pkgbase = dredge-looper-bin
 	pkgdesc = Ear-first practice looper: loop sections, slow them down pitch-preserving, drill passages (prebuilt)
 	pkgver = 0.4.1
 	pkgrel = 1
@@ -18,4 +18,4 @@ pkgbase = dredge-bin
 	source = https://github.com/ShawnMcCool/dredge/releases/download/v0.4.1/dredge-0.4.1-x86_64-linux.tar.gz
 	sha256sums = 603d59448cff36bebab6552e602ca88784018647be6572c407be2c834ae4e11b
 
-pkgname = dredge-bin
+pkgname = dredge-looper-bin
