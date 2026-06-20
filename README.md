@@ -47,6 +47,9 @@ These require the optional Python tools in [Dependencies](#dependencies).
 
 Linux only. The audio engine is PipeWire-native: **PipeWire 1.0+ is required**, with no ALSA or PulseAudio fallback.
 
+> ### 🩺 `dredge-doctor`
+> Run it any time to see which optional tools are installed and the exact command to add each missing one. The desktop app shows the same under Settings → capabilities.
+
 ### Basic
 
 **Arch / Arch-based**
@@ -65,8 +68,6 @@ sudo apt install ./dredge_*_amd64.deb
 ```
 
 `apt` pulls the runtime libraries automatically. The basic features above run with nothing else installed.
-
-Run **`dredge-doctor`** at any time to print which optional tools are present and the command to install each missing one. The desktop app shows the same under Settings → capabilities.
 
 ### ML enabled
 
