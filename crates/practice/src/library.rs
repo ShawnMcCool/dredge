@@ -54,9 +54,7 @@ impl Library {
             // wrote it. A bundle copied to another PC (or a different library
             // root / home dir) keeps that stale prefix, so rebase the audio
             // path onto THIS bundle dir — the file name is all that's portable.
-            if let Some(fname) = Path::new(&m.song.path).file_name() {
-                m.song.path = dir.join(fname).to_string_lossy().into_owned();
-            }
+            Self::rebase_audio_path(&dir, &mut m.song);
             if entries.contains_key(&m.song.id.0) {
                 m.song.id = SongId(Self::fresh_id(&mut used));
                 bundle::write_manifest(&dir, &m)?;
@@ -193,6 +191,15 @@ impl Library {
 
     fn persist(entry: &Entry) -> Result<()> {
         bundle::write_manifest(&entry.dir, &entry.manifest)
+    }
+
+    /// Point a song's audio path at `dir`, keeping only the file name. The
+    /// stored path may be stale — a bundle copied from another machine, or a
+    /// dir just renamed — and the file name is all that's portable.
+    fn rebase_audio_path(dir: &Path, song: &mut Song) {
+        if let Some(fname) = Path::new(&song.path).file_name() {
+            song.path = dir.join(fname).to_string_lossy().into_owned();
+        }
     }
 
     // ── sections ───────────────────────────────────────────────────────────────
@@ -387,12 +394,29 @@ impl Library {
     // ── song mutations ─────────────────────────────────────────────────────────
 
     pub fn update_song(&mut self, id: SongId, title: &str, artist: Option<&str>) -> Result<Song> {
+        let root = self.root.clone();
         let entry = self.entry_mut(id)?;
+
+        // Rename the bundle dir first so the folder tracks the displayed name.
+        // fs::rename is atomic within the library root; on failure nothing else
+        // has changed, so we bail with disk and in-memory state untouched.
+        let slug = bundle::slug(title, artist);
+        let moved = entry.dir.file_name().and_then(|n| n.to_str()) != Some(slug.as_str());
+        if moved {
+            let dest = bundle::unique_bundle_dir(&root, &slug);
+            std::fs::rename(&entry.dir, &dest)?;
+            entry.dir = dest;
+        }
+
+        // Update metadata, rebase the audio path onto the (possibly new) dir,
+        // and write the manifest through to disk.
         entry.manifest.song.title = title.to_owned();
         entry.manifest.song.artist = artist.map(str::to_owned);
-        let song = entry.manifest.song.clone();
+        if moved {
+            Self::rebase_audio_path(&entry.dir, &mut entry.manifest.song);
+        }
         Self::persist(entry)?;
-        Ok(song)
+        Ok(entry.manifest.song.clone())
     }
 
     /// Bundle directory for a song (used to locate audio + stems).
@@ -618,5 +642,81 @@ mod tests {
         assert_eq!(lib2.list_section_notes(song.id).len(), 1);
         let a2 = lib2.get_analysis(song.id).unwrap();
         assert_eq!(a2.bpm, Some(120.0));
+    }
+
+    // ── rename tracks the bundle dir ──
+
+    #[test]
+    fn update_renames_bundle_dir_and_rebases_path() {
+        let src_dir = tempfile::tempdir().unwrap();
+        let lib_dir = tempfile::tempdir().unwrap();
+        let audio_src = src_dir.path().join("orig.flac");
+        std::fs::write(&audio_src, b"FAKEAUDIO").unwrap();
+
+        let mut lib = Library::load(lib_dir.path().to_path_buf()).unwrap();
+        let song = lib
+            .create_song(&audio_src, "Old Title", Some("Old Artist"), "h1", 30.0)
+            .unwrap();
+        let old_dir = lib_dir.path().join("Old Title \u{2014} Old Artist");
+        assert!(old_dir.is_dir());
+
+        let updated = lib
+            .update_song(song.id, "New Title", Some("New Artist"))
+            .unwrap();
+
+        let new_dir = lib_dir.path().join("New Title \u{2014} New Artist");
+        assert!(new_dir.is_dir(), "renamed bundle dir should exist");
+        assert!(!old_dir.exists(), "old bundle dir should be gone");
+        assert!(new_dir.join("audio.flac").exists(), "audio moved with the dir");
+        assert_eq!(updated.path, new_dir.join("audio.flac").to_string_lossy());
+        assert_eq!(lib.bundle_dir(song.id).unwrap(), new_dir);
+        let m = bundle::read_manifest(&new_dir).unwrap();
+        assert_eq!(m.song.title, "New Title");
+        assert_eq!(m.song.artist.as_deref(), Some("New Artist"));
+    }
+
+    #[test]
+    fn update_disambiguates_on_name_collision() {
+        let src_dir = tempfile::tempdir().unwrap();
+        let lib_dir = tempfile::tempdir().unwrap();
+        let a = src_dir.path().join("a.flac");
+        let b = src_dir.path().join("b.flac");
+        std::fs::write(&a, b"A").unwrap();
+        std::fs::write(&b, b"B").unwrap();
+
+        let mut lib = Library::load(lib_dir.path().to_path_buf()).unwrap();
+        lib.create_song(&a, "Taken", None, "ha", 1.0).unwrap();
+        let song2 = lib.create_song(&b, "Other", None, "hb", 1.0).unwrap();
+
+        let updated = lib.update_song(song2.id, "Taken", None).unwrap();
+
+        let disambiguated = lib_dir.path().join("Taken-2");
+        assert!(disambiguated.is_dir(), "collision disambiguates to -2");
+        assert_eq!(lib.bundle_dir(song2.id).unwrap(), disambiguated);
+        assert_eq!(
+            updated.path,
+            disambiguated.join("audio.flac").to_string_lossy()
+        );
+    }
+
+    #[test]
+    fn update_with_unchanged_slug_leaves_dir_in_place() {
+        let src_dir = tempfile::tempdir().unwrap();
+        let lib_dir = tempfile::tempdir().unwrap();
+        let audio_src = src_dir.path().join("orig.flac");
+        std::fs::write(&audio_src, b"X").unwrap();
+
+        let mut lib = Library::load(lib_dir.path().to_path_buf()).unwrap();
+        let song = lib
+            .create_song(&audio_src, "Same", Some("Band"), "h", 1.0)
+            .unwrap();
+        let dir = lib_dir.path().join("Same \u{2014} Band");
+        let path_before = lib.bundle_dir(song.id).unwrap();
+
+        let updated = lib.update_song(song.id, "Same", Some("Band")).unwrap();
+
+        assert_eq!(lib.bundle_dir(song.id).unwrap(), path_before);
+        assert!(dir.is_dir());
+        assert_eq!(updated.path, dir.join("audio.flac").to_string_lossy());
     }
 }
