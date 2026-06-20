@@ -3,6 +3,12 @@
 All notable user-facing changes to dredge, newest first. Entries are written
 at release time by `scripts/ship release`.
 
+## v0.5.0 — 2026-06-20
+
+### Improved
+
+- **Renaming a song renames its folder.** Renaming a song's title or artist now renames its bundle folder on disk to match, so your library folders stay in sync with what the app shows. The rename is refused while stem separation or analysis is running for that song, and a playing song reloads only when its folder actually moves.
+
 ## v0.4.0 — 2026-06-17
 
 ### New
