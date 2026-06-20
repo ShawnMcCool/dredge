@@ -16,16 +16,21 @@ fn start_server(
     server::socket::ServerHandle,
     Arc<Mutex<MockEngine>>,
     std::path::PathBuf,
+    tempfile::TempDir,
 ) {
     let path = std::env::temp_dir().join(format!("dredge-test-{}-{name}.sock", std::process::id()));
     let mock = Arc::new(Mutex::new(MockEngine::default()));
-    let app = App::new(
+    let mut app = App::new(
         Store::open_in_memory().unwrap(),
         Box::new(mock.clone()),
         Arc::new(FakeSeparator),
     );
+    // Isolate the library root so the test never loads the host's real
+    // `~/Music/dredge` (which would break the empty-list assertion).
+    let lib = tempfile::tempdir().unwrap();
+    app.set_library_root(lib.path().to_path_buf());
     let handle = serve(Arc::new(Mutex::new(app)), &path, |_| {}).unwrap();
-    (handle, mock, path)
+    (handle, mock, path, lib)
 }
 
 fn send_line(stream: &mut UnixStream, line: &str) {
@@ -36,7 +41,7 @@ fn send_line(stream: &mut UnixStream, line: &str) {
 
 #[test]
 fn request_response_roundtrip() {
-    let (_handle, _mock, path) = start_server("roundtrip");
+    let (_handle, _mock, path, _lib) = start_server("roundtrip");
     let mut stream = UnixStream::connect(&path).unwrap();
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
@@ -53,7 +58,7 @@ fn request_response_roundtrip() {
 
 #[test]
 fn subscribe_receives_events() {
-    let (_handle, mock, path) = start_server("subscribe");
+    let (_handle, mock, path, _lib) = start_server("subscribe");
     let mut stream = UnixStream::connect(&path).unwrap();
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
@@ -115,7 +120,7 @@ fn on_events_hook_receives_tick_events() {
 
 #[test]
 fn bad_json_gets_error_response() {
-    let (_handle, _mock, path) = start_server("badjson");
+    let (_handle, _mock, path, _lib) = start_server("badjson");
     let mut stream = UnixStream::connect(&path).unwrap();
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
