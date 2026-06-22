@@ -299,11 +299,13 @@ paths, which already work for users.
   (`yay -S dredge`). The makepkg-LTO/rusqlite link bug stays fixed with
   `options=('!lto')`. Builds from `git+...#tag=v${pkgver}`, so a per-release bump
   only needs `pkgver` + `.SRCINFO`.
-- [ ] **Automate the per-release AUR bump.** Each release currently needs a
-  manual `pkgver` + `dredge-bin` `sha256sums` update + `.SRCINFO` regen + push.
-  A CI step (AUR-deploy action keyed off the published tag, pulling the tarball
-  checksum from the release `SHA256SUMS`) would make it hands-off (see
-  `packaging/aur/README.md`).
+- [x] **Automate the per-release AUR bump.** Done 2026-06-22: the `aur` job in
+  `release.yml` (`needs: release`, Arch container) runs `scripts/ship aur --ci`
+  after the release publishes — reads the tarball checksum from the release
+  `SHA256SUMS`, bumps both PKGBUILDs, regenerates `.SRCINFO`, and pushes to the
+  AUR. One-time setup: the `AUR_SSH_PRIVATE_KEY` repo secret (a deploy key on the
+  maintainer's AUR account). The `aur` job is the home for future per-release
+  publishing (rpm/Flatpak/announcements) as more `needs: release` jobs.
 - [ ] **`just release` can't re-release the current version.** It bumps
   `tauri.conf.json` then commits, so if the version is unchanged the commit is
   empty and the recipe aborts (why `v0.1.0` was tagged by hand). Fine for the

@@ -22,20 +22,22 @@ Both install the same layout: `dredge`, `dredged`, `dredge-analyze`, and
 These PKGBUILDs are templates kept in-repo; the AUR holds its own git repos
 (`ssh://aur@aur.archlinux.org/dredge-looper-bin.git`, `.../dredge.git`).
 
-1. Cut the release: `just release X.Y.Z` then push `--follow-tags`. CI builds
-   the artifacts and publishes the GitHub Release.
+**Automated.** The `aur` job in `.github/workflows/release.yml` publishes both
+packages after each tagged release: it reads the tarball checksum from the
+release `SHA256SUMS`, bumps `pkgver`, regenerates `.SRCINFO`, and pushes to the
+AUR. It runs `scripts/ship aur --ci` in an Arch container and needs the
+`AUR_SSH_PRIVATE_KEY` repo secret (a deploy key registered on the maintainer's
+AUR account). Nothing to do per release beyond cutting the GitHub release.
+
+**Manual / local** (fallback, or to also commit the bump back to the repo) —
+`scripts/ship aur [<version>]` does the same on an Arch box with an unlocked AUR
+SSH key, and commits the in-repo PKGBUILD/`.SRCINFO` bump. The underlying steps:
+
+1. Cut the release: `scripts/ship release <level> --notes <file>`. CI builds the
+   artifacts and publishes the GitHub Release.
 2. Bump `pkgver` in both PKGBUILDs.
 3. For `dredge-looper-bin`, set `sha256sums` to the tarball's checksum from the
    release's `SHA256SUMS` (the source `dredge` package builds from the git tag,
    so it keeps `SKIP`).
 4. Regenerate `.SRCINFO`: `makepkg --printsrcinfo > .SRCINFO` in each dir.
-5. Commit + push each to its AUR remote.
-
-> **Validation note:** a full `makepkg` of either package can only run once the
-> referenced tag/release actually exists on GitHub — `dredge-looper-bin` needs the
-> release tarball, and `dredge` clones `#tag=vX.Y.Z`. Until then these are
-> validated by `bash -n` + `makepkg --printsrcinfo`. The first real release is
-> the end-to-end test.
-
-A CI step can later auto-push `dredge-looper-bin` on each release (e.g. an
-AUR-deploy action keyed off the published tag); kept manual for now.
+5. Commit + push each to its AUR remote (`git push origin HEAD:master`).

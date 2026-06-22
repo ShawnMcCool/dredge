@@ -31,7 +31,7 @@ set -euo pipefail
 #       tauri.conf.json) until the .deb + tarball + SHA256SUMS are present,
 #       failing fast if the release workflow run concluded in failure.
 #
-#   aur [<version>] [--pkgrel <n>] [--dry-run]
+#   aur [<version>] [--pkgrel <n>] [--ci] [--dry-run]
 #       Update the AUR packages for a published release (default: the version
 #       in tauri.conf.json). Pulls the prebuilt tarball checksum from the
 #       release SHA256SUMS, bumps pkgver in both PKGBUILDs (source `dredge` +
@@ -40,6 +40,8 @@ set -euo pipefail
 #       package to its AUR remote. Needs makepkg and an unlocked AUR SSH key.
 #       Run after `verify` confirms the release. --pkgrel sets the release
 #       number (default 1) for a packaging-only re-push at the same version.
+#       --ci skips the repo commit (the release.yml `aur` job runs this in an
+#       Arch container; the in-repo PKGBUILDs stay templates there).
 #
 # Tests and lint are deliberately NOT run here — run `just check` before
 # shipping; this script gates the *release path*, not code quality.
@@ -379,11 +381,12 @@ SRC_DIR="packaging/aur/dredge"
 BIN_DIR="packaging/aur/dredge-looper-bin"
 
 cmd_aur() {
-  local version="" pkgrel=1 dry_run=false
+  local version="" pkgrel=1 dry_run=false ci=false
   while [ $# -gt 0 ]; do
     case "$1" in
       --pkgrel) pkgrel="${2:?--pkgrel needs a value}"; shift 2 ;;
       --dry-run) dry_run=true; shift ;;
+      --ci) ci=true; shift ;;
       -*) fail "unknown flag for aur: $1" ;;
       *) version="$1"; shift ;;
     esac
@@ -433,7 +436,9 @@ cmd_aur() {
     return 0
   fi
 
-  if git diff --quiet -- "$SRC_DIR" "$BIN_DIR"; then
+  if [ "$ci" = true ]; then
+    banner "CI mode — not committing to the repo; publishing to the AUR only"
+  elif git diff --quiet -- "$SRC_DIR" "$BIN_DIR"; then
     banner "PKGBUILDs already at $version-$pkgrel — publishing as-is"
   else
     banner "Committing the bump"
