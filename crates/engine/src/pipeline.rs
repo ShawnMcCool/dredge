@@ -78,6 +78,9 @@ pub struct Pipeline {
     ci_to_next: usize,
     ci_click_age: usize,
     ci_accent: bool,
+    /// every-loop: the current pass has been fed up to the loop end; once the
+    /// stretcher drains, the next pass begins with a count-in.
+    ci_pass_at_end: bool,
 }
 
 impl Pipeline {
@@ -103,6 +106,7 @@ impl Pipeline {
             ci_to_next: 0,
             ci_click_age: 0,
             ci_accent: false,
+            ci_pass_at_end: false,
         }
     }
 
@@ -114,11 +118,7 @@ impl Pipeline {
                     self.target_gain = 1.0;
                 }
                 if self.ci_beats > 0 {
-                    self.ci_active = true;
-                    self.ci_remaining = self.ci_beats;
-                    self.ci_to_next = 0; // first beat fires on the first frame
-                    self.ci_click_age = CLICK_LEN_FRAMES; // nothing sounding yet
-                    self.stretch.reset(); // clean hand-off into the song
+                    self.arm_count_in();
                 }
             }
             EngineCmd::Pause => {
@@ -140,7 +140,10 @@ impl Pipeline {
                     self.stretch.reset();
                 }
             }
-            EngineCmd::ClearLoop => self.looper.clear_region(),
+            EngineCmd::ClearLoop => {
+                self.looper.clear_region();
+                self.ci_pass_at_end = false;
+            }
             EngineCmd::SetRate(rate) => {
                 self.rate = rate.clamp(0.25, 2.0);
                 self.stretch.set_rate(self.rate);
@@ -166,6 +169,9 @@ impl Pipeline {
                 self.ci_beats = beats;
                 self.ci_beat_secs = beat_secs;
                 self.ci_every_loop = every_loop;
+                // a config change drops any pending every-loop re-count so the
+                // new mode takes effect cleanly.
+                self.ci_pass_at_end = false;
             }
         }
     }
@@ -190,6 +196,22 @@ impl Pipeline {
         }
         self.render_song(out, events);
         self.push_position(events);
+    }
+
+    /// Arm the count-in pre-roll: clicks sound before the next audio frame.
+    fn arm_count_in(&mut self) {
+        self.ci_active = true;
+        self.ci_remaining = self.ci_beats;
+        self.ci_to_next = 0; // first beat fires on the first frame
+        self.ci_click_age = CLICK_LEN_FRAMES; // nothing sounding yet
+        self.stretch.reset(); // clean hand-off into the song
+    }
+
+    /// True when the pipeline drives the loop itself (feeds contiguously, capped
+    /// at the loop end, and re-counts between passes) instead of letting the
+    /// looper crossfade-wrap. Only in every-loop mode with a count-in and a loop.
+    fn ci_loop_capping(&self) -> bool {
+        self.ci_every_loop && self.ci_beats > 0 && self.looper.region().is_some()
     }
 
     /// One interleaved click sample for the current pre-roll frame, scaled by
@@ -252,9 +274,29 @@ impl Pipeline {
             return;
         }
 
-        // Keep the stretcher fed until it can satisfy this block.
+        // Keep the stretcher fed until it can satisfy this block. In every-loop
+        // mode the pipeline drives the loop: it feeds contiguously, capped at
+        // the loop end (no crossfade-wrap), and once the pass is fully fed it
+        // stops so the stretcher can drain before the re-count fires below.
+        let capping = self.ci_loop_capping();
         while self.playing && self.stretch.available() < frames_req {
             let want = self.stretch.frames_wanted().max(1);
+            if capping {
+                let (_start, end) = self.looper.region().unwrap();
+                let pos = self.looper.pos_frames();
+                if pos >= end {
+                    self.ci_pass_at_end = true;
+                    break;
+                }
+                let cap = (end - pos).min(want);
+                let n = self
+                    .looper
+                    .read_contiguous(&mut self.feed_buf[..cap * CHANNELS], cap);
+                if n > 0 {
+                    self.stretch.feed(&self.feed_buf[..n * CHANNELS]);
+                }
+                continue;
+            }
             let info = self.looper.read(&mut self.feed_buf[..want * CHANNELS]);
             if info.wrapped {
                 events.push(EngineEvent::LoopWrapped);
@@ -310,6 +352,18 @@ impl Pipeline {
         // keeps advancing while muted: RecallSilent).
         if self.target_gain == 0.0 && self.gain == 0.0 && !self.muted {
             self.playing = false;
+        }
+
+        // every-loop: the pass was fed to the loop end and the stretcher has now
+        // drained, so all of this pass's audio has been output. Seek back and
+        // begin the next pass with a count-in.
+        if self.ci_pass_at_end && self.stretch.available() == 0 {
+            self.ci_pass_at_end = false;
+            if let Some((start, _end)) = self.looper.region() {
+                self.looper.seek(start);
+                self.arm_count_in();
+                events.push(EngineEvent::LoopWrapped);
+            }
         }
     }
 
@@ -630,6 +684,70 @@ mod tests {
         assert!(
             pos > 0.2,
             "no count-in → song starts immediately, pos = {pos}"
+        );
+    }
+
+    #[test]
+    fn every_loop_inserts_count_in_between_passes() {
+        // Baseline: a 1 s loop with count-in in first-loop mode wraps seamlessly
+        // after the single initial pre-roll.
+        let mut seamless = Pipeline::new(sine_buf(10.0));
+        seamless.apply(EngineCmd::SetLoopSecs {
+            start: 0.0,
+            end: 1.0,
+        });
+        seamless.apply(EngineCmd::SetCountIn {
+            beats: 2,
+            beat_secs: 0.5,
+            every_loop: false,
+        });
+        seamless.apply(EngineCmd::Play);
+        let (_o, ev_seamless) = render_secs(&mut seamless, 6.0);
+        let wraps_seamless = ev_seamless
+            .iter()
+            .filter(|e| **e == EngineEvent::LoopWrapped)
+            .count();
+
+        // Every-loop: each pass is preceded by a 1 s count-in, so fewer passes
+        // fit in the same wall-clock — the clicks are inserted between passes.
+        let mut every = Pipeline::new(sine_buf(10.0));
+        every.apply(EngineCmd::SetLoopSecs {
+            start: 0.0,
+            end: 1.0,
+        });
+        every.apply(EngineCmd::SetCountIn {
+            beats: 2,
+            beat_secs: 0.5,
+            every_loop: true,
+        });
+        every.apply(EngineCmd::Play);
+        let (_o2, ev_every) = render_secs(&mut every, 6.0);
+        let wraps_every = ev_every
+            .iter()
+            .filter(|e| **e == EngineEvent::LoopWrapped)
+            .count();
+
+        assert!(
+            wraps_every >= 1,
+            "every-loop must re-count and wrap, got {wraps_every}"
+        );
+        assert!(
+            wraps_every < wraps_seamless,
+            "count-in between passes means fewer wraps: every={wraps_every} seamless={wraps_seamless}"
+        );
+
+        // The pipeline-driven loop never plays past the loop end into the rest
+        // of the song.
+        let max_pos = ev_every
+            .iter()
+            .filter_map(|e| match e {
+                EngineEvent::Position { secs, .. } => Some(*secs),
+                _ => None,
+            })
+            .fold(0.0_f64, f64::max);
+        assert!(
+            max_pos <= 1.05,
+            "every-loop stays within the region, max_pos = {max_pos}"
         );
     }
 

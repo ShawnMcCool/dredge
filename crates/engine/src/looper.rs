@@ -64,6 +64,25 @@ impl Looper {
         self.region = None;
     }
 
+    /// The current loop region in frames, if a loop is set.
+    pub fn region(&self) -> Option<(usize, usize)> {
+        self.region
+    }
+
+    /// Read up to `frames` contiguous frames from the current position into
+    /// `out`, ignoring the loop region (no crossfade, no wrap). Returns the
+    /// number of frames written. For pipeline-driven looping (every-loop
+    /// count-in), where the pipeline manages the loop boundary itself and must
+    /// not let the looper crossfade-wrap.
+    pub fn read_contiguous(&mut self, out: &mut [f32], frames: usize) -> usize {
+        let n = frames.min(self.set.frames().saturating_sub(self.pos));
+        if n > 0 {
+            self.set.mix_into(self.pos, &mut out[..n * CHANNELS]);
+            self.pos += n;
+        }
+        n
+    }
+
     /// Fill `out` (len = frames*CHANNELS). Returns ReadInfo.
     pub fn read(&mut self, out: &mut [f32]) -> ReadInfo {
         let total = self.set.frames();
