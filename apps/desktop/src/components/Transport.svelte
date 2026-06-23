@@ -1,6 +1,6 @@
 <script lang="ts">
   import { fmtClock } from "../lib/format";
-  import { actions, countIn, countInAvailable, muted, openSong, pitch, playbackVolume, position } from "../lib/stores";
+  import { actions, activeLoop, countIn, countInAvailable, muted, openSong, pitch, playbackVolume, position } from "../lib/stores";
   import { stepCountInBeats } from "../lib/count-in";
   import Fader from "../lib/ui/Fader.svelte";
 
@@ -140,6 +140,14 @@
             <span class="pval mono">{countLabel}</span>
             <button onclick={() => stepCount(1)} aria-label="more count-in beats">+</button>
           </span>
+          {#if $countIn.beats > 0 && $activeLoop}
+            <button
+              class="loopmode"
+              onclick={() =>
+                actions.setCountIn($countIn.beats, $countIn.loopMode === "first" ? "every" : "first")}
+              title="count in on the first pass, or before every loop"
+            >{$countIn.loopMode}</button>
+          {/if}
         </div>
       </div>
     {/if}
@@ -315,6 +323,22 @@
     min-width: 5ch;
     text-align: center;
     font-size: 13px;
+    color: var(--fg);
+  }
+
+  /* count-in loop mode: a small first/every toggle, on while a loop is active */
+  .loopmode {
+    background: none;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+  }
+  .loopmode:hover {
     color: var(--fg);
   }
 
