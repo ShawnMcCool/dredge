@@ -329,7 +329,15 @@ impl App {
             eprintln!("dredge: library load failed at {}: {e}", root.display());
             practice::library::Library::empty(root)
         });
-        Self {
+        // Read the saved output device before moving `audio` and `store` into
+        // the struct, so we can apply it right after construction.
+        let saved_output_device = store
+            .get_setting("output_device")
+            .ok()
+            .flatten()
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .filter(|s| !s.is_empty());
+        let mut app = Self {
             store,
             library,
             audio,
@@ -352,7 +360,14 @@ impl App {
             tuner: Box::new(RealTuner::default()),
             tuner_tx,
             tuner_rx,
+        };
+        // Apply the saved output device if one was persisted. The Engine's
+        // fallback handles a currently-absent device by reverting to default,
+        // so we don't delete the setting on failure.
+        if let Some(id) = saved_output_device {
+            app.audio.set_output_device(Some(id));
         }
+        app
     }
 
     /// Swap the analyzer (tests use `FakeAnalyzer`).
@@ -462,6 +477,7 @@ impl App {
                 engine::device::list_input_devices().map_err(|e| e.to_string())?,
             )
             .err_str(),
+            "device.setOutput" => self.device_set_output(p),
             "tuner.start" => self.tuner_start(p),
             "tuner.stop" => {
                 self.tuner.stop();
@@ -506,6 +522,22 @@ impl App {
         }
         let p: P = from_params(p)?;
         self.store.set_setting(&p.key, &p.value).err_str()?;
+        Ok(Value::Null)
+    }
+
+    // --- device -------------------------------------------------------------
+
+    fn device_set_output(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            id: Option<String>,
+        }
+        let p: P = from_params(p)?;
+        // Normalise empty string to null (= follow system default).
+        let id = p.id.filter(|s| !s.is_empty());
+        let val = id.clone().map(Value::String).unwrap_or(Value::Null);
+        self.store.set_setting("output_device", &val).err_str()?;
+        self.audio.set_output_device(id);
         Ok(Value::Null)
     }
 
@@ -1759,5 +1791,98 @@ mod rename_tests {
             .update_apply(json!({ "song_id": song.id, "title": "Renamed", "artist": "Band" }))
             .unwrap();
         assert_eq!(reopen, Some(song.id), "a folder move must reopen");
+    }
+}
+
+#[cfg(test)]
+mod device_tests {
+    use super::*;
+    use crate::control::MockEngine;
+    use crate::stems::FakeSeparator;
+    use practice::store::Store;
+    use std::sync::{Arc, Mutex};
+
+    fn make_shared_mock() -> (Arc<Mutex<MockEngine>>, App) {
+        let mock = Arc::new(Mutex::new(MockEngine::default()));
+        let app = App::new(
+            Store::open_in_memory().unwrap(),
+            Box::new(mock.clone()),
+            Arc::new(FakeSeparator),
+        );
+        (mock, app)
+    }
+
+    #[test]
+    fn set_output_persists_and_forwards_id() {
+        let (mock, mut app) = make_shared_mock();
+
+        let resp = app.dispatch(Request {
+            id: 1,
+            cmd: "device.setOutput".into(),
+            params: json!({ "id": "123" }),
+        });
+        assert!(resp.ok, "expected ok, got: {:?}", resp.error);
+
+        // Setting persisted.
+        let saved = app.store.get_setting("output_device").unwrap().unwrap();
+        assert_eq!(saved, json!("123"));
+
+        // Mock forwarded the call.
+        let log = &mock.lock().unwrap().output_device_log;
+        assert_eq!(log.last(), Some(&Some("123".to_string())));
+    }
+
+    #[test]
+    fn set_output_null_clears_setting_and_forwards_none() {
+        let (mock, mut app) = make_shared_mock();
+
+        // Seed a value first so the null actually clears something meaningful.
+        app.store
+            .set_setting("output_device", &json!("old"))
+            .unwrap();
+
+        let resp = app.dispatch(Request {
+            id: 2,
+            cmd: "device.setOutput".into(),
+            params: json!({ "id": null }),
+        });
+        assert!(resp.ok, "expected ok, got: {:?}", resp.error);
+
+        let saved = app.store.get_setting("output_device").unwrap().unwrap();
+        assert_eq!(saved, Value::Null);
+
+        let log = &mock.lock().unwrap().output_device_log;
+        assert_eq!(log.last(), Some(&None));
+    }
+
+    #[test]
+    fn startup_applies_saved_output_device() {
+        let store = Store::open_in_memory().unwrap();
+        store.set_setting("output_device", &json!("456")).unwrap();
+
+        let mock = Arc::new(Mutex::new(MockEngine::default()));
+        let _app = App::new(store, Box::new(mock.clone()), Arc::new(FakeSeparator));
+
+        let log = &mock.lock().unwrap().output_device_log;
+        assert_eq!(
+            log.last(),
+            Some(&Some("456".to_string())),
+            "App::new must apply the saved output_device"
+        );
+    }
+
+    #[test]
+    fn startup_skips_apply_when_no_saved_device() {
+        let mock = Arc::new(Mutex::new(MockEngine::default()));
+        let _app = App::new(
+            Store::open_in_memory().unwrap(),
+            Box::new(mock.clone()),
+            Arc::new(FakeSeparator),
+        );
+
+        assert!(
+            mock.lock().unwrap().output_device_log.is_empty(),
+            "no saved device → set_output_device must not be called"
+        );
     }
 }

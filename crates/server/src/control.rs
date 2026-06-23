@@ -6,6 +6,7 @@ pub trait AudioControl: Send {
     fn load(&mut self, set: StemSet);
     fn send(&mut self, cmd: EngineCmd);
     fn poll_events(&mut self) -> Vec<EngineEvent>;
+    fn set_output_device(&mut self, target: Option<String>);
 }
 
 impl AudioControl for engine::Engine {
@@ -18,6 +19,11 @@ impl AudioControl for engine::Engine {
     fn poll_events(&mut self) -> Vec<EngineEvent> {
         engine::Engine::poll_events(self)
     }
+    fn set_output_device(&mut self, target: Option<String>) {
+        if engine::Engine::set_output_device(self, target).is_err() {
+            let _ = engine::Engine::set_output_device(self, None);
+        }
+    }
 }
 
 /// Test double: records commands, plays back queued events.
@@ -28,6 +34,8 @@ pub struct MockEngine {
     pub loaded_frames: Option<usize>,
     /// The full StemSet of the most recent `load` — stem-count assertions.
     pub loaded: Option<StemSet>,
+    /// Log of every `set_output_device` call — `None` means "follow default".
+    pub output_device_log: Vec<Option<String>>,
 }
 
 impl AudioControl for MockEngine {
@@ -41,6 +49,9 @@ impl AudioControl for MockEngine {
     fn poll_events(&mut self) -> Vec<EngineEvent> {
         self.queued_events.drain(..).collect()
     }
+    fn set_output_device(&mut self, target: Option<String>) {
+        self.output_device_log.push(target);
+    }
 }
 
 /// Shared handle so tests can keep a clone while App owns the AudioControl.
@@ -53,5 +64,8 @@ impl AudioControl for std::sync::Arc<std::sync::Mutex<MockEngine>> {
     }
     fn poll_events(&mut self) -> Vec<EngineEvent> {
         self.lock().unwrap().poll_events()
+    }
+    fn set_output_device(&mut self, target: Option<String>) {
+        self.lock().unwrap().set_output_device(target);
     }
 }
