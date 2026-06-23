@@ -1,6 +1,7 @@
 <script lang="ts">
   import { fmtClock } from "../lib/format";
-  import { actions, muted, openSong, pitch, playbackVolume, position } from "../lib/stores";
+  import { actions, countIn, countInAvailable, muted, openSong, pitch, playbackVolume, position } from "../lib/stores";
+  import { stepCountInBeats } from "../lib/count-in";
   import Fader from "../lib/ui/Fader.svelte";
 
   // pitch stepper: ± a semitone; scroll over it for ±5 cents
@@ -17,6 +18,13 @@
   let pitchLabel = $derived(
     `${$pitch.semitones > 0 ? "+" : ""}${$pitch.semitones} st` +
       ($pitch.cents ? ` ${$pitch.cents > 0 ? "+" : ""}${$pitch.cents}¢` : ""),
+  );
+
+  function stepCount(d: number) {
+    void actions.setCountIn(stepCountInBeats($countIn.beats, d));
+  }
+  let countLabel = $derived(
+    $countIn.beats === 0 ? "off" : `${$countIn.beats} beat${$countIn.beats === 1 ? "" : "s"}`,
   );
 </script>
 
@@ -119,6 +127,22 @@
         </span>
       </div>
     </div>
+
+    {#if $countInAvailable}
+      <span class="vsep"></span>
+
+      <!-- count in: beats of clicks before playback; 0 = off -->
+      <div class="seg">
+        <span class="mlabel">count in</span>
+        <div class="mbody">
+          <span class="stepper" title="beats before playback (0 = off)">
+            <button onclick={() => stepCount(-1)} aria-label="fewer count-in beats">−</button>
+            <span class="pval mono">{countLabel}</span>
+            <button onclick={() => stepCount(1)} aria-label="more count-in beats">+</button>
+          </span>
+        </div>
+      </div>
+    {/if}
 
     <button
       class="reset"
