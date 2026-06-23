@@ -71,27 +71,46 @@ output::spawn(cmd_rx, evt_tx, song_slot, target: Option<String>)
 // Some  = bind to the device whose opaque id matches.
 ```
 
-## Engine: live output-device switching
+## Engine: live output-device switching (RenderCore handoff)
 
-`Engine` gains `set_output_device(target: Option<String>)`:
+`Engine` gains `set_output_device(target: Option<String>)`. Rather than
+recreating playback state, the **`RenderCore` is preserved across the switch** —
+it is moved out of the stopping output thread and into the freshly-spawned one,
+so playback position, the live `Pipeline` (loop region, rate, pitch, bass focus,
+mute, stem gains) and user volume all survive untouched. The `song_slot` `Arc` is
+unchanged, so no audio is re-decoded and no song-swap fires. This removes the
+need for the server to track or replay any live engine state — which matters,
+because today `App` tracks none of it (only a `last_position` cache); it lives
+solely in the engine.
 
-1. Capture the current live engine state needed to restore (see below).
-2. Tear down the current output thread and recreate the command/event ring
-   buffers + thread targeting the new device. The `song_slot` `Arc` survives, so
-   **decoded audio is not reloaded**.
-3. **Re-apply live engine state** to the fresh `RenderCore`: playback position
-   (via a seek), play/pause, master volume, stem gains, rate/pitch, loop region,
-   and filter (bass focus). A brief audio gap during the swap is acceptable.
+Mechanism (mirrors the proven `capture::run_capture` teardown):
 
-The server (`App`) is the replay source for these parameters. A plan task is to
-**inventory exactly which live params the `RenderCore` holds** and confirm the
-server can supply each (some live in the `settings` table, e.g.
-`playback_volume`; others must be tracked or re-derived). The respawn-and-restore
-path is the main new engine complexity.
+- The output thread gains a `stop: Arc<AtomicBool>` polled by a repeating ~100 ms
+  PipeWire timer that calls `mainloop.quit()` — identical to the capture thread.
+- `output::spawn` is refactored to **accept a fully-built `RenderCore` +
+  `target: Option<String>` + the stop flag, and to return
+  `JoinHandle<RenderCore>`** (the thread returns the core when its loop exits).
+  `Engine::start` builds the `RenderCore` once and hands it in.
+- `set_output_device`: set `stop = true`; `join()` the thread to recover the
+  `RenderCore`; reset the flag; respawn `output::spawn(core, new_target, stop)`.
+  Commands sent meanwhile buffer in the cmd ring (the `Engine` still owns the
+  `Producer`) and drain when the new thread starts. A brief audio gap during the
+  swap is acceptable.
 
-Input switching reuses the tuner's **existing** stop/restart-capture path
-(`RealTuner::start` already stops then starts a fresh capture session); it just
-targets by opaque `id` now.
+PipeWire targets a device by setting the `TARGET_OBJECT` property to the opaque
+device id (the `object.serial` string) before `connect` — exactly as
+`capture::run_capture` already does for input (`None` = no property = follow the
+system default sink, which PipeWire then tracks live). cpal selects the matching
+output device by name when (re)building the stream.
+
+`RenderCore` must be `Send` to cross the join handoff. Its `Pipeline`/`Stretcher`
+(Rubber Band FFI) is only ever owned by one audio thread at a time, so if the
+type is not already `Send`, add `unsafe impl Send for Stretcher {}` with a
+single-owner-handoff safety note.
+
+Input switching is unchanged — it reuses the tuner's existing stop/restart
+capture path (`RealTuner::start` stops then starts a fresh capture session); it
+just targets by opaque `id` now.
 
 ## Server / protocol
 
@@ -194,8 +213,12 @@ the `Box` widget stay); this is a naming/terminology change only.
 
 - `AudioDevice` enumeration for input/output exercised behind the existing mock
   seam (the `TunerControl` Real/Mock pattern generalizes).
-- `set_output_device` respawn-and-restore: a mock-backend test asserting the
-  re-applied live state matches what was captured before the swap.
+- `set_output_device` on a mock `AudioControl` records the requested target
+  (None vs Some(id)); the persistence + startup-application logic in `App` is
+  tested against that mock (saved override applied on construction, silent
+  fallback when absent, `device.setOutput` persists + forwards). The
+  `RenderCore` handoff itself is verified manually (live switch needs real
+  audio).
 - Tuner "follow default" resolution: with no tuner override, the tuner resolves
   to the devices-tab input; with an override, it does not.
 - Persistence: saved override applied when present; silent fallback to default
