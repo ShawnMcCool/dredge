@@ -7,6 +7,7 @@ import { trace } from "./trace";
 import { subdivisionTimes, type GridSubdivision } from "./waveform-math";
 import { bisect, nudgeEdge, rateForRep, runUp, type Span } from "./drill";
 import { deriveLoopName } from "./loop-name";
+import { resolveTunerInput } from "./devices";
 import type { NotesDoc } from "./notes-doc";
 
 // --- wire types ----------------------------------------------------------
@@ -151,16 +152,6 @@ export interface Position {
   at: number;
 }
 
-/** An audio input device (mic / interface) for the tuner. */
-export interface CaptureNode {
-  id: number;
-  /** object.serial — what the engine targets; registry ids don't link on modern PipeWire. */
-  serial: number;
-  app: string;
-  /** media.name, typically empty for mic/interface sources. */
-  media: string;
-}
-
 export interface TunerReading {
   hz: number;
   /** McLeod clarity 0..1; < 0.5 means no steady pitch. */
@@ -265,14 +256,13 @@ export const inputDevices = writable<AudioDevice[]>([]);
 /** Persisted input device id; null means follow the system default. */
 export const inputDevice = writable<string | null>(null);
 
-/** Input devices (mics / interfaces) for the tuner; CaptureNode shape. */
-export const tunerInputs = writable<CaptureNode[]>([]);
 /** Latest pitch reading while the tuner is on; null when off. */
 export const tunerReading = writable<TunerReading | null>(null);
 /** Whether the tuner box is powered on (listening). */
 export const tunerOn = writable(false);
-/** Sticky chosen input device name; restored from settings at launch. */
-export const tunerInputName = writable<string | null>(null);
+/** Tuner input selection: an `AudioDevice.id`, or the sentinel `"default"`
+ *  meaning "follow the global input device". Restored from settings at launch. */
+export const tunerInput = writable<string>("default");
 /** Mixer state for the open song's stems (sliders × mute × solo). */
 export const stemMix = writable<StemMix>(defaultStemMix());
 export const stemsError = writable<string | null>(null);
@@ -314,7 +304,8 @@ export const ALL_LOOPS_VISIBLE = "all_loops_visible";
 export const WINDOW_DECORATIONS = "window_decorations";
 /** Accent colour theme: "amber" (default) or "cyan". */
 export const COLOR_THEME = "color_theme";
-export const TUNER_INPUT_NAME = "tuner_input_name";
+/** Tuner input selection: an `AudioDevice.id`, or `"default"` (follow global). */
+export const TUNER_INPUT = "tuner_input";
 /** Export tab: last-used target folder + format, restored across sessions. */
 export const EXPORT_DIR = "export_dir";
 export const EXPORT_FORMAT = "export_format";
@@ -425,7 +416,7 @@ export const actions = {
     const vol = typeof all[PLAYBACK_VOLUME] === "number" ? all[PLAYBACK_VOLUME] : 1.0;
     playbackVolume.set(vol);
     await cmd("volume", { value: vol });
-    if (typeof all[TUNER_INPUT_NAME] === "string") tunerInputName.set(all[TUNER_INPUT_NAME]);
+    if (typeof all[TUNER_INPUT] === "string" && all[TUNER_INPUT]) tunerInput.set(all[TUNER_INPUT]);
     const od = all[OUTPUT_DEVICE];
     outputDevice.set(typeof od === "string" && od ? od : null);
     const idv = all[INPUT_DEVICE];
@@ -904,20 +895,17 @@ export const actions = {
   },
 
   // --- tuner ---
+  //
+  // The tuner shares the devices tab's input list (`inputDevices` / `device.inputs`)
+  // — it keeps no list of its own. Its target is resolved through the chain
+  // tuner override → global input → system default → first input.
 
-  async refreshTunerInputs(): Promise<void> {
-    tunerInputs.set(await cmd<CaptureNode[]>("tuner.inputs"));
-  },
-
-  /** Power on: resolve the sticky device (or first available) and start. */
+  /** Power on: resolve the effective input id and start capture. */
   async tunerPowerOn(): Promise<void> {
-    await this.refreshTunerInputs();
-    const inputs = get(tunerInputs);
-    if (inputs.length === 0) throw new Error("no audio input devices found");
-    const savedName = get(tunerInputName);
-    const node = inputs.find((n) => n.app === savedName) ?? inputs[0];
-    tunerInputName.set(node.app);
-    await cmd("tuner.start", { node_id: node.id });
+    await this.refreshInputs();
+    const id = resolveTunerInput(get(tunerInput), get(inputDevice), get(inputDevices));
+    if (id === null) throw new Error("no audio input devices found");
+    await cmd("tuner.start", { device_id: id });
     tunerOn.set(true);
   },
 
@@ -927,12 +915,15 @@ export const actions = {
     tunerReading.set(null);
   },
 
-  /** Pick a specific input; persist it and restart capture if already on. */
-  async setTunerInput(node: CaptureNode): Promise<void> {
-    tunerInputName.set(node.app);
-    await cmd("settings.set", { key: TUNER_INPUT_NAME, value: node.app });
+  /** Pick a tuner input (an `AudioDevice.id` or `"default"`); persist it and
+   *  restart capture on the resolved id if already on. */
+  async setTunerInput(sel: string): Promise<void> {
+    tunerInput.set(sel);
+    await this.setSetting(TUNER_INPUT, sel);
     if (get(tunerOn)) {
-      await cmd("tuner.start", { node_id: node.id });
+      const id = resolveTunerInput(sel, get(inputDevice), get(inputDevices));
+      if (id === null) throw new Error("no audio input devices found");
+      await cmd("tuner.start", { device_id: id });
     }
   },
 

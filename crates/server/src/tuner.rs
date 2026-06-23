@@ -3,7 +3,8 @@
 //! drains them into `tuner_pitch` events. A `TunerControl` trait with Real/Mock
 //! implementations keeps it testable.
 
-use engine::capture::{CaptureNode, CaptureSession};
+use engine::capture::CaptureSession;
+use engine::device::AudioDevice;
 use engine::ring::RollingRing;
 use serde::Serialize;
 use std::collections::VecDeque;
@@ -36,9 +37,12 @@ const MEDIAN_WINDOW: usize = 5;
 const HOLD_TICKS: u32 = 6;
 
 /// Everything App needs from the tuner side — real PipeWire or test mock.
+///
+/// Input *enumeration* is no longer the tuner's job: the frontend lists inputs
+/// via `device.inputs` (shared with the devices tab) and passes a device id to
+/// `start`. The tuner only opens a capture on that id.
 pub trait TunerControl: Send {
-    fn list_inputs(&mut self) -> Result<Vec<CaptureNode>, String>;
-    fn start(&mut self, node_id: u32, tx: Sender<TunerReading>) -> Result<(), String>;
+    fn start(&mut self, device_id: &str, tx: Sender<TunerReading>) -> Result<(), String>;
     fn stop(&mut self);
     fn is_running(&self) -> bool;
 }
@@ -56,18 +60,10 @@ pub struct RealTuner {
 }
 
 impl TunerControl for RealTuner {
-    fn list_inputs(&mut self) -> Result<Vec<CaptureNode>, String> {
-        engine::capture::list_input_sources().map_err(|e| e.to_string())
-    }
-
-    fn start(&mut self, node_id: u32, tx: Sender<TunerReading>) -> Result<(), String> {
-        let node = self
-            .list_inputs()?
-            .into_iter()
-            .find(|n| n.id == node_id)
-            .ok_or_else(|| format!("input device not found: {node_id}"))?;
+    fn start(&mut self, device_id: &str, tx: Sender<TunerReading>) -> Result<(), String> {
         self.stop();
-        let capture = engine::capture::start_capture(node, RING_SECS).map_err(|e| e.to_string())?;
+        let capture = engine::capture::start_capture_by_id(device_id, RING_SECS)
+            .map_err(|e| e.to_string())?;
         let ring = capture.ring.clone();
         let stop = Arc::new(AtomicBool::new(false));
         let thread = {
@@ -199,22 +195,19 @@ fn tuner_loop(ring: Arc<Mutex<RollingRing>>, tx: Sender<TunerReading>, stop: Arc
     }
 }
 
-/// Test double: scripted input list; `start` emits one reading so `App::tick()`
-/// forwarding can be observed without PipeWire.
+/// Test double: a scripted set of valid input ids; `start` validates the id
+/// exists and emits one reading so `App::tick()` forwarding can be observed
+/// without PipeWire.
 #[derive(Default)]
 pub struct MockTuner {
-    pub inputs: Vec<CaptureNode>,
+    pub inputs: Vec<AudioDevice>,
     pub running: bool,
 }
 
 impl TunerControl for MockTuner {
-    fn list_inputs(&mut self) -> Result<Vec<CaptureNode>, String> {
-        Ok(self.inputs.clone())
-    }
-
-    fn start(&mut self, node_id: u32, tx: Sender<TunerReading>) -> Result<(), String> {
-        if !self.inputs.iter().any(|n| n.id == node_id) {
-            return Err(format!("input device not found: {node_id}"));
+    fn start(&mut self, device_id: &str, tx: Sender<TunerReading>) -> Result<(), String> {
+        if !self.inputs.iter().any(|d| d.id == device_id) {
+            return Err(format!("input device not found: {device_id}"));
         }
         let _ = tx.send(TunerReading {
             hz: 110.0,
@@ -238,12 +231,11 @@ mod tests {
     use super::*;
     use std::sync::mpsc;
 
-    fn node(id: u32) -> CaptureNode {
-        CaptureNode {
-            id,
-            serial: id as u64,
-            app: format!("Device {id}"),
-            media: String::new(),
+    fn dev(id: &str) -> AudioDevice {
+        AudioDevice {
+            id: id.to_owned(),
+            name: format!("Device {id}"),
+            is_default: false,
         }
     }
 
@@ -251,10 +243,10 @@ mod tests {
     fn mock_start_emits_a_reading_and_runs() {
         let (tx, rx) = mpsc::channel();
         let mut t = MockTuner {
-            inputs: vec![node(7)],
+            inputs: vec![dev("7")],
             running: false,
         };
-        t.start(7, tx).unwrap();
+        t.start("7", tx).unwrap();
         assert!(t.is_running());
         let r = rx.try_recv().unwrap();
         assert_eq!(r.hz, 110.0);
@@ -265,10 +257,10 @@ mod tests {
     fn mock_start_unknown_device_errors() {
         let (tx, _rx) = mpsc::channel();
         let mut t = MockTuner {
-            inputs: vec![node(1)],
+            inputs: vec![dev("1")],
             running: false,
         };
-        assert!(t.start(99, tx).is_err());
+        assert!(t.start("99", tx).is_err());
         assert!(!t.is_running());
     }
 

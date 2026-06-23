@@ -1,4 +1,4 @@
-use engine::capture::CaptureNode;
+use engine::device::AudioDevice;
 use practice::store::Store;
 use serde_json::Value;
 use server::app::App;
@@ -14,23 +14,26 @@ fn make_app() -> App {
     )
 }
 
+fn dev(id: &str) -> AudioDevice {
+    AudioDevice {
+        id: id.to_owned(),
+        name: format!("Device {id}"),
+        is_default: false,
+    }
+}
+
 #[test]
 fn tuner_start_then_tick_emits_tuner_pitch() {
     let mut app = make_app();
     app.set_tuner(Box::new(server::tuner::MockTuner {
-        inputs: vec![CaptureNode {
-            id: 3,
-            serial: 3,
-            app: "Iface".into(),
-            media: String::new(),
-        }],
+        inputs: vec![dev("3")],
         running: false,
     }));
 
     app.dispatch(server::protocol::Request {
         id: 1,
         cmd: "tuner.start".into(),
-        params: serde_json::json!({ "node_id": 3 }),
+        params: serde_json::json!({ "device_id": "3" }),
     });
 
     let events = app.tick();
@@ -39,40 +42,26 @@ fn tuner_start_then_tick_emits_tuner_pitch() {
 }
 
 #[test]
-fn tuner_inputs_returns_list() {
+fn tuner_start_unknown_id_errors() {
     let mut app = make_app();
     app.set_tuner(Box::new(server::tuner::MockTuner {
-        inputs: vec![CaptureNode {
-            id: 5,
-            serial: 5,
-            app: "Guitar".into(),
-            media: String::new(),
-        }],
+        inputs: vec![dev("5")],
         running: false,
     }));
 
     let resp = app.dispatch(server::protocol::Request {
         id: 1,
-        cmd: "tuner.inputs".into(),
-        params: Value::Null,
+        cmd: "tuner.start".into(),
+        params: serde_json::json!({ "device_id": "99" }),
     });
-    assert!(resp.ok);
-    let arr = resp.data.as_array().unwrap();
-    assert_eq!(arr.len(), 1);
-    assert_eq!(arr[0]["id"], 5);
-    assert_eq!(arr[0]["app"], "Guitar");
+    assert!(!resp.ok);
 }
 
 #[test]
 fn tuner_stop_clears_running() {
     let mut app = make_app();
     let mock = server::tuner::MockTuner {
-        inputs: vec![CaptureNode {
-            id: 7,
-            serial: 7,
-            app: "Mic".into(),
-            media: String::new(),
-        }],
+        inputs: vec![dev("7")],
         running: false,
     };
     app.set_tuner(Box::new(mock));
@@ -80,7 +69,7 @@ fn tuner_stop_clears_running() {
     app.dispatch(server::protocol::Request {
         id: 1,
         cmd: "tuner.start".into(),
-        params: serde_json::json!({ "node_id": 7 }),
+        params: serde_json::json!({ "device_id": "7" }),
     });
     let stop_resp = app.dispatch(server::protocol::Request {
         id: 2,

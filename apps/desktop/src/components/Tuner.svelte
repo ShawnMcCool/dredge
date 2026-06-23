@@ -1,11 +1,10 @@
 <script lang="ts">
   import {
     actions,
-    tunerInputs,
-    tunerInputName,
+    inputDevices,
+    tunerInput,
     tunerOn,
     tunerReading,
-    type CaptureNode,
   } from "../lib/stores";
   import { asyncAction } from "../lib/async-action.svelte";
   import { hzToReading } from "../lib/tuner-math";
@@ -52,12 +51,12 @@
   function openGear() {
     gearOpen = !gearOpen;
     if (!gearOpen) return;
-    return act.run(() => actions.refreshTunerInputs());
+    return act.run(() => actions.refreshInputs());
   }
 
-  function pick(node: CaptureNode) {
+  function pick(sel: string) {
     gearOpen = false;
-    return act.run(() => actions.setTunerInput(node));
+    return act.run(() => actions.setTunerInput(sel));
   }
 </script>
 
@@ -68,12 +67,13 @@
 
   {#if gearOpen}
     <div class="picker">
-      {#each $tunerInputs as n (n.id)}
-        <button class="dev" class:sel={n.app === $tunerInputName} onclick={() => pick(n)}>
-          {n.app || `device ${n.id}`}
+      <button class="dev" class:sel={$tunerInput === "default"} onclick={() => pick("default")}>
+        default (follow devices)
+      </button>
+      {#each $inputDevices as d (d.id)}
+        <button class="dev" class:sel={$tunerInput === d.id} onclick={() => pick(d.id)}>
+          {d.name || `device ${d.id}`}
         </button>
-      {:else}
-        <span class="hint">no input devices</span>
       {/each}
     </div>
   {/if}

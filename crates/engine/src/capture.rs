@@ -178,6 +178,20 @@ pub fn start_capture(node: CaptureNode, buffer_secs: f64) -> crate::error::Resul
     Ok(CaptureSession::from_parts(ring, node, stop, thread))
 }
 
+/// Tap an input by its opaque device id (the `AudioDevice.id` from
+/// `device::list_input_devices`). On Linux that id is the `object.serial`
+/// string, so this targets `target.object` directly without a registry scan.
+#[cfg(target_os = "linux")]
+pub fn start_capture_by_id(id: &str, buffer_secs: f64) -> crate::error::Result<CaptureSession> {
+    let node = CaptureNode {
+        id: 0,
+        serial: id.parse().unwrap_or(0),
+        app: String::new(),
+        media: String::new(),
+    };
+    start_capture(node, buffer_secs)
+}
+
 #[cfg(target_os = "linux")]
 struct CapState {
     ring: Arc<Mutex<RollingRing>>,
@@ -338,4 +352,4 @@ pub fn write_wav(path: &std::path::Path, interleaved: &[f32]) -> crate::error::R
 }
 
 #[cfg(not(target_os = "linux"))]
-pub use crate::capture_cpal::{list_input_sources, start_capture};
+pub use crate::capture_cpal::{list_input_sources, start_capture, start_capture_by_id};

@@ -466,7 +466,6 @@ impl App {
             "mute" => self.mute(p),
             "pitch" => self.pitch(p),
             "status" => self.status(),
-            "tuner.inputs" => serde_json::to_value(self.tuner.list_inputs()?).err_str(),
             // device::list_* returns engine::error::Error (not String), so an
             // extra map_err converts it to String before err_str() takes over.
             "device.outputs" => serde_json::to_value(
@@ -1148,10 +1147,10 @@ impl App {
     fn tuner_start(&mut self, p: Value) -> Result<Value, String> {
         #[derive(Deserialize)]
         struct P {
-            node_id: u32,
+            device_id: String,
         }
         let p: P = from_params(p)?;
-        self.tuner.start(p.node_id, self.tuner_tx.clone())?;
+        self.tuner.start(&p.device_id, self.tuner_tx.clone())?;
         Ok(Value::Null)
     }
 
