@@ -752,6 +752,49 @@ mod tests {
     }
 
     #[test]
+    fn every_loop_stays_in_region_when_slowed_and_offset() {
+        // The real use case: a slowed-down loop that does not start at 0. The
+        // pipeline-driven loop must re-count and stay inside [2, 3] regardless.
+        let mut p = Pipeline::new(sine_buf(10.0));
+        p.apply(EngineCmd::SetRate(0.5));
+        p.apply(EngineCmd::SetLoopSecs {
+            start: 2.0,
+            end: 3.0,
+        });
+        p.apply(EngineCmd::SetCountIn {
+            beats: 1,
+            beat_secs: 0.5,
+            every_loop: true,
+        });
+        p.apply(EngineCmd::Play);
+        let (_o, events) = render_secs(&mut p, 8.0);
+
+        let wraps = events
+            .iter()
+            .filter(|e| **e == EngineEvent::LoopWrapped)
+            .count();
+        assert!(wraps >= 1, "slowed offset loop must re-count, got {wraps}");
+
+        let positions: Vec<f64> = events
+            .iter()
+            .filter_map(|e| match e {
+                EngineEvent::Position { secs, .. } => Some(*secs),
+                _ => None,
+            })
+            .collect();
+        let max_pos = positions.iter().cloned().fold(0.0_f64, f64::max);
+        let min_pos = positions.iter().cloned().fold(f64::MAX, f64::min);
+        assert!(
+            max_pos <= 3.05,
+            "must not play past the loop end, max = {max_pos}"
+        );
+        assert!(
+            min_pos >= 1.95,
+            "must not play before the loop start, min = {min_pos}"
+        );
+    }
+
+    #[test]
     fn finished_event_after_song_end_without_loop() {
         let mut p = Pipeline::new(sine_buf(0.5));
         p.apply(EngineCmd::Play);
