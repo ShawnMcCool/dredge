@@ -462,7 +462,23 @@ polish. Commit per phase on `main`; `just check` is the final gate, with
 per-phase gates as listed (empirical via `just cmd` / `just dev` where audio or
 the Tauri webview can't be exercised by automated tests).
 
-**STATUS (2026-06-23): NOT STARTED** — campaign authored from the approved spec.
+**STATUS (2026-06-23): COMPLETE** — all 8 phases implemented and committed on
+`main` (subagent-driven, two-stage reviews on the engine/server/tuner phases).
+Full `just check` green (cargo workspace tests, vitest 164/164, clippy
+`-D warnings`, fmt, svelte-check). Empirically smoke-tested over a headless
+daemon: `device.outputs`/`device.inputs` enumerate real devices;
+`device.setOutput`/`setInput` and `tuner.start` by id return ok; a bogus
+persisted output device degrades to default at startup without crashing.
+
+**Known limitation (accepted):** `is_default` is always `false` — PipeWire's
+`default` metadata key/values aren't exposed on registry globals, so the
+"System default (Name)" annotation shows no resolved name. Revisit with a proper
+metadata listener if wanted.
+
+**Still needs the maintainer:** the audible live-switch check (WebKitGTK webview
+isn't driveable headlessly and audio output needs a human ear) — rebuild
+(`just build`) + restart, then confirm in the devices tab that switching the
+output device moves playback.
 
 ## Self-review notes
 

@@ -880,8 +880,9 @@ export const actions = {
 
   async setOutputDevice(id: string | null): Promise<void> {
     outputDevice.set(id);
+    // device.setOutput owns persistence (writes the output_device setting),
+    // so there is no separate setSetting here.
     await cmd("device.setOutput", { id });
-    await this.setSetting(OUTPUT_DEVICE, id ?? "");
   },
 
   async refreshInputs(): Promise<void> {
@@ -890,8 +891,8 @@ export const actions = {
 
   async setInputDevice(id: string | null): Promise<void> {
     inputDevice.set(id);
+    // device.setInput owns persistence (writes the input_device setting).
     await cmd("device.setInput", { id });
-    await this.setSetting(INPUT_DEVICE, id ?? "");
   },
 
   // --- tuner ---
