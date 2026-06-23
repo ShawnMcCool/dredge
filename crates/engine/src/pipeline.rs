@@ -113,6 +113,13 @@ impl Pipeline {
                 if !self.muted {
                     self.target_gain = 1.0;
                 }
+                if self.ci_beats > 0 {
+                    self.ci_active = true;
+                    self.ci_remaining = self.ci_beats;
+                    self.ci_to_next = 0; // first beat fires on the first frame
+                    self.ci_click_age = CLICK_LEN_FRAMES; // nothing sounding yet
+                    self.stretch.reset(); // clean hand-off into the song
+                }
             }
             EngineCmd::Pause => {
                 self.target_gain = 0.0;
@@ -165,11 +172,83 @@ impl Pipeline {
 
     /// Render interleaved stereo into `out`; push events into `events`.
     pub fn render(&mut self, out: &mut [f32], events: &mut Vec<EngineEvent>) {
+        if self.ci_active {
+            let consumed = self.render_count_in(out);
+            if self.ci_active {
+                // whole buffer was pre-roll
+                self.push_position(events);
+                return;
+            }
+            // pre-roll finished mid-buffer: snap the gain up so the downbeat
+            // enters at full level, then render the song into the remainder.
+            if !self.muted {
+                self.gain = self.target_gain;
+            }
+            self.render_song(&mut out[consumed * CHANNELS..], events);
+            self.push_position(events);
+            return;
+        }
+        self.render_song(out, events);
+        self.push_position(events);
+    }
+
+    /// One interleaved click sample for the current pre-roll frame, scaled by
+    /// the volume knob. Silent once the click envelope has decayed.
+    fn click_sample(&self) -> f32 {
+        if self.ci_click_age >= CLICK_LEN_FRAMES {
+            return 0.0;
+        }
+        let t = self.ci_click_age as f64 / SAMPLE_RATE as f64;
+        let f = if self.ci_accent {
+            CLICK_FREQ_ACCENT
+        } else {
+            CLICK_FREQ_NORMAL
+        };
+        let env = (-CLICK_DECAY * t).exp();
+        let amp = if self.ci_accent {
+            CLICK_AMP
+        } else {
+            CLICK_AMP * 0.7
+        };
+        ((2.0 * std::f64::consts::PI * f * t).sin() * env) as f32 * amp * self.volume
+    }
+
+    /// Fill `out` with count-in clicks. Returns the number of frames consumed
+    /// by the pre-roll; when the pre-roll ends mid-buffer it clears `ci_active`
+    /// and returns the frame index where the song should take over.
+    fn render_count_in(&mut self, out: &mut [f32]) -> usize {
+        let spacing = ((self.ci_beat_secs / self.rate) * SAMPLE_RATE as f64)
+            .round()
+            .max(1.0) as usize;
+        let frames = out.len() / CHANNELS;
+        for i in 0..frames {
+            if self.ci_to_next == 0 {
+                if self.ci_remaining > 0 {
+                    self.ci_accent = self.ci_remaining == self.ci_beats; // first beat
+                    self.ci_remaining -= 1;
+                    self.ci_click_age = 0;
+                    self.ci_to_next = spacing;
+                } else {
+                    // the final beat's full duration has elapsed → done
+                    self.ci_active = false;
+                    return i;
+                }
+            }
+            let s = self.click_sample();
+            out[i * CHANNELS] = s;
+            out[i * CHANNELS + 1] = s;
+            self.ci_click_age += 1;
+            self.ci_to_next -= 1;
+        }
+        frames
+    }
+
+    /// Render the song into `out` (no count-in); push events into `events`.
+    fn render_song(&mut self, out: &mut [f32], events: &mut Vec<EngineEvent>) {
         let frames_req = out.len() / CHANNELS;
 
         if !self.playing && self.gain == 0.0 {
             out.fill(0.0);
-            self.push_position(events);
             return;
         }
 
@@ -232,8 +311,6 @@ impl Pipeline {
         if self.target_gain == 0.0 && self.gain == 0.0 && !self.muted {
             self.playing = false;
         }
-
-        self.push_position(events);
     }
 
     fn push_position(&self, events: &mut Vec<EngineEvent>) {
@@ -453,6 +530,107 @@ mod tests {
             .count();
         // 3.5 s of output at 1× covers ~3.5 loop periods (minus RB latency)
         assert!((2..=4).contains(&wraps), "wraps = {wraps}");
+    }
+
+    #[test]
+    fn count_in_holds_looper_and_clicks_before_playback() {
+        let mut p = Pipeline::new(sine_buf(4.0));
+        // 2 beats at 120 bpm = 0.5 s each, no rate change → 1.0 s of pre-roll.
+        p.apply(EngineCmd::SetCountIn {
+            beats: 2,
+            beat_secs: 0.5,
+            every_loop: false,
+        });
+        p.apply(EngineCmd::Play);
+
+        // During the pre-roll the looper must not advance.
+        let (out, events) = render_secs(&mut p, 0.4);
+        assert!(rms(&out) > 0.0, "clicks must be audible during pre-roll");
+        let pos = events
+            .iter()
+            .rev()
+            .find_map(|e| match e {
+                EngineEvent::Position { secs, .. } => Some(*secs),
+                _ => None,
+            })
+            .unwrap();
+        assert!(pos < 0.01, "looper held during pre-roll, pos = {pos}");
+    }
+
+    #[test]
+    fn count_in_hands_off_to_playback_after_the_beats() {
+        let mut p = Pipeline::new(sine_buf(4.0));
+        p.apply(EngineCmd::SetCountIn {
+            beats: 2,
+            beat_secs: 0.5,
+            every_loop: false,
+        });
+        p.apply(EngineCmd::Play);
+        // 1.0 s pre-roll + 0.5 s of song.
+        let (_out, events) = render_secs(&mut p, 1.5);
+        let pos = events
+            .iter()
+            .rev()
+            .find_map(|e| match e {
+                EngineEvent::Position { secs, .. } => Some(*secs),
+                _ => None,
+            })
+            .unwrap();
+        assert!(
+            pos > 0.2,
+            "song must advance after the pre-roll, pos = {pos}"
+        );
+    }
+
+    #[test]
+    fn count_in_pre_roll_scales_with_rate() {
+        // At half speed the pre-roll lasts twice as long, so after 1.0 s the
+        // song has not started yet (2 beats * 0.5 s / 0.5 rate = 2.0 s pre-roll).
+        let mut p = Pipeline::new(sine_buf(6.0));
+        p.apply(EngineCmd::SetRate(0.5));
+        p.apply(EngineCmd::SetCountIn {
+            beats: 2,
+            beat_secs: 0.5,
+            every_loop: false,
+        });
+        p.apply(EngineCmd::Play);
+        let (_out, events) = render_secs(&mut p, 1.0);
+        let pos = events
+            .iter()
+            .rev()
+            .find_map(|e| match e {
+                EngineEvent::Position { secs, .. } => Some(*secs),
+                _ => None,
+            })
+            .unwrap();
+        assert!(
+            pos < 0.01,
+            "rate-scaled pre-roll still running, pos = {pos}"
+        );
+    }
+
+    #[test]
+    fn count_in_zero_beats_is_a_no_op() {
+        let mut p = Pipeline::new(sine_buf(4.0));
+        p.apply(EngineCmd::SetCountIn {
+            beats: 0,
+            beat_secs: 0.5,
+            every_loop: false,
+        });
+        p.apply(EngineCmd::Play);
+        let (_out, events) = render_secs(&mut p, 0.5);
+        let pos = events
+            .iter()
+            .rev()
+            .find_map(|e| match e {
+                EngineEvent::Position { secs, .. } => Some(*secs),
+                _ => None,
+            })
+            .unwrap();
+        assert!(
+            pos > 0.2,
+            "no count-in → song starts immediately, pos = {pos}"
+        );
     }
 
     #[test]
