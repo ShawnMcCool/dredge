@@ -255,6 +255,12 @@ export const bassFocus = writable(false);
 export const muted = writable(false);
 /** User playback volume 0..1.5 — engine multiplier, persisted as a setting. */
 export const playbackVolume = writable(1.0);
+export interface AudioDevice { id: string; name: string; is_default: boolean }
+/** Known output devices (audio sinks). Refreshed on the devices tab. */
+export const outputDevices = writable<AudioDevice[]>([]);
+/** Persisted output device id; null means follow the system default. */
+export const outputDevice = writable<string | null>(null);
+
 /** Input devices (mics / interfaces) for the tuner; CaptureNode shape. */
 export const tunerInputs = writable<CaptureNode[]>([]);
 /** Latest pitch reading while the tuner is on; null when off. */
@@ -311,6 +317,8 @@ export const EXPORT_FORMAT = "export_format";
 /** Where song bundles live. Empty = the OS default (`<music dir>/dredge`).
  *  Applies on restart. */
 export const LIBRARY_ROOT = "library_root";
+/** Chosen audio output device id; empty string means system default. */
+export const OUTPUT_DEVICE = "output_device";
 
 /** Side-column collapse state — persisted to settings, restored at launch. */
 export const libraryCollapsed = writable(false);
@@ -412,6 +420,8 @@ export const actions = {
     playbackVolume.set(vol);
     await cmd("volume", { value: vol });
     if (typeof all[TUNER_INPUT_NAME] === "string") tunerInputName.set(all[TUNER_INPUT_NAME]);
+    const od = all[OUTPUT_DEVICE];
+    outputDevice.set(typeof od === "string" && od ? od : null);
     void actions.loadProfiles();
   },
 
@@ -861,6 +871,18 @@ export const actions = {
     openSong.update((o) =>
       o ? { ...o, sections: out.sections, orphan_notes: out.orphan_notes } : o,
     );
+  },
+
+  // --- output devices ---
+
+  async refreshOutputs(): Promise<void> {
+    outputDevices.set(await cmd<AudioDevice[]>("device.outputs"));
+  },
+
+  async setOutputDevice(id: string | null): Promise<void> {
+    outputDevice.set(id);
+    await cmd("device.setOutput", { id });
+    await this.setSetting(OUTPUT_DEVICE, id ?? "");
   },
 
   // --- tuner ---
