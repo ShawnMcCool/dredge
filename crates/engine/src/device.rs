@@ -15,33 +15,28 @@ pub struct AudioDevice {
 #[cfg(target_os = "linux")]
 use pipewire as pw;
 
-#[cfg(target_os = "linux")]
-fn pw_err(e: pw::Error) -> crate::error::Error {
-    std::io::Error::other(e.to_string()).into()
-}
-
 /// One-shot registry scan for output devices (media.class == "Audio/Sink").
 #[cfg(target_os = "linux")]
 pub fn list_output_devices() -> crate::error::Result<Vec<AudioDevice>> {
     let handle = std::thread::Builder::new()
-        .name("dredge-pw-scan-out".into())
+        .name("dredge-pw-enum-out".into())
         .spawn(|| scan("Audio/Sink", "default.audio.sink"))?;
     handle
         .join()
         .map_err(|_| std::io::Error::other("pipewire scan thread panicked"))?
-        .map_err(pw_err)
+        .map_err(|e| std::io::Error::other(e.to_string()).into())
 }
 
 /// One-shot registry scan for input devices (media.class == "Audio/Source").
 #[cfg(target_os = "linux")]
 pub fn list_input_devices() -> crate::error::Result<Vec<AudioDevice>> {
     let handle = std::thread::Builder::new()
-        .name("dredge-pw-scan-in".into())
+        .name("dredge-pw-enum-in".into())
         .spawn(|| scan("Audio/Source", "default.audio.source"))?;
     handle
         .join()
         .map_err(|_| std::io::Error::other("pipewire scan thread panicked"))?
-        .map_err(pw_err)
+        .map_err(|e| std::io::Error::other(e.to_string()).into())
 }
 
 /// Shared PipeWire scan: collects all nodes matching `media_class`, then marks
@@ -103,6 +98,7 @@ fn scan(media_class: &str, default_key: &str) -> Result<Vec<AudioDevice>, pw::Er
                 let node_name = props.get("node.name").unwrap_or("").to_owned();
 
                 // Friendly display name: description → nick → node.name
+                // node.nick is a short device label PipeWire sometimes sets for sinks
                 let name = props
                     .get("node.description")
                     .or_else(|| props.get("node.nick"))
@@ -112,9 +108,9 @@ fn scan(media_class: &str, default_key: &str) -> Result<Vec<AudioDevice>, pw::Er
 
                 let id = props
                     .get("object.serial")
-                    .unwrap_or("")
-                    .to_owned()
-                    .pipe_or_else(|| global.id.to_string());
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_owned())
+                    .unwrap_or_else(|| global.id.to_string());
 
                 found.borrow_mut().push(Entry {
                     device: AudioDevice {
@@ -200,22 +196,4 @@ pub fn list_input_devices() -> crate::error::Result<Vec<AudioDevice>> {
         });
     }
     Ok(out)
-}
-
-// ─── Helper trait (Linux only, avoids a let-else dance on the serial string) ─
-
-#[cfg(target_os = "linux")]
-trait PipeOrElse {
-    fn pipe_or_else(self, f: impl FnOnce() -> String) -> String;
-}
-
-#[cfg(target_os = "linux")]
-impl PipeOrElse for String {
-    fn pipe_or_else(self, f: impl FnOnce() -> String) -> String {
-        if self.is_empty() {
-            f()
-        } else {
-            self
-        }
-    }
 }

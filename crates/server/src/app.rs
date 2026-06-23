@@ -452,6 +452,8 @@ impl App {
             "pitch" => self.pitch(p),
             "status" => self.status(),
             "tuner.inputs" => serde_json::to_value(self.tuner.list_inputs()?).err_str(),
+            // device::list_* returns engine::error::Error (not String), so an
+            // extra map_err converts it to String before err_str() takes over.
             "device.outputs" => serde_json::to_value(
                 engine::device::list_output_devices().map_err(|e| e.to_string())?,
             )
