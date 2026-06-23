@@ -16,6 +16,12 @@ export function activeLabel(
 ): string | null {
   if (sections.length === 0) return null;
   if (pinned && sections.some((s) => s.label === pinned)) return pinned;
-  const hit = sections.find((s) => playheadSecs >= s.start && playheadSecs < s.end);
+  // The engine reports a frame-quantized playhead, so a position held on a
+  // section boundary (a loop start during count-in) can sit a fraction of a
+  // frame below it. Bias the lookup forward by EPS so a boundary reads as the
+  // section it begins — otherwise the held count-in shows the previous
+  // section's notes.
+  const EPS = 0.001;
+  const hit = sections.find((s) => playheadSecs >= s.start - EPS && playheadSecs < s.end - EPS);
   return (hit ?? sections[0]).label;
 }

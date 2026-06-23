@@ -21,6 +21,13 @@ describe("activeLabel", () => {
   it("clamps to the first section past the end / before the start", () => {
     expect(activeLabel(secs, 999, null)).toBe("intro 1");
   });
+  it("resolves a frame-quantized playhead at a section start into that section", () => {
+    // The engine reports a frame-rounded playhead, so a loop/count-in held on a
+    // section boundary can land a fraction of a frame *below* it. That must
+    // still read as the section starting there, not the previous one.
+    expect(activeLabel(secs, 20 - 1e-4, null)).toBe("verse 2");
+    expect(activeLabel(secs, 10 - 1e-5, null)).toBe("verse 1");
+  });
   it("returns null with no sections", () => {
     expect(activeLabel([], 5, null)).toBeNull();
   });
