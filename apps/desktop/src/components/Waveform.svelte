@@ -37,6 +37,7 @@
   import { hexToHue, labelColor } from "../lib/waveform-colors";
   import {
     adjustWindow,
+    clampToLoop,
     followView,
     makePlayheadClock,
     secToX,
@@ -234,7 +235,11 @@
 
     if (!open) return; // empty state is the .wave-empty HTML overlay
 
-    const playhead = tickPlayhead(playClock, get(position), performance.now());
+    let playhead = tickPlayhead(playClock, get(position), performance.now());
+    // While looping, the engine keeps the playhead inside the region; clamp the
+    // interpolated value to the loop so a between-tick extrapolation (or the
+    // every-loop count-in drain) can't briefly render it past the loop box.
+    if (get(position).playing) playhead = clampToLoop(playhead, get(drillSpan));
     lastPlayhead = playhead;
     // lock viewport to playhead: shift the window before everything else reads
     // `view` this frame, so the wave, lane and playhead all draw against the

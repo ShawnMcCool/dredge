@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   adjustWindow,
+  clampToLoop,
   followView,
   makePlayheadClock,
   playheadSecs,
@@ -42,6 +43,22 @@ describe("secToX / xToSec", () => {
     for (const x of [0, 123, 400, 800]) {
       expect(secToX(view, xToSec(view, x))).toBeCloseTo(x, 9);
     }
+  });
+});
+
+describe("clampToLoop", () => {
+  const loop = { start: 10, end: 20 };
+  it("passes through when no loop is engaged", () => {
+    expect(clampToLoop(25, null)).toBe(25);
+  });
+  it("keeps an in-loop playhead untouched", () => {
+    expect(clampToLoop(15, loop)).toBe(15);
+  });
+  it("clamps an overshoot to the loop end", () => {
+    expect(clampToLoop(20.4, loop)).toBe(20);
+  });
+  it("clamps a backward extrapolation to the loop start", () => {
+    expect(clampToLoop(9.5, loop)).toBe(10);
   });
 });
 

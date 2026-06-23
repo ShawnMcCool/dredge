@@ -81,6 +81,18 @@ export function tickPlayhead(
   return clock.display;
 }
 
+/** Clamp the interpolated playhead to an active loop region. The engine keeps
+ *  the real playhead inside the loop, so a between-tick extrapolation (or the
+ *  every-loop count-in drain holding at the loop end) must not render it past
+ *  the loop box. Pass `null` when no loop is engaged. */
+export function clampToLoop(
+  playheadSecs: number,
+  loop: { start: number; end: number } | null,
+): number {
+  if (!loop) return playheadSecs;
+  return Math.min(Math.max(playheadSecs, loop.start), loop.end);
+}
+
 /** Zoom around an anchor (e.g. cursor), clamped to [0, duration] and a 2 s minimum span. */
 export function zoom(v: View, anchorSec: number, factor: number, duration: number): View {
   const span = v.endSec - v.startSec;
