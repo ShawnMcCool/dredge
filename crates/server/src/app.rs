@@ -669,19 +669,20 @@ impl App {
     fn countin_set(&mut self, p: Value) -> Result<Value, String> {
         #[derive(Deserialize)]
         struct P {
+            enabled: bool,
             beats: u32,
             loop_mode: String,
         }
         let p: P = from_params(p)?;
-        let val = json!({ "beats": p.beats, "loop_mode": p.loop_mode });
+        let val = json!({ "enabled": p.enabled, "beats": p.beats, "loop_mode": p.loop_mode });
         self.store.set_setting("count_in", &val).err_str()?;
         self.push_count_in();
         Ok(Value::Null)
     }
 
     /// Recompute and send the count-in config to the engine from the persisted
-    /// setting and the open song's analyzed BPM. With no open song or no BPM,
-    /// the count-in is forced off (`beats: 0`).
+    /// setting and the open song's analyzed BPM. The count-in is forced off
+    /// (`beats: 0`) when disabled, with no open song, or with no BPM.
     fn push_count_in(&mut self) {
         let cfg = self
             .store
@@ -690,6 +691,11 @@ impl App {
             .flatten()
             .unwrap_or(Value::Null);
         let beats = cfg.get("beats").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+        // Migrate the old shape where beats 0 meant off (no `enabled` key).
+        let enabled = cfg
+            .get("enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(beats > 0);
         let every_loop = cfg.get("loop_mode").and_then(|v| v.as_str()) == Some("every");
         let bpm = self
             .open_song
@@ -697,7 +703,7 @@ impl App {
             .and_then(|o| self.library.get_analysis(o.song.id))
             .and_then(|a| a.bpm);
         let (beats, beat_secs) = match bpm {
-            Some(b) if b > 0.0 && beats > 0 => (beats, beat_secs_from_bpm(b)),
+            Some(b) if b > 0.0 && enabled && beats > 0 => (beats, beat_secs_from_bpm(b)),
             _ => (0, 0.5),
         };
         self.audio.send(EngineCmd::SetCountIn {
@@ -2001,12 +2007,13 @@ mod count_in_tests {
         let resp = app.dispatch(Request {
             id: 1,
             cmd: "countin.set".into(),
-            params: json!({ "beats": 4, "loop_mode": "first" }),
+            params: json!({ "enabled": true, "beats": 4, "loop_mode": "first" }),
         });
         assert!(resp.ok, "expected ok, got: {:?}", resp.error);
 
         // Persisted.
         let saved = app.store.get_setting("count_in").unwrap().unwrap();
+        assert_eq!(saved["enabled"], json!(true));
         assert_eq!(saved["beats"], json!(4));
         assert_eq!(saved["loop_mode"], json!("first"));
 
@@ -2025,6 +2032,32 @@ mod count_in_tests {
     }
 
     #[test]
+    fn countin_set_disabled_persists_beats_but_forwards_off() {
+        // Toggling off keeps the beat count in the setting (so it survives a
+        // later toggle-on) but the engine is told beats: 0.
+        let (mock, mut app) = make_shared_mock();
+        app.dispatch(Request {
+            id: 1,
+            cmd: "countin.set".into(),
+            params: json!({ "enabled": false, "beats": 4, "loop_mode": "first" }),
+        });
+        let saved = app.store.get_setting("count_in").unwrap().unwrap();
+        assert_eq!(saved["enabled"], json!(false));
+        assert_eq!(saved["beats"], json!(4), "beat count remembered while off");
+        let last = mock
+            .lock()
+            .unwrap()
+            .sent
+            .iter()
+            .rev()
+            .find_map(|c| match c {
+                EngineCmd::SetCountIn { beats, .. } => Some(*beats),
+                _ => None,
+            });
+        assert_eq!(last, Some(0), "disabled → engine forced off");
+    }
+
+    #[test]
     fn countin_set_every_forwards_every_loop_true() {
         // The loop mode is forwarded independently of BPM (it is a config flag,
         // not gated like the beat count), so no open song is needed.
@@ -2032,7 +2065,7 @@ mod count_in_tests {
         app.dispatch(Request {
             id: 1,
             cmd: "countin.set".into(),
-            params: json!({ "beats": 4, "loop_mode": "every" }),
+            params: json!({ "enabled": true, "beats": 4, "loop_mode": "every" }),
         });
         let last = mock
             .lock()

@@ -92,5 +92,7 @@ play.
 
 - Meter-aware default (one bar from the grid).
 - A running metronome during playback.
-- Separate enable toggle (folded into the stepper for now).
+- ~~Separate enable toggle (folded into the stepper for now).~~ Done
+  (2026-06-24): an `enabled` flag, an on/off pill in the transport, and a
+  beats stepper that ranges 1–8 so the count is remembered while off.
 - Per-song count-in settings (global preference for now).

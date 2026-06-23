@@ -241,7 +241,8 @@ export const drillShow = writable({ trainer: false, recall: false, region: false
  *  drop its local view/active-span state (which no store mirrors). */
 export const workspaceReset = writable(0);
 export const pitch = writable({ semitones: 0, cents: 0, octaveUp: false });
-export const countIn = writable<{ beats: number; loopMode: "first" | "every" }>({
+export const countIn = writable<{ enabled: boolean; beats: number; loopMode: "first" | "every" }>({
+  enabled: true,
   beats: 4,
   loopMode: "first",
 });
@@ -427,9 +428,12 @@ export const actions = {
     if (typeof all[TUNER_INPUT] === "string" && all[TUNER_INPUT]) tunerInput.set(all[TUNER_INPUT]);
     const ci = all[COUNT_IN];
     if (ci && typeof ci === "object") {
-      const c = ci as { beats?: unknown; loop_mode?: unknown };
+      const c = ci as { enabled?: unknown; beats?: unknown; loop_mode?: unknown };
+      // Migrate the old shape where beats 0 meant off (no `enabled` key).
+      const rawBeats = typeof c.beats === "number" ? c.beats : 4;
       countIn.set({
-        beats: typeof c.beats === "number" ? c.beats : 4,
+        enabled: typeof c.enabled === "boolean" ? c.enabled : rawBeats > 0,
+        beats: rawBeats > 0 ? rawBeats : 4,
         loopMode: c.loop_mode === "every" ? "every" : "first",
       });
     }
@@ -584,11 +588,16 @@ export const actions = {
     await cmd("pitch", { semitones, cents, octave_up: octaveUp });
   },
 
-  async setCountIn(beats: number, loopMode?: "first" | "every"): Promise<void> {
-    const cur = get(countIn);
-    const next = { beats, loopMode: loopMode ?? cur.loopMode };
+  async setCountIn(
+    patch: Partial<{ enabled: boolean; beats: number; loopMode: "first" | "every" }>,
+  ): Promise<void> {
+    const next = { ...get(countIn), ...patch };
     countIn.set(next);
-    await cmd("countin.set", { beats: next.beats, loop_mode: next.loopMode });
+    await cmd("countin.set", {
+      enabled: next.enabled,
+      beats: next.beats,
+      loop_mode: next.loopMode,
+    });
   },
 
   /** Bass focus: low-pass + the octave-up transcription trick (so the

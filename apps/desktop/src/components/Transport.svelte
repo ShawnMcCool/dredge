@@ -21,11 +21,9 @@
   );
 
   function stepCount(d: number) {
-    void actions.setCountIn(stepCountInBeats($countIn.beats, d));
+    void actions.setCountIn({ beats: stepCountInBeats($countIn.beats, d) });
   }
-  let countLabel = $derived(
-    $countIn.beats === 0 ? "off" : `${$countIn.beats} beat${$countIn.beats === 1 ? "" : "s"}`,
-  );
+  let countLabel = $derived(`${$countIn.beats} beat${$countIn.beats === 1 ? "" : "s"}`);
 </script>
 
 <div class="transport">
@@ -131,20 +129,26 @@
     {#if $countInAvailable}
       <span class="vsep"></span>
 
-      <!-- count in: beats of clicks before playback; 0 = off -->
+      <!-- count in: beats of clicks before playback -->
       <div class="seg">
         <span class="mlabel">count in</span>
         <div class="mbody">
-          <span class="stepper" title="beats before playback (0 = off)">
+          <button
+            class="toggle"
+            class:on={$countIn.enabled}
+            onclick={() => actions.setCountIn({ enabled: !$countIn.enabled })}
+            title="count in before playback"
+          >{$countIn.enabled ? "on" : "off"}</button>
+          <span class="stepper" class:off={!$countIn.enabled} title="beats before playback">
             <button onclick={() => stepCount(-1)} aria-label="fewer count-in beats">−</button>
             <span class="pval mono">{countLabel}</span>
             <button onclick={() => stepCount(1)} aria-label="more count-in beats">+</button>
           </span>
-          {#if $countIn.beats > 0 && $activeLoop}
+          {#if $countIn.enabled && $activeLoop}
             <button
               class="loopmode"
               onclick={() =>
-                actions.setCountIn($countIn.beats, $countIn.loopMode === "first" ? "every" : "first")}
+                actions.setCountIn({ loopMode: $countIn.loopMode === "first" ? "every" : "first" })}
               title="count in on the first pass, or before every loop"
             >{$countIn.loopMode}</button>
           {/if}
@@ -324,6 +328,32 @@
     text-align: center;
     font-size: 13px;
     color: var(--fg);
+  }
+
+  /* count-in on/off: a small pill, accent when on, so the beat count is kept
+     while disabled */
+  .toggle {
+    background: none;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+  }
+  .toggle:hover {
+    color: var(--fg);
+  }
+  .toggle.on {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* the beats stepper dims while count-in is off, but stays adjustable */
+  .stepper.off {
+    opacity: 0.4;
   }
 
   /* count-in loop mode: a small first/every toggle, on while a loop is active */
