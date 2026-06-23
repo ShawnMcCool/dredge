@@ -241,6 +241,12 @@ export const drillShow = writable({ trainer: false, recall: false, region: false
  *  drop its local view/active-span state (which no store mirrors). */
 export const workspaceReset = writable(0);
 export const pitch = writable({ semitones: 0, cents: 0, octaveUp: false });
+export const countIn = writable<{ beats: number; loopMode: "first" | "every" }>({
+  beats: 4,
+  loopMode: "first",
+});
+/** Count-in needs a tempo, so it only applies once the song has analysis. */
+export const countInAvailable = derived(openSong, ($o) => $o?.analysis?.bpm != null);
 /** Bass focus on/off — low-pass + octave-up transcription trick. */
 export const bassFocus = writable(false);
 export const muted = writable(false);
@@ -316,6 +322,8 @@ export const LIBRARY_ROOT = "library_root";
 export const OUTPUT_DEVICE = "output_device";
 /** Chosen audio input device id; empty string means system default. */
 export const INPUT_DEVICE = "input_device";
+/** Count-in config: `{ beats, loopMode }`. beats 0 = off. Persisted. */
+export const COUNT_IN = "count_in";
 
 /** Side-column collapse state — persisted to settings, restored at launch. */
 export const libraryCollapsed = writable(false);
@@ -417,6 +425,14 @@ export const actions = {
     playbackVolume.set(vol);
     await cmd("volume", { value: vol });
     if (typeof all[TUNER_INPUT] === "string" && all[TUNER_INPUT]) tunerInput.set(all[TUNER_INPUT]);
+    const ci = all[COUNT_IN];
+    if (ci && typeof ci === "object") {
+      const c = ci as { beats?: unknown; loop_mode?: unknown };
+      countIn.set({
+        beats: typeof c.beats === "number" ? c.beats : 4,
+        loopMode: c.loop_mode === "every" ? "every" : "first",
+      });
+    }
     const od = all[OUTPUT_DEVICE];
     outputDevice.set(typeof od === "string" && od ? od : null);
     const idv = all[INPUT_DEVICE];
@@ -566,6 +582,13 @@ export const actions = {
     const octaveUp = get(pitch).octaveUp;
     pitch.set({ semitones, cents, octaveUp });
     await cmd("pitch", { semitones, cents, octave_up: octaveUp });
+  },
+
+  async setCountIn(beats: number, loopMode?: "first" | "every"): Promise<void> {
+    const cur = get(countIn);
+    const next = { beats, loopMode: loopMode ?? cur.loopMode };
+    countIn.set(next);
+    await cmd("countin.set", { beats: next.beats, loop_mode: next.loopMode });
   },
 
   /** Bass focus: low-pass + the octave-up transcription trick (so the
