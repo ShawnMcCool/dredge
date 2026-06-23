@@ -6,6 +6,7 @@ pub mod capture;
 #[path = "capture_cpal.rs"]
 mod capture_cpal;
 pub mod decode;
+pub mod device;
 pub mod encode;
 pub mod engine;
 pub mod error;

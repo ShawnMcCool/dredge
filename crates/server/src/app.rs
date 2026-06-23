@@ -452,6 +452,14 @@ impl App {
             "pitch" => self.pitch(p),
             "status" => self.status(),
             "tuner.inputs" => serde_json::to_value(self.tuner.list_inputs()?).err_str(),
+            "device.outputs" => serde_json::to_value(
+                engine::device::list_output_devices().map_err(|e| e.to_string())?,
+            )
+            .err_str(),
+            "device.inputs" => serde_json::to_value(
+                engine::device::list_input_devices().map_err(|e| e.to_string())?,
+            )
+            .err_str(),
             "tuner.start" => self.tuner_start(p),
             "tuner.stop" => {
                 self.tuner.stop();
