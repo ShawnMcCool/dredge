@@ -156,6 +156,12 @@
   let rafPending = false;
   let rafId = 0;
   const playClock = makePlayheadClock();
+
+  // count-in playhead pulse: the glow resets on each new counted beat and
+  // decays over CI_PULSE_MS. `ciBeat` tracks the last beat we pulsed on.
+  const CI_PULSE_MS = 380;
+  let ciBeat = 0;
+  let ciPulseAt = 0;
   function paint() {
     rafPending = false;
     draw();
@@ -422,8 +428,33 @@
     // apart from the loop/selection). Spans only the waveform body: it starts at
     // the bottom of the section-header lane and never runs up into it.
     if (playheadX >= 0 && playheadX <= w) {
-      ctx.fillStyle = c.playhead;
-      ctx.fillRect(Math.round(playheadX), LANE_H, 1, WAVE_H);
+      const ci = get(position).countIn;
+      if (ci) {
+        // held in place, accent-colored, pulsing an area glow on each counted
+        // beat — reads as "counting in", visibly distinct from white playback.
+        if (ci.beat !== ciBeat) {
+          ciBeat = ci.beat;
+          ciPulseAt = performance.now();
+        }
+        const env = Math.max(0, 1 - (performance.now() - ciPulseAt) / CI_PULSE_MS);
+        const glow = env * env;
+        const x = Math.round(playheadX);
+        ctx.save();
+        // confine the glow to the waveform body so it doesn't bleed into the lane
+        ctx.beginPath();
+        ctx.rect(0, LANE_H, w, WAVE_H);
+        ctx.clip();
+        ctx.shadowColor = c.accent;
+        ctx.shadowBlur = 22 * glow;
+        ctx.globalAlpha = 0.7 + 0.3 * glow;
+        ctx.fillStyle = c.accent;
+        ctx.fillRect(x - 1, LANE_H, 3, WAVE_H);
+        ctx.restore();
+      } else {
+        ciBeat = 0;
+        ctx.fillStyle = c.playhead;
+        ctx.fillRect(Math.round(playheadX), LANE_H, 1, WAVE_H);
+      }
     }
 
     // structure lane — label-colored spans: saved sections solid, analysis

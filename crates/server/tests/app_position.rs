@@ -25,6 +25,7 @@ fn queue_pos(mock: &SharedMock, secs: f64, rate: f64, playing: bool) {
             secs,
             rate,
             playing,
+            count_in: None,
         });
 }
 

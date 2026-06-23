@@ -150,6 +150,9 @@ export interface Position {
   playing: boolean;
   /** performance.now() at receipt — playhead extrapolation anchor. */
   at: number;
+  /** Set while the count-in pre-roll is sounding: the playhead is held at
+   *  `secs` and pulses on each beat. `null` during normal playback. */
+  countIn: { beat: number; of: number } | null;
 }
 
 export interface TunerReading {
@@ -165,7 +168,13 @@ export const openSong = writable<OpenSong | null>(null);
 /** Song id with a `song.open` in flight — drives the library row spinner and
  *  the stage loading state; null once the open settles (also on error). */
 export const openingSong = writable<number | null>(null);
-export const position = writable<Position>({ secs: 0, rate: 1, playing: false, at: 0 });
+export const position = writable<Position>({
+  secs: 0,
+  rate: 1,
+  playing: false,
+  at: 0,
+  countIn: null,
+});
 export const selection = writable<{ start: number; end: number } | null>(null);
 /** Loop currently driving the transport (clicked or plan-applied). */
 export const currentLoop = writable<LoopRegion | null>(null);
@@ -1126,9 +1135,22 @@ export async function initEvents(): Promise<() => void> {
   void openLastSong();
   return onEvent((ev) => {
     switch (ev.event) {
-      case "position":
-        position.set({ ...(ev.data as Omit<Position, "at">), at: performance.now() });
+      case "position": {
+        const d = ev.data as {
+          secs: number;
+          rate: number;
+          playing: boolean;
+          count_in: { beat: number; of: number } | null;
+        };
+        position.set({
+          secs: d.secs,
+          rate: d.rate,
+          playing: d.playing,
+          at: performance.now(),
+          countIn: d.count_in ?? null,
+        });
         break;
+      }
       case "loop_wrapped": {
         // drill trainer: advance the cycle and let the global rate follow the
         // recipe.

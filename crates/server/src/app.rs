@@ -275,13 +275,17 @@ fn import_decode(
     })
 }
 
+/// Last broadcast playhead snapshot: secs, rate, playing, count-in `(beat, of)`.
+/// Compared field-wise to throttle no-op position broadcasts.
+type PositionSnapshot = (f64, f64, bool, Option<(u32, u32)>);
+
 pub struct App {
     store: Store,
     library: practice::library::Library,
     audio: Box<dyn AudioControl>,
     separator: Arc<dyn StemSeparator>,
     open_song: Option<OpenSong>,
-    last_position: Option<(f64, f64, bool)>, // secs, rate, playing
+    last_position: Option<PositionSnapshot>,
     /// Background-job events (stem separation); drained by `tick()`.
     job_tx: mpsc::Sender<Event>,
     job_rx: mpsc::Receiver<Event>,
@@ -714,7 +718,8 @@ impl App {
     }
 
     fn status(&self) -> Result<Value, String> {
-        let (secs, rate, playing) = self.last_position.unwrap_or((0.0, 1.0, false));
+        let (secs, rate, playing, _count_in) =
+            self.last_position.unwrap_or((0.0, 1.0, false, None));
         Ok(json!({
             "position_secs": secs,
             "rate": rate,
@@ -804,7 +809,8 @@ impl App {
                     secs,
                     rate,
                     playing,
-                } => last_pos = Some((secs, rate, playing)),
+                    count_in,
+                } => last_pos = Some((secs, rate, playing, count_in)),
                 EngineEvent::LoopWrapped => {
                     events.push(Event {
                         event: "loop_wrapped".into(),
@@ -824,10 +830,16 @@ impl App {
         if let Some(next) = last_pos {
             if self.last_position != Some(next) {
                 self.last_position = Some(next);
-                let (secs, rate, playing) = next;
+                let (secs, rate, playing, count_in) = next;
+                let count_in = count_in.map(|(beat, of)| json!({ "beat": beat, "of": of }));
                 events.push(Event {
                     event: "position".into(),
-                    data: json!({"secs": secs, "rate": rate, "playing": playing}),
+                    data: json!({
+                        "secs": secs,
+                        "rate": rate,
+                        "playing": playing,
+                        "count_in": count_in,
+                    }),
                 });
             }
         }

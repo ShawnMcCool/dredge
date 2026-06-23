@@ -50,7 +50,15 @@ pub enum EngineCmd {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum EngineEvent {
-    Position { secs: f64, rate: f64, playing: bool },
+    Position {
+        secs: f64,
+        rate: f64,
+        playing: bool,
+        /// `Some((beat, of))` while the count-in pre-roll is sounding (1-based
+        /// current beat), `None` during normal playback. The playhead is held
+        /// at `secs` while this is `Some`.
+        count_in: Option<(u32, u32)>,
+    },
     LoopWrapped,
     Finished,
 }
@@ -78,6 +86,9 @@ pub struct Pipeline {
     ci_to_next: usize,
     ci_click_age: usize,
     ci_accent: bool,
+    /// 1-based index of the beat currently sounding in the pre-roll (0 before
+    /// the first), reported in Position so the UI can pulse per count.
+    ci_beat_index: u32,
     /// every-loop: the current pass has been fed up to the loop end; once the
     /// stretcher drains, the next pass begins with a count-in.
     ci_pass_at_end: bool,
@@ -106,6 +117,7 @@ impl Pipeline {
             ci_to_next: 0,
             ci_click_age: 0,
             ci_accent: false,
+            ci_beat_index: 0,
             ci_pass_at_end: false,
         }
     }
@@ -204,6 +216,7 @@ impl Pipeline {
         self.ci_remaining = self.ci_beats;
         self.ci_to_next = 0; // first beat fires on the first frame
         self.ci_click_age = CLICK_LEN_FRAMES; // nothing sounding yet
+        self.ci_beat_index = 0;
         self.stretch.reset(); // clean hand-off into the song
     }
 
@@ -248,6 +261,7 @@ impl Pipeline {
                 if self.ci_remaining > 0 {
                     self.ci_accent = self.ci_remaining == self.ci_beats; // first beat
                     self.ci_remaining -= 1;
+                    self.ci_beat_index += 1;
                     self.ci_click_age = 0;
                     self.ci_to_next = spacing;
                 } else {
@@ -372,6 +386,11 @@ impl Pipeline {
             secs: self.looper.pos_frames() as f64 / SAMPLE_RATE as f64,
             rate: self.rate,
             playing: self.playing,
+            count_in: if self.ci_active {
+                Some((self.ci_beat_index, self.ci_beats))
+            } else {
+                None
+            },
         });
     }
 }
@@ -685,6 +704,47 @@ mod tests {
             pos > 0.2,
             "no count-in → song starts immediately, pos = {pos}"
         );
+    }
+
+    #[test]
+    fn count_in_reports_beat_index_then_clears() {
+        let mut p = Pipeline::new(sine_buf(4.0));
+        p.apply(EngineCmd::SetCountIn {
+            beats: 3,
+            beat_secs: 0.5,
+            every_loop: false,
+        });
+        p.apply(EngineCmd::Play);
+        // 1.5 s pre-roll (3 × 0.5 s) then song.
+        let (_out, events) = render_secs(&mut p, 2.5);
+
+        // While counting in, the beat index runs 1..=3 over the pre-roll.
+        let beats: Vec<u32> = events
+            .iter()
+            .filter_map(|e| match e {
+                EngineEvent::Position {
+                    count_in: Some((b, of)),
+                    ..
+                } => {
+                    assert_eq!(*of, 3, "total beats reported");
+                    Some(*b)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(beats.iter().min(), Some(&1));
+        assert_eq!(beats.iter().max(), Some(&3));
+
+        // After the pre-roll, count_in clears so the playhead resumes.
+        let last = events
+            .iter()
+            .rev()
+            .find_map(|e| match e {
+                EngineEvent::Position { count_in, .. } => Some(*count_in),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(last, None, "count_in clears once playback begins");
     }
 
     #[test]

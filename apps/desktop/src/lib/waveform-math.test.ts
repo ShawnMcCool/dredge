@@ -56,6 +56,11 @@ describe("playheadSecs", () => {
     const pos = { secs: 10, rate: 0.75, playing: false, at: 5000 };
     expect(playheadSecs(pos, 9000)).toBe(10);
   });
+
+  it("freezes during the count-in even though playing", () => {
+    const pos = { secs: 10, rate: 1, playing: true, at: 5000, countIn: { beat: 2, of: 4 } };
+    expect(playheadSecs(pos, 9000)).toBe(10);
+  });
 });
 
 describe("tickPlayhead", () => {
@@ -71,6 +76,15 @@ describe("tickPlayhead", () => {
     const pos = { secs: 10, rate: 1, playing: true, at: 1000 };
     // at == now → target is exactly secs
     expect(tickPlayhead(c, pos, 1000)).toBeCloseTo(10, 9);
+  });
+
+  it("holds the playhead in place during the count-in", () => {
+    const c = makePlayheadClock();
+    const pos = { secs: 10, rate: 1, playing: true, at: 1000, countIn: { beat: 1, of: 4 } };
+    tickPlayhead(c, pos, 1000);
+    // wall time passes, but a held count-in must not advance the playhead
+    expect(tickPlayhead(c, pos, 1500)).toBe(10);
+    expect(tickPlayhead(c, pos, 2000)).toBe(10);
   });
 
   it("advances at rate across smooth frames (no jitter sawtooth)", () => {

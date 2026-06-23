@@ -16,10 +16,17 @@ export const xToSec = (v: View, x: number) =>
 
 /** Extrapolate playhead: position event + elapsed wall time × rate. */
 export function playheadSecs(
-  pos: { secs: number; rate: number; playing: boolean; at: number },
+  pos: {
+    secs: number;
+    rate: number;
+    playing: boolean;
+    at: number;
+    countIn?: { beat: number; of: number } | null;
+  },
   now: number,
 ): number {
-  if (!pos.playing) return pos.secs;
+  // The count-in holds the playhead in place — the engine isn't advancing.
+  if (!pos.playing || pos.countIn) return pos.secs;
   return pos.secs + ((now - pos.at) / 1000) * pos.rate;
 }
 
@@ -43,14 +50,20 @@ export const makePlayheadClock = (): PlayheadClock => ({
 /** Advance `clock` to `now` and return the smoothed playhead seconds. */
 export function tickPlayhead(
   clock: PlayheadClock,
-  pos: { secs: number; rate: number; playing: boolean; at: number },
+  pos: {
+    secs: number;
+    rate: number;
+    playing: boolean;
+    at: number;
+    countIn?: { beat: number; of: number } | null;
+  },
   now: number,
 ): number {
   const target = playheadSecs(pos, now);
-  // Paused (or first frame, or a resume/stall gap): lock straight to truth.
+  // Paused, counting in (held), first frame, or a resume/stall gap: lock to truth.
   const elapsed = (now - clock.lastNow) / 1000;
   clock.lastNow = now;
-  if (!pos.playing || !clock.inited || elapsed > 0.1 || elapsed < 0) {
+  if (!pos.playing || pos.countIn || !clock.inited || elapsed > 0.1 || elapsed < 0) {
     clock.display = target;
     clock.inited = true;
     return clock.display;
