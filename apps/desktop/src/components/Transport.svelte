@@ -1,6 +1,6 @@
 <script lang="ts">
   import { fmtClock } from "../lib/format";
-  import { actions, activeLoop, countIn, countInAvailable, muted, openSong, pitch, playbackVolume, position } from "../lib/stores";
+  import { actions, countIn, countInAvailable, muted, openSong, pitch, playbackVolume, position } from "../lib/stores";
   import { stepCountInBeats } from "../lib/count-in";
   import Fader from "../lib/ui/Fader.svelte";
 
@@ -131,7 +131,17 @@
 
       <!-- count in: beats of clicks before playback -->
       <div class="seg">
-        <span class="mlabel">count in</span>
+        <span class="mlabel">
+          count in
+          <button
+            class="modeword"
+            class:on={$countIn.enabled}
+            onclick={() =>
+              actions.setCountIn({ loopMode: $countIn.loopMode === "first" ? "every" : "first" })}
+            title="count in on the first pass, or before every loop"
+          >{$countIn.loopMode}</button>
+          loop
+        </span>
         <div class="mbody">
           <button
             class="toggle"
@@ -144,14 +154,6 @@
             <span class="pval mono">{countLabel}</span>
             <button onclick={() => stepCount(1)} aria-label="more count-in beats">+</button>
           </span>
-          {#if $countIn.enabled && $activeLoop}
-            <button
-              class="loopmode"
-              onclick={() =>
-                actions.setCountIn({ loopMode: $countIn.loopMode === "first" ? "every" : "first" })}
-              title="count in on the first pass, or before every loop"
-            >{$countIn.loopMode}</button>
-          {/if}
         </div>
       </div>
     {/if}
@@ -356,19 +358,22 @@
     opacity: 0.4;
   }
 
-  /* count-in loop mode: a small first/every toggle, on while a loop is active */
-  .loopmode {
+  /* count-in loop mode: inline label word ("count in EVERY loop"). Reads as the
+     label, accent-colored like the volume value when on, muted grey when off. */
+  .modeword {
     background: none;
-    border: 1px solid var(--line);
-    color: var(--muted);
-    border-radius: 4px;
-    padding: 1px 6px;
-    font-size: 10px;
+    border: none;
+    padding: 0;
+    font: inherit;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
+    letter-spacing: inherit;
+    color: var(--muted);
     cursor: pointer;
   }
-  .loopmode:hover {
+  .modeword.on {
+    color: var(--accent);
+  }
+  .modeword:hover {
     color: var(--fg);
   }
 
