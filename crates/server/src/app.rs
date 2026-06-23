@@ -741,6 +741,12 @@ impl App {
                                 Value::Null
                             }
                         };
+                        // analysis just gave this song a BPM; if it's the open
+                        // song, refresh the engine's count-in (it was forced off
+                        // at open time when no BPM existed yet).
+                        if self.open_song.as_ref().map(|o| o.song.id) == Some(song_id) {
+                            self.push_count_in();
+                        }
                         json!({"song_id": song_id, "state": "done", "sections": sections})
                     }
                     Err(e) => {
