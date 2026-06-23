@@ -122,17 +122,17 @@ term maps to one thing. The three columns are **panes**:
 
 - **Library** (left, `aside.library`) — the song list.
 - **Stage** (center, `main.stage`) — the work surface. Down it sit the
-  **waveform**, the **controls box** (`Transport.svelte`), then a flowing row
-  of **boxes** built on the `Box` widget (`lib/ui/Box.svelte`, a label header
-  + body): the **isolation box** (`Isolation.svelte`) — ways to hear less of
+  **waveform**, the **transport control box** (`Transport.svelte`), then a flowing row
+  of **control boxes** built on the `Box` widget (`lib/ui/Box.svelte`, a label header
+  + body): the **isolation control box** (`Isolation.svelte`) — ways to hear less of
   the mix, from always-available **bass focus** (a low-pass) up to the separated
   **stem channels** (vocals/drums/bass/other) once analysis has run; before
-  separation it carries the analyze CTA inline. Then the **notes box**
+  separation it carries the analyze CTA inline. Then the **notes control box**
   (`Notes.svelte`) — per-section notes (free text + inline `TabBlock`
   tablature), keyed by the section's occurrence label ("verse 2") and shown once
-  a song has sections; the **tuner box** (`Tuner.svelte`, always present); and
-  the **drill box** (`Drill.svelte`) last, only while a drill span is active.
-  Call them *boxes*, never "containers" or "panels".
+  a song has sections; the **tuner control box** (`Tuner.svelte`, always present); and
+  the **drill control box** (`Drill.svelte`) last, only while a drill span is active.
+  Call them *control boxes*, never "containers", "panels", or bare "boxes".
 - **Panel** (right, `aside.panels`) — its switchable views are **tabs**
   (structure, loops, capture, export, profile, settings, guide), wired
   through the `TAB_VIEWS` registry in `App.svelte`. The **structure tab**
@@ -141,7 +141,7 @@ term maps to one thing. The three columns are **panes**:
 
 Some stage state is purely client-side and mirrored by no store — the
 waveform's zoom (`view`) and clicked active span live as local `$state` in
-`Waveform.svelte`. The **reset workspace** control (⟲ in the controls box)
+`Waveform.svelte`. The **reset workspace** control (⟲ in the transport control box)
 refits the zoom and clears that local state plus the selection, active loop, and
 playhead; because the action (`resetWorkspace` in `stores.ts`) can't reach the
 local state directly, it bumps the `workspaceReset` nonce store that the
