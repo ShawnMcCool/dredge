@@ -7,6 +7,7 @@ import { trace } from "./trace";
 import { subdivisionTimes, type GridSubdivision } from "./waveform-math";
 import { bisect, nudgeEdge, rateForRep, runUp, type Span } from "./drill";
 import { deriveLoopName } from "./loop-name";
+import { meterNumerator } from "./meter";
 import { resolveTunerInput } from "./devices";
 import type { NotesDoc } from "./notes-doc";
 
@@ -1090,6 +1091,13 @@ export const actions = {
     const analysis = await cmd<Analysis | null>("analysis.get", { song_id: songId });
     if (get(openSong)?.song.id !== songId) return;
     openSong.update((o) => (o ? { ...o, analysis } : o));
+    // Default the count-in beat count to the song's meter (time-signature
+    // numerator) when analysis lands — the user can still override it. Only
+    // runs at analysis time, so a manual override survives reopening the song.
+    const per = meterNumerator(analysis);
+    if (per !== null && get(countIn).beats !== per) {
+      void actions.setCountIn({ beats: per });
+    }
   },
 };
 

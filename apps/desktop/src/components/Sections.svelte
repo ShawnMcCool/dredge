@@ -9,6 +9,7 @@
     selection,
     type AnalysisSection,
   } from "../lib/stores";
+  import { meterNumerator } from "../lib/meter";
   import Button from "../lib/ui/Button.svelte";
   import EmptyState from "../lib/ui/EmptyState.svelte";
   import Modal from "../lib/ui/Modal.svelte";
@@ -84,10 +85,8 @@
 
   // time signature ≈ beats per bar (beats / downbeats), when it's sane
   let meter = $derived.by(() => {
-    const a = analysis;
-    if (!a?.beats?.length || !a?.downbeats?.length) return null;
-    const per = Math.round(a.beats.length / a.downbeats.length);
-    return per >= 2 && per <= 12 ? `${per}/4` : null;
+    const per = meterNumerator(analysis);
+    return per !== null ? `${per}/4` : null;
   });
 
   // the subordinate stats line: only the facts we actually have
