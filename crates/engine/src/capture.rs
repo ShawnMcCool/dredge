@@ -183,9 +183,15 @@ pub fn start_capture(node: CaptureNode, buffer_secs: f64) -> crate::error::Resul
 /// string, so this targets `target.object` directly without a registry scan.
 #[cfg(target_os = "linux")]
 pub fn start_capture_by_id(id: &str, buffer_secs: f64) -> crate::error::Result<CaptureSession> {
+    // The id must be a numeric object.serial; a non-numeric id (e.g. a stale
+    // setting from the old name-based scheme) is an error rather than a silent
+    // serial 0, which could target the wrong node or PipeWire's default.
+    let serial: u64 = id
+        .parse()
+        .map_err(|_| crate::error::Error::Audio(format!("invalid input device id: {id:?}")))?;
     let node = CaptureNode {
         id: 0,
-        serial: id.parse().unwrap_or(0),
+        serial,
         app: String::new(),
         media: String::new(),
     };

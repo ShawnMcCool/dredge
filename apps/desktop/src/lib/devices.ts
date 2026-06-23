@@ -5,7 +5,11 @@ export function defaultName(devices: AudioDevice[]): string | null {
   return devices.find((d) => d.is_default)?.name ?? null;
 }
 
-/** Resolve the tuner's effective input id from its selection + the global input. */
+/**
+ * Resolve the tuner's effective input id from its selection + the global input.
+ * `sel` is either a device id or the sentinel "default" (= follow global input);
+ * the `| "default"` is documentation only — it collapses to `string` in TS.
+ */
 export function resolveTunerInput(
   sel: string | "default",
   globalInput: string | null,
