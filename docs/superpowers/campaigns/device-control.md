@@ -37,14 +37,17 @@ Designed 2026-06-23 (brainstorm + spec at
   `object.serial` into it (as a decimal string — capture already targets by
   serial), the cpal backend uses the device name. The protocol/settings/UI store
   and echo `id` but never parse it.
-- **Live output switch = `RenderCore` handoff, not state replay.** App tracks
-  almost no engine state (only a `last_position` cache). So instead of recreating
-  the output thread and replaying loop/rate/pitch/etc, we **move the same
-  `RenderCore` out of the stopping thread and into the new one**
-  (`output::spawn` returns `JoinHandle<RenderCore>`). Position, the live
-  `Pipeline`, and volume survive untouched; `song_slot` is unchanged so no
-  re-decode. Mechanism mirrors the proven capture teardown (stop flag + 100 ms
-  poll timer → `mainloop.quit()` + `join`). A brief audio gap is acceptable.
+- **Live output switch = `Engine`-side snapshot + replay.** App tracks almost no
+  engine state (only a `last_position` cache), and the `RenderCore` can't be
+  cheaply moved back out of the PipeWire stream's user-data. So `Engine` — which
+  already sees every `EngineCmd` via `send()` — keeps a small pure `EngineState`
+  snapshot (loop/rate/pitch/focus/mute/stem-gains/volume/play) + the latest
+  position from `Position` events. On switch it tears down the output thread
+  (stop flag + 100 ms poll timer → `mainloop.quit()` + `join`, mirroring
+  capture), spawns a fresh thread with fresh rings on the new device (the
+  `song_slot` Arc is unchanged → no re-decode), and **replays the snapshot**
+  (state cmds → `SeekSecs(pos)` → `Play` if playing). No cross-thread move of the
+  FFI `Stretcher`; a brief gap on resume is acceptable.
 - **"System default" is the not-overriding state, per direction.** The settings
   value is an opaque id, or empty = follow system default. PipeWire follows the
   default sink live when no `TARGET_OBJECT` is set. In the tab, "System default"
@@ -175,79 +178,76 @@ reachable over dispatch as `device.outputs` / `device.inputs`.
   (or all false if metadata wasn't read). **Commit:**
   `feat(engine): neutral AudioDevice type + output/input enumeration`.
 
-## Phase 3 — Output thread: target + stop + RenderCore handoff (engine)
+## Phase 3 — Output thread: target + stop + Engine snapshot/replay (engine)
 
-**Goal:** the output thread can be torn down and respawned on a chosen device
-while **preserving the `RenderCore`** (and thus all playback state).
+**Goal:** the output thread can be torn down and respawned on a chosen device,
+and `Engine` restores playback by replaying a snapshot it maintains.
 
-**Files:** `crates/engine/src/output.rs`, `output_cpal.rs`, `render_core.rs`,
-`stretch.rs` (only if Send is needed), `engine.rs`.
+**Files:** new `crates/engine/src/engine_state.rs` (+ tests);
+`crates/engine/src/output.rs`, `output_cpal.rs`, `engine.rs`, `lib.rs`.
 
-- [ ] **3.1** Make `RenderCore` caller-built and returnable. Change
-  `output::spawn` to:
+- [ ] **3.1** Pure snapshot type. New `engine_state.rs` with:
   ```rust
-  pub fn spawn(
-      core: crate::render_core::RenderCore,
-      target: Option<String>,
-      stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
-  ) -> crate::error::Result<std::thread::JoinHandle<crate::render_core::RenderCore>>
-  ```
-  The thread moves `core` into its `State`, runs the loop, and on exit returns
-  the `core` from the closure (so `join()` yields it back). Today
-  `RenderCore::new` is called *inside* the closure (`output.rs:69`); move that
-  construction to the caller (`engine.rs`) and pass `core` in.
-- [ ] **3.2** Stop timer: in `output.rs::run`, before `mainloop.run()`, add the
-  exact stop-poll timer from `capture.rs:285-306` (100 ms repeating; when
-  `stop` is set, `ml.quit()`). After `mainloop.run()` returns, `drop(timer)` and
-  return the `State.core` up to the closure so `spawn`'s `JoinHandle` resolves to
-  the `RenderCore`.
-- [ ] **3.3** PipeWire target: when `target` is `Some(serial_str)`, insert
-  `properties.insert(*pw::keys::TARGET_OBJECT, serial_str)` before building the
-  stream (mirror `capture.rs:208`). `None` ⇒ no property ⇒ follow the default
-  sink. (The `properties!{}` macro builds the base; switch to a mutable
-  `Properties` like capture does so you can conditionally insert.)
-- [ ] **3.4** cpal output: apply the same shape to `output_cpal.rs` — accept
-  `core`/`target`/`stop`, return `JoinHandle<RenderCore>`; select the output
-  device whose `name == target` (else `default_output_device()`); the park loop
-  already idles — make it poll `stop` and exit, returning `core`.
-- [ ] **3.5** `Send` for the handoff: `RenderCore` must cross the `join`. Build
-  `cargo build -p engine`; if it complains that `Pipeline`/`Stretcher` isn't
-  `Send` (Rubber Band FFI pointer), add to `stretch.rs`:
-  ```rust
-  // Safety: a Stretcher is owned by exactly one audio thread at a time; the
-  // device switch hands it from the stopping thread to the next under a join
-  // barrier, never shared concurrently.
-  unsafe impl Send for Stretcher {}
-  ```
-- [ ] **3.6** `Engine`: build the `RenderCore` in `start()`, hold the pieces to
-  respawn, and add the switch method. Update the struct + `start()`:
-  ```rust
-  pub struct Engine {
-      cmd_tx: rtrb::Producer<EngineCmd>,
-      evt_rx: rtrb::Consumer<EngineEvent>,
-      song_slot: Arc<ArcSwapOption<StemSet>>,
-      stop: Arc<AtomicBool>,
-      target: Option<String>,
-      audio_thread: Option<JoinHandle<RenderCore>>,
+  #[derive(Default, Clone)]
+  pub struct EngineState {
+      pub loop_region: Option<(f64, f64)>,
+      pub rate: Option<f64>,
+      pub pitch_scale: Option<f64>,
+      pub bass_focus: bool,
+      pub muted: bool,
+      pub stem_gains: std::collections::BTreeMap<usize, f32>, // only observed idxs
+      pub volume: Option<f32>,
+      pub playing: bool,
+      pub pos_secs: f64,
   }
-
+  impl EngineState {
+      pub fn observe(&mut self, cmd: &EngineCmd) { /* match: set fields; Play→playing=true; Pause→playing=false; SeekSecs→pos_secs; ClearLoop→None; SetLoopSecs→Some */ }
+      pub fn set_position(&mut self, secs: f64, playing: bool) { self.pos_secs = secs; self.playing = playing; }
+      pub fn replay_cmds(&self) -> Vec<EngineCmd> { /* volume, rate, pitch, BassFocus(bass), Mute(muted) if set, stem gains, loop (Some→SetLoopSecs), SeekSecs(pos), then Play if playing — in THIS order */ }
+  }
+  ```
+  Add `pub mod engine_state;` to `lib.rs`. Unit-test `observe`+`replay_cmds`:
+  feed a command sequence, assert the snapshot, assert the replayed `Vec` order
+  and contents (and that a paused state omits the trailing `Play`).
+- [ ] **3.2** Stop timer in the output thread. In `output.rs::run`, take a
+  `stop: Arc<AtomicBool>` and add the exact 100 ms stop-poll timer from
+  `capture.rs:285-306` (when set, `ml.quit()`); `drop(timer)` after
+  `mainloop.run()`. `output::spawn` keeps returning `JoinHandle<()>` but its
+  signature gains `target: Option<String>` and `stop: Arc<AtomicBool>`.
+  `RenderCore::new(...)` stays built **inside** the thread as today.
+- [ ] **3.3** PipeWire target: build a mutable `Properties` (like
+  `capture.rs:198-208`) and, when `target` is `Some(serial_str)`,
+  `props.insert(*pw::keys::TARGET_OBJECT, serial_str)` before
+  `StreamBox::new`. `None` ⇒ no property ⇒ follow the default sink.
+- [ ] **3.4** cpal output (`output_cpal.rs`): match the new signature
+  (`target`/`stop`); select the output device whose `name == target` (else
+  `default_output_device()`); make the park loop poll `stop` and exit.
+- [ ] **3.5** `Engine` struct + `start()` + the switch. Add `stop:
+  Arc<AtomicBool>`, `target: Option<String>`, `state: EngineState`, and make
+  `cmd_tx`/`evt_rx`/`_audio_thread` reassignable. `send()` calls
+  `self.state.observe(&cmd)` before pushing. `poll_events()` updates
+  `self.state.set_position(secs, playing)` for each `Position` event. Add:
+  ```rust
   pub fn set_output_device(&mut self, target: Option<String>) -> crate::error::Result<()> {
       self.stop.store(true, Ordering::Relaxed);
-      let core = self.audio_thread.take().map(|h| h.join().ok()).flatten();
-      let Some(core) = core else { return Ok(()); };
-      self.stop.store(false, Ordering::Relaxed);
+      if let Some(h) = self._audio_thread.take() { let _ = h.join(); }
+      let (cmd_tx, cmd_rx) = rtrb::RingBuffer::<EngineCmd>::new(256);
+      let (evt_tx, evt_rx) = rtrb::RingBuffer::<EngineEvent>::new(1024);
+      self.stop = Arc::new(AtomicBool::new(false));
       self.target = target.clone();
-      self.audio_thread = Some(crate::output::spawn(core, target, self.stop.clone())?);
+      let h = crate::output::spawn(cmd_rx, evt_tx, self.song_slot.clone(), target, self.stop.clone())?;
+      self.cmd_tx = cmd_tx; self.evt_rx = evt_rx; self._audio_thread = h;
+      for cmd in self.state.replay_cmds() { let _ = self.cmd_tx.push(cmd); }
       Ok(())
   }
   ```
-  `start()` builds `cmd_rx`/`evt_tx`/`song_slot` as today, constructs
-  `RenderCore::new(cmd_rx, evt_tx, song_slot.clone())`, then
-  `output::spawn(core, None, stop.clone())`.
+  `start()` builds the first `stop`/rings and calls `output::spawn(cmd_rx,
+  evt_tx, song_slot.clone(), None, stop.clone())`.
 - [ ] **Gate:** `cargo test -p engine` green (existing pipeline tests
-  unaffected); `cargo build --workspace`. `set_output_device` isn't reachable
-  over dispatch yet — that's Phase 4. **Commit:**
-  `feat(engine): retargetable output thread via RenderCore handoff`.
+  unaffected + new `engine_state` tests); `cargo build --workspace` clean;
+  `cargo clippy -p engine` no warnings. `set_output_device` isn't reachable over
+  dispatch yet (Phase 4). **Commit:**
+  `feat(engine): retargetable output thread + EngineState snapshot/replay`.
 
 ## Phase 4 — Output selection over dispatch + persistence (server)
 
@@ -476,8 +476,12 @@ the Tauri webview can't be exercised by automated tests).
   parsing.
 - **Risk register:** (a) `is_default` via PipeWire metadata (2.3) is best-effort
   and isolated — failure degrades to unmarked "System default", not broken
-  enumeration; (b) `RenderCore`/`Stretcher` `Send` (3.5) is the one likely
-  compile snag, with the fix specified; (c) output `TARGET_OBJECT` is assumed
+  enumeration (confirmed false in practice: registry globals don't expose the
+  metadata key/values, so all `is_default=false` for now — revisit with a
+  metadata listener if the marker is wanted); (b) the live switch rebuilds the
+  audio path and replays `EngineState` (Ph3) rather than moving the FFI
+  `Stretcher` across threads — no `unsafe Send` needed; the replay order is the
+  thing to get right, and it's unit-tested; (c) output `TARGET_OBJECT` is assumed
   symmetric to capture's proven input targeting — verify in the Ph4 empirical
   gate before building UI on it.
 - **Backend-uniform:** every PipeWire step names its `capture.rs` mirror; the

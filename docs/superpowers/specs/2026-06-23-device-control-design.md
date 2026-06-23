@@ -71,42 +71,41 @@ output::spawn(cmd_rx, evt_tx, song_slot, target: Option<String>)
 // Some  = bind to the device whose opaque id matches.
 ```
 
-## Engine: live output-device switching (RenderCore handoff)
+## Engine: live output-device switching (snapshot + replay)
 
-`Engine` gains `set_output_device(target: Option<String>)`. Rather than
-recreating playback state, the **`RenderCore` is preserved across the switch** —
-it is moved out of the stopping output thread and into the freshly-spawned one,
-so playback position, the live `Pipeline` (loop region, rate, pitch, bass focus,
-mute, stem gains) and user volume all survive untouched. The `song_slot` `Arc` is
-unchanged, so no audio is re-decoded and no song-swap fires. This removes the
-need for the server to track or replay any live engine state — which matters,
-because today `App` tracks none of it (only a `last_position` cache); it lives
-solely in the engine.
+`Engine` gains `set_output_device(target: Option<String>)`. The output thread is
+torn down and a fresh one spawned targeting the new device. Because the
+`RenderCore` lives on the audio thread and can't be cheaply moved back out of the
+PipeWire stream's user-data (the listener owns it), the **`Engine` rebuilds the
+audio path and replays the live state it already tracks** onto a fresh
+`RenderCore`. This keeps everything inside `Engine` — `App` tracks no engine
+state today and gains none — and avoids any cross-thread move of the FFI-backed
+`Stretcher`.
 
-Mechanism (mirrors the proven `capture::run_capture` teardown):
+Mechanism (teardown mirrors the proven `capture::run_capture`):
 
 - The output thread gains a `stop: Arc<AtomicBool>` polled by a repeating ~100 ms
   PipeWire timer that calls `mainloop.quit()` — identical to the capture thread.
-- `output::spawn` is refactored to **accept a fully-built `RenderCore` +
-  `target: Option<String>` + the stop flag, and to return
-  `JoinHandle<RenderCore>`** (the thread returns the core when its loop exits).
-  `Engine::start` builds the `RenderCore` once and hands it in.
-- `set_output_device`: set `stop = true`; `join()` the thread to recover the
-  `RenderCore`; reset the flag; respawn `output::spawn(core, new_target, stop)`.
-  Commands sent meanwhile buffer in the cmd ring (the `Engine` still owns the
-  `Producer`) and drain when the new thread starts. A brief audio gap during the
-  swap is acceptable.
+  `output::spawn` keeps returning `JoinHandle<()>`; `RenderCore` is still built
+  inside the thread.
+- `Engine` keeps a small pure `EngineState` snapshot, updated on every
+  `EngineCmd` it forwards through `send()` (loop region, rate, pitch, bass focus,
+  mute, per-stem gains, volume, play/pause), and tracks the latest playback
+  position from `Position` events drained in `poll_events`.
+- `set_output_device`: set `stop = true` and `join()` the old thread; create
+  **fresh** command/event ring buffers; build a fresh `RenderCore` from the
+  unchanged `song_slot` `Arc` (it reloads the song via swap-detection — no
+  re-decode); `output::spawn(new rings, song_slot, new_target, stop)`; replace
+  `Engine`'s `cmd_tx`/`evt_rx` with the new ends; then replay the snapshot as a
+  command sequence — volume, rate, pitch, focus, mute, observed stem gains,
+  loop region — followed by `SeekSecs(position)` and `Play` if it was playing.
+  A brief gain ramp/gap on resume is acceptable.
 
 PipeWire targets a device by setting the `TARGET_OBJECT` property to the opaque
 device id (the `object.serial` string) before `connect` — exactly as
 `capture::run_capture` already does for input (`None` = no property = follow the
 system default sink, which PipeWire then tracks live). cpal selects the matching
 output device by name when (re)building the stream.
-
-`RenderCore` must be `Send` to cross the join handoff. Its `Pipeline`/`Stretcher`
-(Rubber Band FFI) is only ever owned by one audio thread at a time, so if the
-type is not already `Send`, add `unsafe impl Send for Stretcher {}` with a
-single-owner-handoff safety note.
 
 Input switching is unchanged — it reuses the tuner's existing stop/restart
 capture path (`RealTuner::start` stops then starts a fresh capture session); it
@@ -213,12 +212,14 @@ the `Box` widget stay); this is a naming/terminology change only.
 
 - `AudioDevice` enumeration for input/output exercised behind the existing mock
   seam (the `TunerControl` Real/Mock pattern generalizes).
+- `EngineState` snapshot/replay is pure: unit-test that observing a command
+  stream yields the right snapshot and that `replay_cmds(pos)` emits the
+  expected ordered `EngineCmd`s (volume→…→loop→seek→play-if-playing).
 - `set_output_device` on a mock `AudioControl` records the requested target
   (None vs Some(id)); the persistence + startup-application logic in `App` is
   tested against that mock (saved override applied on construction, silent
-  fallback when absent, `device.setOutput` persists + forwards). The
-  `RenderCore` handoff itself is verified manually (live switch needs real
-  audio).
+  fallback when absent, `device.setOutput` persists + forwards). The live switch
+  itself is verified manually (needs real audio).
 - Tuner "follow default" resolution: with no tuner override, the tuner resolves
   to the devices-tab input; with an override, it does not.
 - Persistence: saved override applied when present; silent fallback to default
