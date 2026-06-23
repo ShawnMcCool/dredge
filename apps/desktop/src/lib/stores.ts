@@ -260,6 +260,10 @@ export interface AudioDevice { id: string; name: string; is_default: boolean }
 export const outputDevices = writable<AudioDevice[]>([]);
 /** Persisted output device id; null means follow the system default. */
 export const outputDevice = writable<string | null>(null);
+/** Known input devices (audio sources). Refreshed on the devices tab. */
+export const inputDevices = writable<AudioDevice[]>([]);
+/** Persisted input device id; null means follow the system default. */
+export const inputDevice = writable<string | null>(null);
 
 /** Input devices (mics / interfaces) for the tuner; CaptureNode shape. */
 export const tunerInputs = writable<CaptureNode[]>([]);
@@ -319,6 +323,8 @@ export const EXPORT_FORMAT = "export_format";
 export const LIBRARY_ROOT = "library_root";
 /** Chosen audio output device id; empty string means system default. */
 export const OUTPUT_DEVICE = "output_device";
+/** Chosen audio input device id; empty string means system default. */
+export const INPUT_DEVICE = "input_device";
 
 /** Side-column collapse state — persisted to settings, restored at launch. */
 export const libraryCollapsed = writable(false);
@@ -422,6 +428,8 @@ export const actions = {
     if (typeof all[TUNER_INPUT_NAME] === "string") tunerInputName.set(all[TUNER_INPUT_NAME]);
     const od = all[OUTPUT_DEVICE];
     outputDevice.set(typeof od === "string" && od ? od : null);
+    const idv = all[INPUT_DEVICE];
+    inputDevice.set(typeof idv === "string" && idv ? idv : null);
     void actions.loadProfiles();
   },
 
@@ -883,6 +891,16 @@ export const actions = {
     outputDevice.set(id);
     await cmd("device.setOutput", { id });
     await this.setSetting(OUTPUT_DEVICE, id ?? "");
+  },
+
+  async refreshInputs(): Promise<void> {
+    inputDevices.set(await cmd<AudioDevice[]>("device.inputs"));
+  },
+
+  async setInputDevice(id: string | null): Promise<void> {
+    inputDevice.set(id);
+    await cmd("device.setInput", { id });
+    await this.setSetting(INPUT_DEVICE, id ?? "");
   },
 
   // --- tuner ---

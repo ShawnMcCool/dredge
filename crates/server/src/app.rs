@@ -478,6 +478,7 @@ impl App {
             )
             .err_str(),
             "device.setOutput" => self.device_set_output(p),
+            "device.setInput" => self.device_set_input(p),
             "tuner.start" => self.tuner_start(p),
             "tuner.stop" => {
                 self.tuner.stop();
@@ -538,6 +539,20 @@ impl App {
         let val = id.clone().map(Value::String).unwrap_or(Value::Null);
         self.store.set_setting("output_device", &val).err_str()?;
         self.audio.set_output_device(id);
+        Ok(Value::Null)
+    }
+
+    fn device_set_input(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            id: Option<String>,
+        }
+        let p: P = from_params(p)?;
+        // Normalise empty string to null (= follow system default). Input has no
+        // live engine stream; the tuner reads this setting on its next start.
+        let id = p.id.filter(|s| !s.is_empty());
+        let val = id.map(Value::String).unwrap_or(Value::Null);
+        self.store.set_setting("input_device", &val).err_str()?;
         Ok(Value::Null)
     }
 
@@ -1830,6 +1845,22 @@ mod device_tests {
         // Mock forwarded the call.
         let log = &mock.lock().unwrap().output_device_log;
         assert_eq!(log.last(), Some(&Some("123".to_string())));
+    }
+
+    #[test]
+    fn set_input_persists_id() {
+        let (_mock, mut app) = make_shared_mock();
+
+        let resp = app.dispatch(Request {
+            id: 1,
+            cmd: "device.setInput".into(),
+            params: json!({ "id": "7" }),
+        });
+        assert!(resp.ok, "expected ok, got: {:?}", resp.error);
+
+        // Setting persisted; input does not forward to audio.
+        let saved = app.store.get_setting("input_device").unwrap().unwrap();
+        assert_eq!(saved, json!("7"));
     }
 
     #[test]

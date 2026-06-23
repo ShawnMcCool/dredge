@@ -1,18 +1,30 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { actions, outputDevice, outputDevices } from "../lib/stores";
+  import { actions, inputDevice, inputDevices, outputDevice, outputDevices } from "../lib/stores";
   import { asyncAction } from "../lib/async-action.svelte";
   import { defaultName } from "../lib/devices";
   import Button from "../lib/ui/Button.svelte";
 
   const act = asyncAction();
 
-  function pick(id: string | null) {
+  function pickOutput(id: string | null) {
     return act.run(() => actions.setOutputDevice(id));
+  }
+
+  function pickInput(id: string | null) {
+    return act.run(() => actions.setInputDevice(id));
+  }
+
+  function resetToSystem() {
+    return act.run(async () => {
+      await actions.setOutputDevice(null);
+      await actions.setInputDevice(null);
+    });
   }
 
   onMount(() => {
     void act.run(() => actions.refreshOutputs());
+    void act.run(() => actions.refreshInputs());
   });
 </script>
 
@@ -25,16 +37,28 @@
 <section class="group">
   <h3 class="group-head">output</h3>
   <div class="picker">
-    <button class="dev" class:sel={$outputDevice === null} onclick={() => pick(null)}>
+    <button class="dev" class:sel={$outputDevice === null} onclick={() => pickOutput(null)}>
       System default{defaultName($outputDevices) ? ` (${defaultName($outputDevices)})` : ""}
     </button>
     {#each $outputDevices as d (d.id)}
-      <button class="dev" class:sel={$outputDevice === d.id} onclick={() => pick(d.id)}>{d.name}</button>
+      <button class="dev" class:sel={$outputDevice === d.id} onclick={() => pickOutput(d.id)}>{d.name}</button>
     {/each}
   </div>
 </section>
 
-<Button onclick={() => pick(null)}>reset to system</Button>
+<section class="group">
+  <h3 class="group-head">input</h3>
+  <div class="picker">
+    <button class="dev" class:sel={$inputDevice === null} onclick={() => pickInput(null)}>
+      System default{defaultName($inputDevices) ? ` (${defaultName($inputDevices)})` : ""}
+    </button>
+    {#each $inputDevices as d (d.id)}
+      <button class="dev" class:sel={$inputDevice === d.id} onclick={() => pickInput(d.id)}>{d.name}</button>
+    {/each}
+  </div>
+</section>
+
+<Button onclick={() => resetToSystem()}>reset to system</Button>
 
 <style>
   .group {
