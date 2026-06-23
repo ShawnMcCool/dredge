@@ -3,6 +3,16 @@
 All notable user-facing changes to dredge, newest first. Entries are written
 at release time by `scripts/ship release`.
 
+## v0.6.0 — 2026-06-23
+
+### New
+
+- **Choose your audio output and input devices.** A new **devices** tab in the right panel lists your outputs and inputs. Pick one and playback moves to it immediately — even mid-loop — and your choice is remembered between sessions. **System default** follows whatever your system is set to, and a **reset to system** button puts both back.
+
+### Improved
+
+- **The tuner follows the input you picked.** By default the tuner listens to the input device chosen in the devices tab; you can still override it to a specific device just for the tuner.
+
 ## v0.5.1 — 2026-06-23
 
 - **AUR prebuilt renamed to `dredge-looper-bin`.** The `dredge-bin` name on the AUR belongs to an unrelated package; install the prebuilt with `yay -S dredge-looper-bin`, or `yay -S dredge` to build from source. The package and binary are still `dredge`.
