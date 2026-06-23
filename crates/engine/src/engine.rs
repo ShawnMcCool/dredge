@@ -12,8 +12,6 @@ pub struct Engine {
     song_slot: Arc<ArcSwapOption<StemSet>>,
     /// Signals the current output thread to quit; replaced on each retarget.
     stop: Arc<AtomicBool>,
-    /// The currently selected output device (None ⇒ follow default sink).
-    target: Option<String>,
     /// Live snapshot of engine state, replayed onto a fresh pipeline when the
     /// output thread is respawned on a different device.
     state: EngineState,
@@ -34,7 +32,6 @@ impl Engine {
             evt_rx,
             song_slot,
             stop,
-            target: None,
             state: EngineState::default(),
             _audio_thread: Some(audio_thread),
         })
@@ -73,7 +70,6 @@ impl Engine {
         let (cmd_tx, cmd_rx) = rtrb::RingBuffer::<EngineCmd>::new(256);
         let (evt_tx, evt_rx) = rtrb::RingBuffer::<EngineEvent>::new(1024);
         self.stop = Arc::new(AtomicBool::new(false));
-        self.target = target.clone();
         let h = crate::output::spawn(
             cmd_rx,
             evt_tx,

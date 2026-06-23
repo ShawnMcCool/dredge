@@ -43,7 +43,13 @@ fn run(
         Some(name) => host
             .output_devices()
             .ok()
-            .and_then(|mut ds| ds.find(|d| d.name().map(|n| &n == name).unwrap_or(false)))
+            .and_then(|mut ds| {
+                ds.find(|d| {
+                    d.name()
+                        .map(|n| n.as_str() == name.as_str())
+                        .unwrap_or(false)
+                })
+            })
             .or_else(|| host.default_output_device()),
         None => host.default_output_device(),
     }
