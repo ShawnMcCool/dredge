@@ -19,6 +19,7 @@ pub struct EngineState {
     pub muted: bool,
     pub stem_gains: std::collections::BTreeMap<usize, f32>, // only observed indices
     pub volume: Option<f32>,
+    pub count_in: Option<(u32, f64, bool)>, // (beats, beat_secs, every_loop)
     pub playing: bool,
     pub pos_secs: f64,
 }
@@ -41,6 +42,11 @@ impl EngineState {
                 self.stem_gains.insert(*idx, *gain);
             }
             EngineCmd::SetVolume(v) => self.volume = Some(*v),
+            EngineCmd::SetCountIn {
+                beats,
+                beat_secs,
+                every_loop,
+            } => self.count_in = Some((*beats, *beat_secs, *every_loop)),
         }
     }
 
@@ -60,6 +66,13 @@ impl EngineState {
         let mut cmds = Vec::new();
         if let Some(v) = self.volume {
             cmds.push(EngineCmd::SetVolume(v));
+        }
+        if let Some((beats, beat_secs, every_loop)) = self.count_in {
+            cmds.push(EngineCmd::SetCountIn {
+                beats,
+                beat_secs,
+                every_loop,
+            });
         }
         if let Some(r) = self.rate {
             cmds.push(EngineCmd::SetRate(r));

@@ -5,6 +5,14 @@ use crate::stretch::{Stretcher, BLOCK_FRAMES};
 
 pub const GAIN_RAMP_FRAMES: usize = 240; // 5 ms
 
+/// Count-in click: a short sine ping with exponential decay. The first beat of
+/// the count is accented (higher pitch, louder).
+const CLICK_LEN_FRAMES: usize = (0.040 * SAMPLE_RATE as f64) as usize; // 40 ms
+const CLICK_FREQ_NORMAL: f64 = 1000.0;
+const CLICK_FREQ_ACCENT: f64 = 1500.0;
+const CLICK_DECAY: f64 = 40.0;
+const CLICK_AMP: f32 = 0.6;
+
 /// Copy-only commands — safe to ship over an SPSC ring into the RT thread.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum EngineCmd {
@@ -30,6 +38,14 @@ pub enum EngineCmd {
     /// User playback volume (clamped 0.0..=1.5) — a multiplier separate
     /// from the play/pause/mute gain ramp, with its own ramp to target.
     SetVolume(f32),
+    /// Configure the count-in pre-roll. `beats == 0` disables it.
+    /// `beat_secs` is the 1x beat interval (60 / bpm); the pipeline divides by
+    /// the current rate so the clicks track the speed fader.
+    SetCountIn {
+        beats: u32,
+        beat_secs: f64,
+        every_loop: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -52,6 +68,16 @@ pub struct Pipeline {
     volume: f32,
     target_volume: f32,
     feed_buf: Vec<f32>,
+    // count-in config (from SetCountIn)
+    ci_beats: u32,
+    ci_beat_secs: f64,
+    ci_every_loop: bool,
+    // count-in runtime (pre-roll in progress)
+    ci_active: bool,
+    ci_remaining: u32,
+    ci_to_next: usize,
+    ci_click_age: usize,
+    ci_accent: bool,
 }
 
 impl Pipeline {
@@ -69,6 +95,14 @@ impl Pipeline {
             volume: 1.0,
             target_volume: 1.0,
             feed_buf: vec![0.0; BLOCK_FRAMES * CHANNELS],
+            ci_beats: 0,
+            ci_beat_secs: 0.5,
+            ci_every_loop: false,
+            ci_active: false,
+            ci_remaining: 0,
+            ci_to_next: 0,
+            ci_click_age: 0,
+            ci_accent: false,
         }
     }
 
@@ -117,6 +151,15 @@ impl Pipeline {
             }
             EngineCmd::SetStemGain { idx, gain } => self.looper.set_gain(idx, gain),
             EngineCmd::SetVolume(v) => self.target_volume = v.clamp(0.0, 1.5),
+            EngineCmd::SetCountIn {
+                beats,
+                beat_secs,
+                every_loop,
+            } => {
+                self.ci_beats = beats;
+                self.ci_beat_secs = beat_secs;
+                self.ci_every_loop = every_loop;
+            }
         }
     }
 
