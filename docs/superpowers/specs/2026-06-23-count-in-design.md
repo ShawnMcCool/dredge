@@ -6,7 +6,7 @@ into the song or loop.
 ## Behavior (settled)
 
 - **Tempo source:** the song's analyzed BPM only. With no analysis, count-in is
-  unavailable (control disabled, engine forced off).
+  unavailable — the control is hidden and the engine is forced off.
 - **Length:** a beat-count stepper styled like the pitch control, `0` = off,
   default `4`. Plain beat count — no meter derivation for now.
 - **Rate tracking:** clicks follow the speed fader. At 70% speed the count-in is
@@ -76,8 +76,10 @@ play.
   matching the `mlabel` + stepper pattern:
   - Stepper `− [off|N] +`, `0` = off, default `4`.
   - A `first ⇄ every` chip shown only when count-in is on and a loop is active.
-  - When the song has no analysis, the segment is quietly dimmed/disabled — no
-    explainer text (per project copy conventions).
+  - When the song has no analysis (no BPM), the whole segment is **hidden** — not
+    dimmed. It appears once analysis lands. This mirrors the notes and drill
+    boxes, which are absent until their precondition exists, and avoids a dead
+    control that would otherwise want explainer copy.
 
 ## Testing
 
