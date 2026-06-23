@@ -2023,4 +2023,27 @@ mod count_in_tests {
             });
         assert_eq!(last, Some(0), "no analysis → count-in forced off");
     }
+
+    #[test]
+    fn countin_set_every_forwards_every_loop_true() {
+        // The loop mode is forwarded independently of BPM (it is a config flag,
+        // not gated like the beat count), so no open song is needed.
+        let (mock, mut app) = make_shared_mock();
+        app.dispatch(Request {
+            id: 1,
+            cmd: "countin.set".into(),
+            params: json!({ "beats": 4, "loop_mode": "every" }),
+        });
+        let last = mock
+            .lock()
+            .unwrap()
+            .sent
+            .iter()
+            .rev()
+            .find_map(|c| match c {
+                EngineCmd::SetCountIn { every_loop, .. } => Some(*every_loop),
+                _ => None,
+            });
+        assert_eq!(last, Some(true));
+    }
 }
