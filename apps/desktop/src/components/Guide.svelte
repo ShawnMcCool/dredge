@@ -76,6 +76,10 @@
       "sections",
       "Sections are the song's structure (verse / chorus / inst). Click a section header to play from there; double-click to loop it. Saved loops are named from the sections they cover.",
     ],
+    [
+      "devices",
+      "The devices tab picks the audio output and input. “System default” follows the system; the tuner's input defaults to following the chosen input.",
+    ],
   ];
 
   // The build — what every part of the app is made of. Kept honest against the
