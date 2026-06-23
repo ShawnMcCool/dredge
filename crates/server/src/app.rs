@@ -39,6 +39,11 @@ fn pitch_scale_factor(semitones: f64, cents: f64, octave_up: bool) -> f64 {
     2f64.powf((semitones + cents / 100.0) / 12.0) * if octave_up { 2.0 } else { 1.0 }
 }
 
+/// Count-in 1x beat interval from BPM (seconds per beat).
+fn beat_secs_from_bpm(bpm: f64) -> f64 {
+    60.0 / bpm
+}
+
 // --- shared dispatch (lock-phased heavy commands) ---------------------------
 
 /// Dispatch that holds the App lock only for state work — known-heavy
@@ -465,6 +470,7 @@ impl App {
             "bass_focus" => self.bass_focus(p),
             "mute" => self.mute(p),
             "pitch" => self.pitch(p),
+            "countin.set" => self.countin_set(p),
             "status" => self.status(),
             // device::list_* returns engine::error::Error (not String), so an
             // extra map_err converts it to String before err_str() takes over.
@@ -658,6 +664,47 @@ impl App {
             p.cents,
             p.octave_up,
         )))
+    }
+
+    fn countin_set(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            beats: u32,
+            loop_mode: String,
+        }
+        let p: P = from_params(p)?;
+        let val = json!({ "beats": p.beats, "loop_mode": p.loop_mode });
+        self.store.set_setting("count_in", &val).err_str()?;
+        self.push_count_in();
+        Ok(Value::Null)
+    }
+
+    /// Recompute and send the count-in config to the engine from the persisted
+    /// setting and the open song's analyzed BPM. With no open song or no BPM,
+    /// the count-in is forced off (`beats: 0`).
+    fn push_count_in(&mut self) {
+        let cfg = self
+            .store
+            .get_setting("count_in")
+            .ok()
+            .flatten()
+            .unwrap_or(Value::Null);
+        let beats = cfg.get("beats").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+        let every_loop = cfg.get("loop_mode").and_then(|v| v.as_str()) == Some("every");
+        let bpm = self
+            .open_song
+            .as_ref()
+            .and_then(|o| self.library.get_analysis(o.song.id))
+            .and_then(|a| a.bpm);
+        let (beats, beat_secs) = match bpm {
+            Some(b) if b > 0.0 && beats > 0 => (beats, beat_secs_from_bpm(b)),
+            _ => (0, 0.5),
+        };
+        self.audio.send(EngineCmd::SetCountIn {
+            beats,
+            beat_secs,
+            every_loop,
+        });
     }
 
     fn status(&self) -> Result<Value, String> {
@@ -1326,6 +1373,7 @@ impl App {
             song,
             stems: decoded.stems,
         });
+        self.push_count_in();
         Ok(out)
     }
 
@@ -1914,5 +1962,59 @@ mod device_tests {
             mock.lock().unwrap().output_device_log.is_empty(),
             "no saved device → set_output_device must not be called"
         );
+    }
+}
+
+#[cfg(test)]
+mod count_in_tests {
+    use super::*;
+    use crate::control::MockEngine;
+    use crate::stems::FakeSeparator;
+    use practice::store::Store;
+    use std::sync::{Arc, Mutex};
+
+    fn make_shared_mock() -> (Arc<Mutex<MockEngine>>, App) {
+        let mock = Arc::new(Mutex::new(MockEngine::default()));
+        let app = App::new(
+            Store::open_in_memory().unwrap(),
+            Box::new(mock.clone()),
+            Arc::new(FakeSeparator),
+        );
+        (mock, app)
+    }
+
+    #[test]
+    fn beat_secs_from_bpm_is_sixty_over_bpm() {
+        assert!((beat_secs_from_bpm(120.0) - 0.5).abs() < 1e-9);
+        assert!((beat_secs_from_bpm(60.0) - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn countin_set_persists_and_forwards_off_without_analysis() {
+        let (mock, mut app) = make_shared_mock();
+        let resp = app.dispatch(Request {
+            id: 1,
+            cmd: "countin.set".into(),
+            params: json!({ "beats": 4, "loop_mode": "first" }),
+        });
+        assert!(resp.ok, "expected ok, got: {:?}", resp.error);
+
+        // Persisted.
+        let saved = app.store.get_setting("count_in").unwrap().unwrap();
+        assert_eq!(saved["beats"], json!(4));
+        assert_eq!(saved["loop_mode"], json!("first"));
+
+        // No open song / no bpm → engine told beats: 0.
+        let last = mock
+            .lock()
+            .unwrap()
+            .sent
+            .iter()
+            .rev()
+            .find_map(|c| match c {
+                EngineCmd::SetCountIn { beats, .. } => Some(*beats),
+                _ => None,
+            });
+        assert_eq!(last, Some(0), "no analysis → count-in forced off");
     }
 }
