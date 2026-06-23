@@ -3,6 +3,11 @@
 All notable user-facing changes to dredge, newest first. Entries are written
 at release time by `scripts/ship release`.
 
+## v0.5.1 — 2026-06-23
+
+- **AUR prebuilt renamed to `dredge-looper-bin`.** The `dredge-bin` name on the AUR belongs to an unrelated package; install the prebuilt with `yay -S dredge-looper-bin`, or `yay -S dredge` to build from source. The package and binary are still `dredge`.
+- **Branding.** The app is presented as "Dredge Looper"; the command and package name remain `dredge`.
+
 ## v0.5.0 — 2026-06-20
 
 ### Improved
