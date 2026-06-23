@@ -9,6 +9,7 @@ use crate::pipeline::{EngineCmd, EngineEvent};
 use crate::render_core::RenderCore;
 use arc_swap::ArcSwapOption;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
@@ -16,11 +17,13 @@ pub fn spawn(
     cmd_rx: rtrb::Consumer<EngineCmd>,
     evt_tx: rtrb::Producer<EngineEvent>,
     song_slot: Arc<ArcSwapOption<StemSet>>,
+    target: Option<String>,
+    stop: Arc<AtomicBool>,
 ) -> crate::error::Result<JoinHandle<()>> {
     let handle = std::thread::Builder::new()
         .name("dredge-audio".into())
         .spawn(move || {
-            if let Err(e) = run(cmd_rx, evt_tx, song_slot) {
+            if let Err(e) = run(cmd_rx, evt_tx, song_slot, target, stop) {
                 eprintln!("dredge audio thread failed: {e}");
             }
         })?;
@@ -31,11 +34,20 @@ fn run(
     cmd_rx: rtrb::Consumer<EngineCmd>,
     evt_tx: rtrb::Producer<EngineEvent>,
     song_slot: Arc<ArcSwapOption<StemSet>>,
+    target: Option<String>,
+    stop: Arc<AtomicBool>,
 ) -> crate::error::Result<()> {
     let host = cpal::default_host();
-    let device = host
-        .default_output_device()
-        .ok_or_else(|| Error::Audio("no default output device".into()))?;
+    // Pick the device whose name matches `target`; fall back to the default.
+    let device = match &target {
+        Some(name) => host
+            .output_devices()
+            .ok()
+            .and_then(|mut ds| ds.find(|d| d.name().map(|n| &n == name).unwrap_or(false)))
+            .or_else(|| host.default_output_device()),
+        None => host.default_output_device(),
+    }
+    .ok_or_else(|| Error::Audio("no default output device".into()))?;
 
     // Request the engine's native format (48 kHz stereo f32). CoreAudio
     // devices support 48 kHz; if a host doesn't, build_output_stream errors
@@ -66,10 +78,12 @@ fn run(
         .play()
         .map_err(|e| Error::Audio(format!("play stream: {e}")))?;
 
-    // The Engine owns this JoinHandle and never joins it; park to keep the
-    // stream alive on this thread. park() may wake spuriously — re-parking is
-    // harmless, we never need to do work here.
-    loop {
-        std::thread::park();
+    // Keep the stream alive on this thread, parking until the engine signals a
+    // teardown (retarget). A short park timeout polls `stop`; park() may also
+    // wake spuriously, which is harmless — we just re-check and re-park.
+    while !stop.load(Ordering::Relaxed) {
+        std::thread::park_timeout(std::time::Duration::from_millis(100));
     }
+    drop(stream);
+    Ok(())
 }

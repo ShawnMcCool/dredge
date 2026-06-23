@@ -9,6 +9,7 @@ pub mod decode;
 pub mod device;
 pub mod encode;
 pub mod engine;
+pub mod engine_state;
 pub mod error;
 pub mod export;
 pub mod ffi;

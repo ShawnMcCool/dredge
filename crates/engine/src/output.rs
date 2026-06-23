@@ -11,8 +11,10 @@ use arc_swap::ArcSwapOption;
 use pipewire as pw;
 use pw::{properties::properties, spa};
 use spa::pod::Pod;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 // The render fast-path casts f32 samples straight to F32LE output bytes; that is
 // only correct on a little-endian host.
@@ -30,11 +32,13 @@ pub fn spawn(
     cmd_rx: rtrb::Consumer<EngineCmd>,
     evt_tx: rtrb::Producer<EngineEvent>,
     song_slot: Arc<ArcSwapOption<StemSet>>,
+    target: Option<String>,
+    stop: Arc<AtomicBool>,
 ) -> crate::error::Result<JoinHandle<()>> {
     let handle = std::thread::Builder::new()
         .name("dredge-pw".into())
         .spawn(move || {
-            if let Err(e) = run(cmd_rx, evt_tx, song_slot) {
+            if let Err(e) = run(cmd_rx, evt_tx, song_slot, target, stop) {
                 eprintln!("dredge pipewire thread failed: {e}");
             }
         })?;
@@ -45,25 +49,30 @@ fn run(
     cmd_rx: rtrb::Consumer<EngineCmd>,
     evt_tx: rtrb::Producer<EngineEvent>,
     song_slot: Arc<ArcSwapOption<StemSet>>,
+    target: Option<String>,
+    stop: Arc<AtomicBool>,
 ) -> Result<(), pw::Error> {
     pw::init();
     let mainloop = pw::main_loop::MainLoopRc::new(None)?;
     let context = pw::context::ContextRc::new(&mainloop, None)?;
     let core = context.connect_rc(None)?;
 
-    let stream = pw::stream::StreamBox::new(
-        &core,
-        "dredge",
-        properties! {
-            *pw::keys::MEDIA_TYPE => "Audio",
-            *pw::keys::MEDIA_ROLE => "Music",
-            *pw::keys::MEDIA_CATEGORY => "Playback",
-            *pw::keys::AUDIO_CHANNELS => "2",
-            *pw::keys::NODE_NAME => "dredge",
-            // playback tool, not an instrument chain — a modest quantum is right
-            *pw::keys::NODE_LATENCY => "1024/48000",
-        },
-    )?;
+    let mut props = properties! {
+        *pw::keys::MEDIA_TYPE => "Audio",
+        *pw::keys::MEDIA_ROLE => "Music",
+        *pw::keys::MEDIA_CATEGORY => "Playback",
+        *pw::keys::AUDIO_CHANNELS => "2",
+        *pw::keys::NODE_NAME => "dredge",
+        // playback tool, not an instrument chain — a modest quantum is right
+        *pw::keys::NODE_LATENCY => "1024/48000",
+    };
+    // Pin output to the chosen sink by object.serial. None ⇒ no insert ⇒ the
+    // stream follows the default sink (the historical behaviour).
+    if let Some(serial) = &target {
+        props.insert(*pw::keys::TARGET_OBJECT, serial.as_str());
+    }
+
+    let stream = pw::stream::StreamBox::new(&core, "dredge", props)?;
 
     let state = State {
         core: crate::render_core::RenderCore::new(cmd_rx, evt_tx, song_slot),
@@ -135,7 +144,27 @@ fn run(
         &mut params,
     )?;
 
+    // poll the stop flag; quit the loop when the engine retargets/tears down
+    let timer = mainloop.loop_().add_timer({
+        let weak = mainloop.downgrade();
+        move |_| {
+            if stop.load(Ordering::Relaxed) {
+                if let Some(ml) = weak.upgrade() {
+                    ml.quit();
+                }
+            }
+        }
+    });
+    timer
+        .update_timer(
+            Some(Duration::from_millis(100)),
+            Some(Duration::from_millis(100)),
+        )
+        .into_result()
+        .map_err(pw::Error::SpaError)?;
+
     mainloop.run();
+    drop(timer);
 
     Ok(())
 }
