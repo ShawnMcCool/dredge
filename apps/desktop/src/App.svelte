@@ -7,6 +7,7 @@
   import Guide from "./components/Guide.svelte";
   import Library from "./components/Library.svelte";
   import Loops from "./components/Loops.svelte";
+  import MetronomeBox from "./components/MetronomeBox.svelte";
   import ProfilingPanel from "./components/ProfilingPanel.svelte";
   import Isolation from "./components/Isolation.svelte";
   import Notes from "./components/Notes.svelte";
@@ -122,6 +123,7 @@
          the row once a track is open. The drill sits last, after the standing
          boxes, since it only appears mid-practice. -->
     <div class="boxes">
+      <MetronomeBox />
       {#if $openSong}
         <Isolation />
         <ClickTrack />
