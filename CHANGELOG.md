@@ -3,6 +3,24 @@
 All notable user-facing changes to dredge, newest first. Entries are written
 at release time by `scripts/ship release`.
 
+## v0.7.0 — 2026-06-24
+
+### New
+
+- **Count-in.** A pre-roll click counts you in before playback starts, so you're not scrambling on beat one. Set how many beats to count (1–8), and choose whether it counts once at the start or before every loop pass. The playhead holds and pulses through the count so you can see the beat land. (Needs an analyzed song, so it knows the tempo and time signature — it even defaults the beat count to the song's meter.)
+
+- **Click track with per-section guides.** Mark any section to get a beat click while it plays. This is built for drilling along to the isolated drums: when a section drops the drums out, the click fills the gap so you hold time and land back in the pocket when the band returns. It rides the song's real beat grid — locked to the actual timing even as you slow things down — and stops cleanly at the section boundary. Count-in and the section click now share one **Click track** control.
+
+- **Metronome.** A standalone practice metronome that works with or without a song loaded — open dredge and drill scales to a click, no track required. Set the tempo or tap it in, pick a time signature, and choose how often it clicks (every beat, every half-bar, or just the downbeat) and what it sounds like: a plain click, a kick/snare, or a cowbell. A row of lights shows your place in the bar. With a song open, one tap borrows its tempo. The kick/snare plays a real groove — a backbeat in 4/4 (kick on 1 and 3, snare on 2 and 4), a waltz feel in 3/4 — and odd meters like 5/4 and 7/8 accent the right beats.
+
+### Fixed
+
+- **The playhead stays inside your loop.** While playing a loop, the playhead no longer drifts outside the loop box — it stays clamped to the section you're drilling.
+
+- **Editing your song structure keeps your click guides.** Re-drawing sections no longer silently clears which ones have a beat-click guide, and the click updates immediately instead of clicking the old spans.
+
+- **Section notes hold steady during the count-in.** The notes panel no longer flips to the next section while the pre-roll is counting you in.
+
 ## v0.6.0 — 2026-06-23
 
 ### New
