@@ -13,6 +13,63 @@ const CLICK_FREQ_ACCENT: f64 = 1500.0;
 const CLICK_DECAY: f64 = 40.0;
 const CLICK_AMP: f32 = 0.6;
 
+/// One scheduled click: a beat time (song seconds) and whether it's accented
+/// (a downbeat). The section-click schedule is a sorted slice of these.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ClickMark {
+    pub secs: f64,
+    pub accent: bool,
+}
+
+/// The click waveform sample for a given envelope age (frames since trigger),
+/// shared by the count-in pre-roll and the section-click overlay so they sound
+/// identical. Silent once the envelope has decayed.
+fn click_wave(age: usize, accent: bool, volume: f32) -> f32 {
+    if age >= CLICK_LEN_FRAMES {
+        return 0.0;
+    }
+    let t = age as f64 / SAMPLE_RATE as f64;
+    let f = if accent {
+        CLICK_FREQ_ACCENT
+    } else {
+        CLICK_FREQ_NORMAL
+    };
+    let env = (-CLICK_DECAY * t).exp();
+    let amp = if accent { CLICK_AMP } else { CLICK_AMP * 0.7 };
+    ((2.0 * std::f64::consts::PI * f * t).sin() * env) as f32 * amp * volume
+}
+
+/// A one-shot click for the section-click overlay: retrigger on each beat, mix
+/// its `sample()` over the music until the envelope decays.
+pub struct ClickVoice {
+    age: usize,
+    accent: bool,
+}
+
+impl Default for ClickVoice {
+    fn default() -> Self {
+        // Start decayed so a fresh voice is silent until triggered.
+        Self {
+            age: CLICK_LEN_FRAMES,
+            accent: false,
+        }
+    }
+}
+
+impl ClickVoice {
+    fn trigger(&mut self, accent: bool) {
+        self.age = 0;
+        self.accent = accent;
+    }
+    /// Advances the envelope by one frame, then returns the sample. Stepping
+    /// first skips the always-silent age-0 sample (`sin(0) == 0`) so a freshly
+    /// triggered voice is audible immediately.
+    fn sample(&mut self, volume: f32) -> f32 {
+        self.age = self.age.saturating_add(1);
+        click_wave(self.age, self.accent, volume)
+    }
+}
+
 /// Copy-only commands — safe to ship over an SPSC ring into the RT thread.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum EngineCmd {
@@ -230,22 +287,7 @@ impl Pipeline {
     /// One interleaved click sample for the current pre-roll frame, scaled by
     /// the volume knob. Silent once the click envelope has decayed.
     fn click_sample(&self) -> f32 {
-        if self.ci_click_age >= CLICK_LEN_FRAMES {
-            return 0.0;
-        }
-        let t = self.ci_click_age as f64 / SAMPLE_RATE as f64;
-        let f = if self.ci_accent {
-            CLICK_FREQ_ACCENT
-        } else {
-            CLICK_FREQ_NORMAL
-        };
-        let env = (-CLICK_DECAY * t).exp();
-        let amp = if self.ci_accent {
-            CLICK_AMP
-        } else {
-            CLICK_AMP * 0.7
-        };
-        ((2.0 * std::f64::consts::PI * f * t).sin() * env) as f32 * amp * self.volume
+        click_wave(self.ci_click_age, self.ci_accent, self.volume)
     }
 
     /// Fill `out` with count-in clicks. Returns the number of frames consumed
@@ -404,6 +446,30 @@ mod tests {
     use super::*;
 
     use crate::buffer::SongBuffer;
+
+    #[test]
+    fn click_voice_decays_and_is_silent_until_triggered() {
+        let mut v = ClickVoice::default();
+        assert_eq!(v.sample(1.0), 0.0, "silent before trigger");
+        v.trigger(false);
+        let first = v.sample(1.0).abs();
+        // advance through most of the envelope
+        for _ in 0..(CLICK_LEN_FRAMES / 2) {
+            v.sample(1.0);
+        }
+        let later = v.sample(1.0).abs();
+        assert!(first > 0.0, "audible right after trigger");
+        assert!(later < first, "envelope decays");
+    }
+
+    #[test]
+    fn click_voice_accent_is_louder() {
+        let mut normal = ClickVoice::default();
+        normal.trigger(false);
+        let mut accent = ClickVoice::default();
+        accent.trigger(true);
+        assert!(accent.sample(1.0).abs() > normal.sample(1.0).abs());
+    }
 
     fn sine(secs: f64, hz: f32, amp: f32) -> SongBuffer {
         let frames = (secs * SAMPLE_RATE as f64) as usize;
