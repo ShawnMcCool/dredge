@@ -440,13 +440,14 @@ impl Pipeline {
         // play/pause gain) so it stays a steady metronome.
         if self.playing {
             let region = self.looper.region();
+            let period = self.looper.loop_period_frames();
             if self.clicks.is_empty() {
                 // OFF fast path: no per-frame work — bulk-advance the audible
                 // cursor so it stays valid if a schedule is installed mid-play.
                 self.audible_frame += filled as f64 * self.rate;
-                if let Some((start, end)) = region {
-                    while self.audible_frame >= end as f64 {
-                        self.audible_frame -= (end - start) as f64;
+                if let (Some((_start, end)), Some(period)) = (region, period) {
+                    while self.audible_frame >= end as f64 && period > 0 {
+                        self.audible_frame -= period as f64;
                     }
                 }
             } else {
@@ -469,9 +470,9 @@ impl Pipeline {
                     fr[0] += s;
                     fr[1] += s;
                     self.audible_frame += self.rate;
-                    if let Some((start, end)) = region {
-                        if self.audible_frame >= end as f64 {
-                            self.audible_frame -= (end - start) as f64;
+                    if let (Some((_start, end)), Some(period)) = (region, period) {
+                        while self.audible_frame >= end as f64 && period > 0 {
+                            self.audible_frame -= period as f64;
                             self.reseek_click_cursor();
                         }
                     }
@@ -492,6 +493,8 @@ impl Pipeline {
             self.ci_pass_at_end = false;
             if let Some((start, _end)) = self.looper.region() {
                 self.looper.seek(start);
+                self.audible_frame = start as f64;
+                self.reseek_click_cursor();
                 self.arm_count_in();
                 events.push(EngineEvent::LoopWrapped);
             }
@@ -521,6 +524,7 @@ mod tests {
     use super::*;
 
     use crate::buffer::SongBuffer;
+    use crate::looper::XFADE_FRAMES;
 
     #[test]
     fn click_voice_decays_and_is_silent_until_triggered() {
@@ -1027,6 +1031,59 @@ mod tests {
             (at as i64 - expected as i64).abs() < (SAMPLE_RATE as i64 / 50),
             "click at frame {at}, expected ~{expected}"
         );
+    }
+
+    #[test]
+    fn section_click_does_not_drift_across_loop_passes() {
+        use std::sync::Arc;
+        // Silent 4s song; loop [1.0, 3.0). One click at 1.5s (0.5s into loop).
+        let song = StemSet::new(vec![sine(4.0, 440.0, 0.0)]);
+        let mut p = Pipeline::new(song);
+        p.set_click_schedule(Arc::new(vec![ClickMark { secs: 1.5, accent: false }]));
+        p.apply(EngineCmd::SetLoopSecs { start: 1.0, end: 3.0 });
+        p.apply(EngineCmd::SeekSecs(1.0));
+        p.apply(EngineCmd::Play);
+
+        let block = 256usize;
+        let mut out = vec![0.0f32; block * CHANNELS];
+        let mut events = Vec::new();
+        // Absolute output frame of each click onset. The click ping is a
+        // decaying sine that crosses the threshold many times within its ~40 ms
+        // envelope, so debounce: an onset is the first loud frame after a quiet
+        // gap longer than the envelope.
+        let mut onsets: Vec<i64> = Vec::new();
+        let mut global = 0i64;
+        let debounce = SAMPLE_RATE as i64 / 10; // 100 ms
+        let passes = (6.0 * SAMPLE_RATE as f64) as usize / block;
+        for _ in 0..passes {
+            out.iter_mut().for_each(|s| *s = 0.0);
+            p.render(&mut out, &mut events);
+            for i in 0..block {
+                let v = out[i * CHANNELS].abs();
+                if v > 0.05 {
+                    let at = global + i as i64;
+                    if onsets.last().is_none_or(|&prev| at - prev > debounce) {
+                        onsets.push(at);
+                    }
+                }
+            }
+            global += block as i64;
+        }
+        assert!(
+            onsets.len() >= 3,
+            "expected multiple click passes, got {onsets:?}"
+        );
+        // Consecutive onsets are spaced by the audible loop period (len - xfade),
+        // not the full region length. The old (end - start) wrap inflates the
+        // spacing by xfade (~10 ms) every pass — that is the drift.
+        let period = (2.0 * SAMPLE_RATE as f64) as i64 - XFADE_FRAMES as i64;
+        let gaps: Vec<i64> = onsets.windows(2).map(|w| w[1] - w[0]).collect();
+        for &g in &gaps {
+            assert!(
+                (g - period).abs() < SAMPLE_RATE as i64 / 100, // <10 ms tolerance
+                "click spacing {g} != audible period {period}; gaps = {gaps:?}"
+            );
+        }
     }
 
     #[test]

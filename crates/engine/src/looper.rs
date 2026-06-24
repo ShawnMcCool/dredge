@@ -69,6 +69,17 @@ impl Looper {
         self.region
     }
 
+    /// The steady-state loop period in frames: how far `audible_frame` advances
+    /// before the crossfade-wrap resumes at `start + xfade`. Matches the wrap
+    /// behaviour in `read` (subtracting this maps a position at `end` back to
+    /// `start + xfade`). `None` when no region is set.
+    pub fn loop_period_frames(&self) -> Option<usize> {
+        self.region.map(|(start, end)| {
+            let len = end - start;
+            len - XFADE_FRAMES.min(len / 4)
+        })
+    }
+
     /// Read up to `frames` contiguous frames from the current position into
     /// `out`, ignoring the loop region (no crossfade, no wrap). Returns the
     /// number of frames written. For pipeline-driven looping (every-loop
