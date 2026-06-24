@@ -6,6 +6,7 @@
     analysisError,
     openSong,
     prepareState,
+    sectionClickAvailable,
     selection,
     type AnalysisSection,
   } from "../lib/stores";
@@ -80,6 +81,10 @@
   }
 
   let analysis = $derived($openSong?.analysis ?? null);
+  // The saved sections, in display order — used to back the per-row click-guide
+  // toggle with a real section (id + click_guide flag). Display rows mirror this
+  // list 1:1 when sections are saved; provisional (suggested) rows have no match.
+  let savedSections = $derived($openSong?.sections ?? []);
   let running = $derived($prepareState !== null);
   let hasAnalysis = $derived((analysis?.sections?.length ?? 0) > 0);
 
@@ -232,6 +237,23 @@
             <span class="name">{row.name}</span>
             <span class="range mono">{fmtDur(row.start, true)}–{fmtDur(row.end, true)}</span>
           </button>
+          {#if $sectionClickAvailable && savedSections[i]}
+            {@const section = savedSections[i]}
+            <button
+              class="click-toggle"
+              class:on={section.click_guide}
+              onclick={() => actions.toggleSectionClick(section.id, !section.click_guide)}
+              title="beat-click guide during this section"
+              aria-label="toggle beat click for this section"
+              aria-pressed={section.click_guide ?? false}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M9 18V6l8-2v12" />
+                <circle cx="6.5" cy="18" r="2.5" />
+                <circle cx="14.5" cy="16" r="2.5" />
+              </svg>
+            </button>
+          {/if}
           <button class="loop txt-btn" onclick={() => loop(row)} title="loop this section">loop</button>
         </li>
       {/each}
@@ -389,6 +411,41 @@
     pointer-events: auto;
   }
   .loop:hover {
+    color: var(--accent);
+  }
+
+  /* per-row beat-click toggle — like the loop affordance, it holds its slot and
+     stays hidden until the row is hovered/focused, EXCEPT when armed (.on), where
+     it stays lit so you can see which sections carry a click without hovering */
+  .click-toggle {
+    flex: 0 0 auto;
+    align-self: center;
+    display: flex;
+    align-items: center;
+    margin-right: 6px;
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--muted);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.12s, color 0.12s;
+    pointer-events: none;
+  }
+  .click-toggle svg {
+    width: 14px;
+    height: 14px;
+  }
+  .row:hover .click-toggle,
+  .click-toggle:focus-visible,
+  .click-toggle.on {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .click-toggle:hover {
+    color: var(--fg);
+  }
+  .click-toggle.on {
     color: var(--accent);
   }
 
