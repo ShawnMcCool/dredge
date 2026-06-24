@@ -35,7 +35,7 @@ fn metronome_set_forwards_to_engine_and_persists_without_running() {
         "metronome.set",
         json!({
             "running": true, "bpm": 100.0, "beats_per_bar": 3,
-            "cadence": "bar", "kit": "kick_snare"
+            "strong_mask": 5, "cadence": "bar", "kit": "kick_snare"
         }),
     );
 
@@ -46,6 +46,7 @@ fn metronome_set_forwards_to_engine_and_persists_without_running() {
             engine::pipeline::EngineCmd::SetMetronome {
                 running: true,
                 beats_per_bar: 3,
+                strong_mask: 5,
                 ..
             }
         )),
@@ -56,6 +57,7 @@ fn metronome_set_forwards_to_engine_and_persists_without_running() {
     let all = req(&mut app, "settings.get_all", json!({}));
     assert_eq!(all["metronome"]["bpm"], json!(100.0));
     assert_eq!(all["metronome"]["beats_per_bar"], json!(3));
+    assert_eq!(all["metronome"]["strong_mask"], json!(5));
     assert_eq!(all["metronome"]["cadence"], json!("bar"));
     assert_eq!(all["metronome"]["kit"], json!("kick_snare"));
     assert!(

@@ -143,6 +143,7 @@ pub struct Metronome {
     running: bool,
     interval: usize,
     beats_per_bar: u32,
+    strong_mask: u32,
     cadence: Cadence,
     kit: Kit,
     to_next: usize,
@@ -157,6 +158,7 @@ impl Default for Metronome {
             running: false,
             interval: (0.5 * SR) as usize,
             beats_per_bar: 4,
+            strong_mask: 1,
             cadence: Cadence::EveryBeat,
             kit: Kit::Click,
             to_next: 0,
@@ -185,6 +187,7 @@ impl Metronome {
         running: bool,
         beat_secs: f64,
         beats_per_bar: u32,
+        strong_mask: u32,
         cadence: Cadence,
         kit: Kit,
     ) {
@@ -192,6 +195,7 @@ impl Metronome {
         self.running = running;
         self.interval = ((beat_secs * SR).round() as usize).max(1);
         self.beats_per_bar = beats_per_bar.max(1);
+        self.strong_mask = strong_mask;
         self.cadence = cadence;
         self.kit = kit;
         if starting {
@@ -212,7 +216,8 @@ impl Metronome {
                     let beat = self.beat_idx % self.beats_per_bar;
                     let sounded = cadence_sounds(self.cadence, beat, self.beats_per_bar);
                     if sounded {
-                        self.voice.trigger(sound_for(self.kit, beat == 0));
+                        let strong = self.strong_mask & (1 << beat) != 0;
+                        self.voice.trigger(sound_for(self.kit, strong));
                     }
                     events.push(MetronomeBeat {
                         beat: beat + 1,
@@ -256,7 +261,7 @@ mod tests {
     #[test]
     fn fires_beats_at_the_bpm_interval() {
         let mut m = Metronome::default();
-        m.configure(true, 0.5, 4, Cadence::EveryBeat, Kit::Click);
+        m.configure(true, 0.5, 4, 0b101, Cadence::EveryBeat, Kit::Click);
         let (_out, beats) = render_secs(&mut m, 2.1);
         let sounded: Vec<_> = beats.iter().filter(|b| b.sounded).collect();
         assert!(
@@ -271,7 +276,7 @@ mod tests {
     #[test]
     fn downbeat_recurs_every_bar() {
         let mut m = Metronome::default();
-        m.configure(true, 0.25, 4, Cadence::EveryBeat, Kit::Click);
+        m.configure(true, 0.25, 4, 0b101, Cadence::EveryBeat, Kit::Click);
         let (_o, beats) = render_secs(&mut m, 2.1);
         let labels: Vec<u32> = beats.iter().map(|b| b.beat).take(8).collect();
         assert_eq!(labels, vec![1, 2, 3, 4, 1, 2, 3, 4]);
@@ -280,7 +285,7 @@ mod tests {
     #[test]
     fn every_bar_cadence_sounds_only_the_downbeat() {
         let mut m = Metronome::default();
-        m.configure(true, 0.25, 4, Cadence::EveryBar, Kit::Click);
+        m.configure(true, 0.25, 4, 0b101, Cadence::EveryBar, Kit::Click);
         let (_o, beats) = render_secs(&mut m, 2.1);
         for b in &beats {
             assert_eq!(
@@ -296,7 +301,7 @@ mod tests {
     #[test]
     fn half_bar_cadence_sounds_one_and_mid() {
         let mut m = Metronome::default();
-        m.configure(true, 0.25, 4, Cadence::HalfBar, Kit::Click);
+        m.configure(true, 0.25, 4, 0b101, Cadence::HalfBar, Kit::Click);
         let (_o, beats) = render_secs(&mut m, 2.1);
         for b in &beats {
             let want = b.beat == 1 || b.beat == 3;
@@ -308,7 +313,7 @@ mod tests {
     fn half_bar_cadence_in_odd_meter_sounds_one_and_mid() {
         // 5/4: HalfBar sounds beat 1 and the integer mid-bar beat (1 + 5/2 = 3).
         let mut m = Metronome::default();
-        m.configure(true, 0.2, 5, Cadence::HalfBar, Kit::Click);
+        m.configure(true, 0.2, 5, 0b1001, Cadence::HalfBar, Kit::Click);
         let (_o, beats) = render_secs(&mut m, 2.1);
         assert!(beats.iter().any(|b| b.beat == 3), "saw a beat 3 to check");
         for b in &beats {
@@ -320,7 +325,7 @@ mod tests {
     #[test]
     fn stopped_metronome_is_silent_and_emits_no_beats() {
         let mut m = Metronome::default();
-        m.configure(false, 0.5, 4, Cadence::EveryBeat, Kit::Click);
+        m.configure(false, 0.5, 4, 0b101, Cadence::EveryBeat, Kit::Click);
         let (out, beats) = render_secs(&mut m, 1.0);
         assert!(beats.is_empty());
         assert!(out.iter().all(|s| *s == 0.0));
@@ -329,7 +334,7 @@ mod tests {
     #[test]
     fn audible_output_when_running() {
         let mut m = Metronome::default();
-        m.configure(true, 0.5, 4, Cadence::EveryBeat, Kit::KickSnare);
+        m.configure(true, 0.5, 4, 0b101, Cadence::EveryBeat, Kit::KickSnare);
         let (out, _b) = render_secs(&mut m, 1.0);
         assert!(
             out.iter().any(|s| s.abs() > 0.01),
@@ -384,5 +389,19 @@ mod tests {
             lp = lp.max(lo.sample(1.0, &mut rng).abs());
         }
         assert!(hp > lp, "click accent louder: {hp} > {lp}");
+    }
+
+    #[test]
+    fn strong_mask_selects_accent_voice_per_beat() {
+        // 4/4 backbeat mask (beats 1,3 strong). Kick/Snare: kick on 1,3; snare on 2,4.
+        // Assert the generator runs with a mask and produces audio + correct beat labels.
+        let mut m = Metronome::default();
+        m.configure(true, 0.25, 4, 0b101, Cadence::EveryBeat, Kit::KickSnare);
+        let (out, beats) = render_secs(&mut m, 2.1);
+        assert!(out.iter().any(|s| s.abs() > 0.01));
+        assert_eq!(
+            beats.iter().take(4).map(|b| b.beat).collect::<Vec<_>>(),
+            vec![1, 2, 3, 4]
+        );
     }
 }

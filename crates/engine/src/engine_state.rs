@@ -21,8 +21,8 @@ pub struct EngineState {
     pub stem_gains: std::collections::BTreeMap<usize, f32>, // only observed indices
     pub volume: Option<f32>,
     pub count_in: Option<(u32, f64, bool)>, // (beats, beat_secs, every_loop)
-    /// Last metronome config (running, beat_secs, beats_per_bar, cadence, kit).
-    pub metronome: Option<(bool, f64, u32, Cadence, Kit)>,
+    /// Last metronome config (running, beat_secs, beats_per_bar, strong_mask, cadence, kit).
+    pub metronome: Option<(bool, f64, u32, u32, Cadence, Kit)>,
     pub playing: bool,
     pub pos_secs: f64,
 }
@@ -54,9 +54,19 @@ impl EngineState {
                 running,
                 beat_secs,
                 beats_per_bar,
+                strong_mask,
                 cadence,
                 kit,
-            } => self.metronome = Some((*running, *beat_secs, *beats_per_bar, *cadence, *kit)),
+            } => {
+                self.metronome = Some((
+                    *running,
+                    *beat_secs,
+                    *beats_per_bar,
+                    *strong_mask,
+                    *cadence,
+                    *kit,
+                ))
+            }
         }
     }
 
@@ -95,11 +105,13 @@ impl EngineState {
         for (&idx, &gain) in &self.stem_gains {
             cmds.push(EngineCmd::SetStemGain { idx, gain });
         }
-        if let Some((running, beat_secs, beats_per_bar, cadence, kit)) = self.metronome {
+        if let Some((running, beat_secs, beats_per_bar, strong_mask, cadence, kit)) = self.metronome
+        {
             cmds.push(EngineCmd::SetMetronome {
                 running,
                 beat_secs,
                 beats_per_bar,
+                strong_mask,
                 cadence,
                 kit,
             });
@@ -185,17 +197,19 @@ mod tests {
             running: true,
             beat_secs: 0.5,
             beats_per_bar: 3,
+            strong_mask: 0b101,
             cadence: Cadence::HalfBar,
             kit: Kit::KickSnare,
         });
         assert_eq!(
             s.metronome,
-            Some((true, 0.5, 3, Cadence::HalfBar, Kit::KickSnare))
+            Some((true, 0.5, 3, 0b101, Cadence::HalfBar, Kit::KickSnare))
         );
         assert!(s.replay_cmds().contains(&EngineCmd::SetMetronome {
             running: true,
             beat_secs: 0.5,
             beats_per_bar: 3,
+            strong_mask: 0b101,
             cadence: Cadence::HalfBar,
             kit: Kit::KickSnare,
         }));

@@ -8,7 +8,7 @@ import { subdivisionTimes, type GridSubdivision } from "./waveform-math";
 import { bisect, nudgeEdge, rateForRep, runUp, type Span } from "./drill";
 import { deriveLoopName } from "./loop-name";
 import { meterNumerator } from "./meter";
-import { tapTempo as computeTap, clampBpm, type TapState } from "./metronome";
+import { tapTempo as computeTap, clampBpm, strongMask, type TapState } from "./metronome";
 import { resolveTunerInput } from "./devices";
 import type { NotesDoc } from "./notes-doc";
 
@@ -676,6 +676,7 @@ export const actions = {
       running: m.running,
       bpm: m.bpm,
       beats_per_bar: m.beatsPerBar,
+      strong_mask: strongMask(m.beatsPerBar),
       cadence: m.cadence,
       kit: m.kit,
     });

@@ -727,6 +727,7 @@ impl App {
             running: bool,
             bpm: f64,
             beats_per_bar: u32,
+            strong_mask: u32,
             cadence: String,
             kit: String,
         }
@@ -737,6 +738,7 @@ impl App {
                 &json!({
                     "bpm": p.bpm.clamp(30.0, 300.0),
                     "beats_per_bar": p.beats_per_bar.max(1),
+                    "strong_mask": p.strong_mask,
                     "cadence": p.cadence,
                     "kit": p.kit,
                 }),
@@ -764,6 +766,7 @@ impl App {
             .get("beats_per_bar")
             .and_then(|v| v.as_u64())
             .unwrap_or(4) as u32;
+        let strong_mask = cfg.get("strong_mask").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
         let cadence = match cfg.get("cadence").and_then(|v| v.as_str()) {
             Some("bar") => Cadence::EveryBar,
             Some("half") => Cadence::HalfBar,
@@ -778,6 +781,7 @@ impl App {
             running,
             beat_secs: 60.0 / bpm,
             beats_per_bar: beats_per_bar.max(1),
+            strong_mask,
             cadence,
             kit,
         });

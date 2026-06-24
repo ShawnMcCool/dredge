@@ -100,12 +100,19 @@ impl RenderCore {
                 running,
                 beat_secs,
                 beats_per_bar,
+                strong_mask,
                 cadence,
                 kit,
             } = cmd
             {
-                self.metronome
-                    .configure(running, beat_secs, beats_per_bar, cadence, kit);
+                self.metronome.configure(
+                    running,
+                    beat_secs,
+                    beats_per_bar,
+                    strong_mask,
+                    cadence,
+                    kit,
+                );
                 continue;
             }
             if let Some(p) = self.pipeline.as_mut() {
@@ -165,6 +172,7 @@ mod tests {
                 running: true,
                 beat_secs: 0.5,
                 beats_per_bar: 4,
+                strong_mask: 0b101,
                 cadence: Cadence::EveryBeat,
                 kit: Kit::Click,
             })

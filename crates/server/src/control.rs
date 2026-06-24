@@ -104,6 +104,7 @@ mod metronome_control_tests {
             running: true,
             beat_secs: 0.5,
             beats_per_bar: 4,
+            strong_mask: 0b101,
             cadence: Cadence::EveryBeat,
             kit: Kit::Click,
         });

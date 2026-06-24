@@ -111,6 +111,7 @@ pub enum EngineCmd {
         running: bool,
         beat_secs: f64,
         beats_per_bar: u32,
+        strong_mask: u32,
         cadence: Cadence,
         kit: Kit,
     },

@@ -1,11 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { clampBpm, tapTempo, type TapState } from "./metronome";
+import { clampBpm, strongMask, tapTempo, type TapState } from "./metronome";
 
 describe("clampBpm", () => {
   it("clamps to 30..300 and rounds", () => {
     expect(clampBpm(12)).toBe(30);
     expect(clampBpm(999)).toBe(300);
     expect(clampBpm(120.4)).toBe(120);
+  });
+});
+
+describe("strongMask", () => {
+  it("marks group-starts per the default grouping", () => {
+    expect(strongMask(2)).toBe(0b1);
+    expect(strongMask(3)).toBe(0b1);
+    expect(strongMask(4)).toBe(0b101); // beats 1,3
+    expect(strongMask(5)).toBe(0b1001); // beats 1,4 (3+2)
+    expect(strongMask(6)).toBe(0b10101); // beats 1,3,5
+    expect(strongMask(7)).toBe(0b10101); // beats 1,3,5 (2+2+3)
+  });
+  it("beat 1 is always strong", () => {
+    for (let n = 1; n <= 12; n++) expect(strongMask(n) & 1).toBe(1);
   });
 });
 

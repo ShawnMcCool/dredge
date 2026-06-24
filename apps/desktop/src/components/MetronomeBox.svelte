@@ -2,7 +2,7 @@
   import Box from "../lib/ui/Box.svelte";
   import Group from "../lib/ui/Group.svelte";
   import { actions, metronome, metronomeBeat, openSong, type Cadence, type Kit } from "../lib/stores";
-  import { clampBpm } from "../lib/metronome";
+  import { clampBpm, strongMask } from "../lib/metronome";
 
   const KITS: { id: Kit; label: string }[] = [
     { id: "click", label: "click" },
@@ -19,6 +19,8 @@
   let canSync = $derived($openSong?.analysis?.bpm != null);
   let beat = $derived($metronomeBeat);
   let dots = $derived(Array.from({ length: $metronome.beatsPerBar }, (_, i) => i + 1));
+  let mask = $derived(strongMask($metronome.beatsPerBar));
+  const isStrong = (d: number) => (mask & (1 << (d - 1))) !== 0;
 
   function setBpm(raw: number) {
     if (!Number.isFinite(raw)) return;
@@ -33,6 +35,7 @@
         <span
           class="dot"
           class:accent={d === 1}
+          class:strong={isStrong(d) && d !== 1}
           class:lit={beat?.beat === d && $metronome.running}
         ></span>
       {/each}
@@ -113,6 +116,11 @@
     border-radius: 50%;
     background: var(--line);
     transition: background 60ms;
+  }
+  .dot.strong {
+    width: 11px;
+    height: 11px;
+    background: var(--accent-dim);
   }
   .dot.accent {
     width: 12px;
