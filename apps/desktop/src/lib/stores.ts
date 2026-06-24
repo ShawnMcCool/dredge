@@ -8,6 +8,7 @@ import { subdivisionTimes, type GridSubdivision } from "./waveform-math";
 import { bisect, nudgeEdge, rateForRep, runUp, type Span } from "./drill";
 import { deriveLoopName } from "./loop-name";
 import { meterNumerator } from "./meter";
+import { tapTempo as computeTap, clampBpm, type TapState } from "./metronome";
 import { resolveTunerInput } from "./devices";
 import type { NotesDoc } from "./notes-doc";
 
@@ -264,6 +265,29 @@ export const countInAvailable = derived(openSong, ($o) => $o?.analysis?.bpm != n
 export const sectionClick = writable<{ enabled: boolean }>({ enabled: false });
 /** Section click needs an analyzed beat grid — same gate as count-in. */
 export const sectionClickAvailable = countInAvailable;
+
+export type Cadence = "beat" | "half" | "bar";
+export type Kit = "click" | "kick_snare" | "cowbell";
+
+export interface MetronomeState {
+  running: boolean;
+  bpm: number;
+  beatsPerBar: number;
+  cadence: Cadence;
+  kit: Kit;
+}
+
+export const metronome = writable<MetronomeState>({
+  running: false,
+  bpm: 120,
+  beatsPerBar: 4,
+  cadence: "beat",
+  kit: "click",
+});
+
+/** Live beat from the engine: 1-based beat in the bar, or null when stopped. */
+export const metronomeBeat = writable<{ beat: number; of: number; sounded: boolean } | null>(null);
+
 /** Bass focus on/off — low-pass + octave-up transcription trick. */
 export const bassFocus = writable(false);
 export const muted = writable(false);
@@ -343,6 +367,8 @@ export const INPUT_DEVICE = "input_device";
 export const COUNT_IN = "count_in";
 /** Section-click master arm: `{ enabled }`. Persisted. */
 export const SECTION_CLICK = "section_click";
+/** Metronome config: `{ bpm, beats_per_bar, cadence, kit }`. Persisted. */
+export const METRONOME = "metronome";
 
 /** Side-column collapse state — persisted to settings, restored at launch. */
 export const libraryCollapsed = writable(false);
@@ -411,6 +437,9 @@ let recallMuted = false;
 /** Debounce handle for the volume fader's settings write-through. */
 let volumeSaveTimer: ReturnType<typeof setTimeout> | undefined;
 
+/** Tap-tempo accumulator for the metronome's tap action. */
+let tapState: TapState = { taps: [] };
+
 /** The active loop's bounds the drill was last seeded from — the seeder (set up
  *  near the bottom) compares against this so a save-promotion or an in-place
  *  resize of the *same* loop doesn't tear down the drill. */
@@ -459,6 +488,18 @@ export const actions = {
     if (sc && typeof sc === "object") {
       const s = sc as { enabled?: unknown };
       sectionClick.set({ enabled: typeof s.enabled === "boolean" ? s.enabled : false });
+    }
+    const mt = all[METRONOME];
+    if (mt && typeof mt === "object") {
+      const m = mt as Partial<MetronomeState> & { beats_per_bar?: number };
+      metronome.update((s) => ({
+        ...s,
+        bpm: typeof m.bpm === "number" ? clampBpm(m.bpm) : s.bpm,
+        beatsPerBar: typeof m.beats_per_bar === "number" ? m.beats_per_bar : s.beatsPerBar,
+        cadence: (m.cadence as Cadence) ?? s.cadence,
+        kit: (m.kit as Kit) ?? s.kit,
+        running: false,
+      }));
     }
     const od = all[OUTPUT_DEVICE];
     outputDevice.set(typeof od === "string" && od ? od : null);
@@ -626,6 +667,44 @@ export const actions = {
   async setSectionClick(enabled: boolean): Promise<void> {
     sectionClick.set({ enabled });
     await cmd("sectionclick.set", { enabled });
+  },
+
+  /** Push the current metronome config to the server (persists all but running). */
+  async pushMetronome(): Promise<void> {
+    const m = get(metronome);
+    await cmd("metronome.set", {
+      running: m.running,
+      bpm: m.bpm,
+      beats_per_bar: m.beatsPerBar,
+      cadence: m.cadence,
+      kit: m.kit,
+    });
+  },
+
+  /** Patch the metronome config and push. */
+  async setMetronome(patch: Partial<MetronomeState>): Promise<void> {
+    metronome.update((s) => ({ ...s, ...patch }));
+    await this.pushMetronome();
+  },
+
+  /** Toggle running. */
+  async toggleMetronome(): Promise<void> {
+    const running = !get(metronome).running;
+    if (!running) metronomeBeat.set(null);
+    await this.setMetronome({ running });
+  },
+
+  /** Register a tap; when a BPM is derivable, apply it. */
+  async tapTempo(now: number): Promise<void> {
+    const r = computeTap(tapState, now);
+    tapState = r.state;
+    if (r.bpm != null) await this.setMetronome({ bpm: r.bpm });
+  },
+
+  /** Seed BPM from the open song's analyzed tempo, if any. */
+  async syncMetronomeToSong(): Promise<void> {
+    const bpm = get(openSong)?.analysis?.bpm;
+    if (bpm != null) await this.setMetronome({ bpm: clampBpm(bpm) });
   },
 
   /** Toggle one section's beat-click guide; server returns refreshed sections. */
@@ -1198,6 +1277,11 @@ export async function initEvents(): Promise<() => void> {
           at: performance.now(),
           countIn: d.count_in ?? null,
         });
+        break;
+      }
+      case "metronome_beat": {
+        const d = ev.data as { beat: number; of: number; sounded: boolean };
+        metronomeBeat.set(d);
         break;
       }
       case "loop_wrapped": {
