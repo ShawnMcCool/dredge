@@ -231,6 +231,7 @@ impl Library {
                 start: s.start,
                 end: s.end,
                 position: s.position,
+                click_guide: false,
             })
             .collect();
         out.sort_by_key(|s| s.position);

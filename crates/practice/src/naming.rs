@@ -111,6 +111,7 @@ mod tests {
             start,
             end,
             position,
+            click_guide: false,
         }
     }
 

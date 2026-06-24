@@ -1553,6 +1553,7 @@ impl App {
                 start: s.start,
                 end: s.end,
                 position: i as i32,
+                click_guide: false,
             })
             .collect())
     }

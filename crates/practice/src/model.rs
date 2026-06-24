@@ -26,6 +26,9 @@ pub struct Section {
     pub end: f64,
     /// 0-based order within the song.
     pub position: i32,
+    /// When true, the section gets a per-beat click guide during playback.
+    #[serde(default)]
+    pub click_guide: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -115,4 +118,24 @@ pub struct ProfileRun {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vram_total_mb: Option<u32>,
     pub stages: Vec<ProfileStage>,
+}
+
+#[cfg(test)]
+mod click_guide_tests {
+    use super::*;
+
+    #[test]
+    fn click_guide_defaults_false_when_absent() {
+        // Old bundles have no `click_guide` key — it must deserialize to false.
+        let json = r#"{"id":1,"song_id":2,"name":"verse","start":0.0,"end":4.0,"position":0}"#;
+        let s: Section = serde_json::from_str(json).unwrap();
+        assert!(!s.click_guide);
+    }
+
+    #[test]
+    fn click_guide_round_trips_when_true() {
+        let json = r#"{"id":1,"song_id":2,"name":"verse","start":0.0,"end":4.0,"position":0,"click_guide":true}"#;
+        let s: Section = serde_json::from_str(json).unwrap();
+        assert!(s.click_guide);
+    }
 }
