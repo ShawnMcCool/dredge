@@ -5,7 +5,7 @@
 
 use crate::buffer::{StemSet, CHANNELS, SAMPLE_RATE};
 use crate::error::Error;
-use crate::pipeline::{EngineCmd, EngineEvent};
+use crate::pipeline::{ClickMark, EngineCmd, EngineEvent};
 use crate::render_core::RenderCore;
 use arc_swap::ArcSwapOption;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -17,13 +17,14 @@ pub fn spawn(
     cmd_rx: rtrb::Consumer<EngineCmd>,
     evt_tx: rtrb::Producer<EngineEvent>,
     song_slot: Arc<ArcSwapOption<StemSet>>,
+    click_slot: Arc<ArcSwapOption<Vec<ClickMark>>>,
     target: Option<String>,
     stop: Arc<AtomicBool>,
 ) -> crate::error::Result<JoinHandle<()>> {
     let handle = std::thread::Builder::new()
         .name("dredge-audio".into())
         .spawn(move || {
-            if let Err(e) = run(cmd_rx, evt_tx, song_slot, target, stop) {
+            if let Err(e) = run(cmd_rx, evt_tx, song_slot, click_slot, target, stop) {
                 eprintln!("dredge audio thread failed: {e}");
             }
         })?;
@@ -34,6 +35,7 @@ fn run(
     cmd_rx: rtrb::Consumer<EngineCmd>,
     evt_tx: rtrb::Producer<EngineEvent>,
     song_slot: Arc<ArcSwapOption<StemSet>>,
+    click_slot: Arc<ArcSwapOption<Vec<ClickMark>>>,
     target: Option<String>,
     stop: Arc<AtomicBool>,
 ) -> crate::error::Result<()> {
@@ -65,7 +67,7 @@ fn run(
         buffer_size: cpal::BufferSize::Default,
     };
 
-    let mut core = RenderCore::new(cmd_rx, evt_tx, song_slot);
+    let mut core = RenderCore::new(cmd_rx, evt_tx, song_slot, click_slot);
 
     let stream = device
         .build_output_stream(

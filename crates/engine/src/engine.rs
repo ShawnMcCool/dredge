@@ -1,6 +1,6 @@
 use crate::buffer::StemSet;
 use crate::engine_state::EngineState;
-use crate::pipeline::{EngineCmd, EngineEvent};
+use crate::pipeline::{ClickMark, EngineCmd, EngineEvent};
 use arc_swap::ArcSwapOption;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -10,6 +10,7 @@ pub struct Engine {
     cmd_tx: rtrb::Producer<EngineCmd>,
     evt_rx: rtrb::Consumer<EngineEvent>,
     song_slot: Arc<ArcSwapOption<StemSet>>,
+    click_slot: Arc<ArcSwapOption<Vec<ClickMark>>>,
     /// Signals the current output thread to quit; replaced on each retarget.
     stop: Arc<AtomicBool>,
     /// Live snapshot of engine state, replayed onto a fresh pipeline when the
@@ -24,13 +25,21 @@ impl Engine {
         let (cmd_tx, cmd_rx) = rtrb::RingBuffer::<EngineCmd>::new(256);
         let (evt_tx, evt_rx) = rtrb::RingBuffer::<EngineEvent>::new(1024);
         let song_slot = Arc::new(ArcSwapOption::<StemSet>::empty());
+        let click_slot = Arc::new(ArcSwapOption::<Vec<ClickMark>>::empty());
         let stop = Arc::new(AtomicBool::new(false));
-        let audio_thread =
-            crate::output::spawn(cmd_rx, evt_tx, song_slot.clone(), None, stop.clone())?;
+        let audio_thread = crate::output::spawn(
+            cmd_rx,
+            evt_tx,
+            song_slot.clone(),
+            click_slot.clone(),
+            None,
+            stop.clone(),
+        )?;
         Ok(Self {
             cmd_tx,
             evt_rx,
             song_slot,
+            click_slot,
             stop,
             state: EngineState::default(),
             _audio_thread: Some(audio_thread),
@@ -40,6 +49,11 @@ impl Engine {
     /// Swap in a new song; audio thread picks it up at the next block.
     pub fn load(&self, set: StemSet) {
         self.song_slot.store(Some(Arc::new(set)));
+    }
+
+    /// Replace the section-click schedule; the audio thread picks it up next block.
+    pub fn set_click_schedule(&self, marks: Vec<ClickMark>) {
+        self.click_slot.store(Some(Arc::new(marks)));
     }
 
     pub fn send(&mut self, cmd: EngineCmd) {
@@ -74,6 +88,7 @@ impl Engine {
             cmd_rx,
             evt_tx,
             self.song_slot.clone(),
+            self.click_slot.clone(),
             target,
             self.stop.clone(),
         )?;

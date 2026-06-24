@@ -4,7 +4,7 @@
 //! pushes engine events out. Never allocates or locks on the steady path.
 
 use crate::buffer::StemSet;
-use crate::pipeline::{EngineCmd, EngineEvent, Pipeline};
+use crate::pipeline::{ClickMark, EngineCmd, EngineEvent, Pipeline};
 use arc_swap::ArcSwapOption;
 use std::sync::Arc;
 
@@ -12,8 +12,10 @@ pub struct RenderCore {
     cmd_rx: rtrb::Consumer<EngineCmd>,
     evt_tx: rtrb::Producer<EngineEvent>,
     song_slot: Arc<ArcSwapOption<StemSet>>,
+    click_slot: Arc<ArcSwapOption<Vec<ClickMark>>>,
     pipeline: Option<Pipeline>,
     current_song: Option<Arc<StemSet>>,
+    current_clicks: Option<Arc<Vec<ClickMark>>>,
     events: Vec<EngineEvent>,
     /// User volume, held here (not just in the Pipeline) so it survives song
     /// swaps and a SetVolume that arrives before any song is loaded.
@@ -25,13 +27,16 @@ impl RenderCore {
         cmd_rx: rtrb::Consumer<EngineCmd>,
         evt_tx: rtrb::Producer<EngineEvent>,
         song_slot: Arc<ArcSwapOption<StemSet>>,
+        click_slot: Arc<ArcSwapOption<Vec<ClickMark>>>,
     ) -> Self {
         Self {
             cmd_rx,
             evt_tx,
             song_slot,
+            click_slot,
             pipeline: None,
             current_song: None,
+            current_clicks: None,
             events: Vec::with_capacity(64),
             volume: 1.0,
         }
@@ -60,6 +65,22 @@ impl RenderCore {
                 p
             });
             self.current_song = song;
+        }
+
+        // Click-schedule swap: detect by pointer like the song slot. Also
+        // re-apply on a song swap, since that built a fresh pipeline.
+        let cguard = self.click_slot.load();
+        let cswapped = match (cguard.as_ref(), self.current_clicks.as_ref()) {
+            (Some(a), Some(b)) => !Arc::ptr_eq(a, b),
+            (Some(_), None) | (None, Some(_)) => true,
+            (None, None) => false,
+        };
+        if cswapped || swapped {
+            let clicks = (*cguard).clone();
+            if let Some(p) = self.pipeline.as_mut() {
+                p.set_click_schedule(clicks.clone().unwrap_or_default());
+            }
+            self.current_clicks = clicks;
         }
 
         // Drain control commands. SetVolume is latched into self.volume so it
