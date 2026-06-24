@@ -4,6 +4,7 @@
 //! pushes engine events out. Never allocates or locks on the steady path.
 
 use crate::buffer::StemSet;
+use crate::metronome::{Metronome, MetronomeBeat};
 use crate::pipeline::{ClickMark, EngineCmd, EngineEvent, Pipeline};
 use arc_swap::ArcSwapOption;
 use std::sync::Arc;
@@ -20,6 +21,10 @@ pub struct RenderCore {
     /// User volume, held here (not just in the Pipeline) so it survives song
     /// swaps and a SetVolume that arrives before any song is loaded.
     volume: f32,
+    /// Free-running metronome, mixed over the pipeline output (or silence) so it
+    /// sounds with or without a song loaded.
+    metronome: Metronome,
+    metro_beats: Vec<MetronomeBeat>,
 }
 
 impl RenderCore {
@@ -39,6 +44,8 @@ impl RenderCore {
             current_clicks: None,
             events: Vec::with_capacity(64),
             volume: 1.0,
+            metronome: Metronome::default(),
+            metro_beats: Vec::with_capacity(16),
         }
     }
 
@@ -89,6 +96,18 @@ impl RenderCore {
             if let EngineCmd::SetVolume(v) = cmd {
                 self.volume = v;
             }
+            if let EngineCmd::SetMetronome {
+                running,
+                beat_secs,
+                beats_per_bar,
+                cadence,
+                kit,
+            } = cmd
+            {
+                self.metronome
+                    .configure(running, beat_secs, beats_per_bar, cadence, kit);
+                continue;
+            }
             if let Some(p) = self.pipeline.as_mut() {
                 p.apply(cmd);
             }
@@ -104,5 +123,57 @@ impl RenderCore {
             }
             None => out.fill(0.0),
         }
+
+        // The metronome runs regardless of song/pipeline; mix it over whatever
+        // the pipeline produced (audio, or the silence fill).
+        self.metro_beats.clear();
+        self.metronome.render(out, self.volume, &mut self.metro_beats);
+        for b in self.metro_beats.drain(..) {
+            let _ = self.evt_tx.push(EngineEvent::MetronomeBeat {
+                beat: b.beat,
+                of: b.of,
+                sounded: b.sounded,
+            });
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::buffer::CHANNELS;
+    use crate::metronome::{Cadence, Kit};
+    use crate::pipeline::EngineCmd;
+
+    fn core() -> (RenderCore, rtrb::Producer<EngineCmd>) {
+        let (cmd_tx, cmd_rx) = rtrb::RingBuffer::<EngineCmd>::new(64);
+        let (evt_tx, _evt_rx) = rtrb::RingBuffer::<EngineEvent>::new(256);
+        let song_slot = Arc::new(ArcSwapOption::<StemSet>::empty());
+        let click_slot = Arc::new(ArcSwapOption::<Vec<crate::pipeline::ClickMark>>::empty());
+        (RenderCore::new(cmd_rx, evt_tx, song_slot, click_slot), cmd_tx)
+    }
+
+    #[test]
+    fn metronome_sounds_with_no_song_loaded() {
+        let (mut rc, mut cmd_tx) = core();
+        cmd_tx
+            .push(EngineCmd::SetMetronome {
+                running: true,
+                beat_secs: 0.5,
+                beats_per_bar: 4,
+                cadence: Cadence::EveryBeat,
+                kit: Kit::Click,
+            })
+            .unwrap();
+        let mut any = false;
+        let mut out = vec![0.0f32; 256 * CHANNELS];
+        for _ in 0..((0.6 * crate::buffer::SAMPLE_RATE as f64) as usize / 256) {
+            out.iter_mut().for_each(|s| *s = 0.0);
+            rc.fill(&mut out);
+            if out.iter().any(|s| s.abs() > 0.01) {
+                any = true;
+            }
+        }
+        assert!(any, "metronome produced audio with no song loaded");
     }
 }

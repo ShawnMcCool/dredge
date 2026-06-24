@@ -1,5 +1,6 @@
 use crate::buffer::{StemSet, CHANNELS, SAMPLE_RATE};
 use crate::filter::Focus;
+use crate::metronome::{Cadence, Kit};
 use crate::looper::Looper;
 use crate::stretch::{Stretcher, BLOCK_FRAMES};
 use std::sync::Arc;
@@ -104,6 +105,15 @@ pub enum EngineCmd {
         beat_secs: f64,
         every_loop: bool,
     },
+    /// Configure the free-running metronome (handled by the render core, not the
+    /// pipeline). `beat_secs` is the beat interval (60 / bpm).
+    SetMetronome {
+        running: bool,
+        beat_secs: f64,
+        beats_per_bar: u32,
+        cadence: Cadence,
+        kit: Kit,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -119,6 +129,12 @@ pub enum EngineEvent {
     },
     LoopWrapped,
     Finished,
+    /// One metronome beat (1-based within the bar). Drives the UI bar indicator.
+    MetronomeBeat {
+        beat: u32,
+        of: u32,
+        sounded: bool,
+    },
 }
 
 pub struct Pipeline {
@@ -272,6 +288,7 @@ impl Pipeline {
                 // new mode takes effect cleanly.
                 self.ci_pass_at_end = false;
             }
+            EngineCmd::SetMetronome { .. } => {}
         }
     }
 

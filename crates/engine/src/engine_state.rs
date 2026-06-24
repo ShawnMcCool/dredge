@@ -8,6 +8,7 @@
 //! This type is pure: no audio, no threads, no I/O. It is unit-tested in
 //! isolation.
 
+use crate::metronome::{Cadence, Kit};
 use crate::pipeline::EngineCmd;
 
 #[derive(Default, Clone)]
@@ -20,6 +21,8 @@ pub struct EngineState {
     pub stem_gains: std::collections::BTreeMap<usize, f32>, // only observed indices
     pub volume: Option<f32>,
     pub count_in: Option<(u32, f64, bool)>, // (beats, beat_secs, every_loop)
+    /// Last metronome config (running, beat_secs, beats_per_bar, cadence, kit).
+    pub metronome: Option<(bool, f64, u32, Cadence, Kit)>,
     pub playing: bool,
     pub pos_secs: f64,
 }
@@ -47,6 +50,13 @@ impl EngineState {
                 beat_secs,
                 every_loop,
             } => self.count_in = Some((*beats, *beat_secs, *every_loop)),
+            EngineCmd::SetMetronome {
+                running,
+                beat_secs,
+                beats_per_bar,
+                cadence,
+                kit,
+            } => self.metronome = Some((*running, *beat_secs, *beats_per_bar, *cadence, *kit)),
         }
     }
 
@@ -84,6 +94,15 @@ impl EngineState {
         cmds.push(EngineCmd::Mute(self.muted));
         for (&idx, &gain) in &self.stem_gains {
             cmds.push(EngineCmd::SetStemGain { idx, gain });
+        }
+        if let Some((running, beat_secs, beats_per_bar, cadence, kit)) = self.metronome {
+            cmds.push(EngineCmd::SetMetronome {
+                running,
+                beat_secs,
+                beats_per_bar,
+                cadence,
+                kit,
+            });
         }
         if let Some((start, end)) = self.loop_region {
             cmds.push(EngineCmd::SetLoopSecs { start, end });
