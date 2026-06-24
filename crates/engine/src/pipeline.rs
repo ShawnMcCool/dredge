@@ -2,6 +2,7 @@ use crate::buffer::{StemSet, CHANNELS, SAMPLE_RATE};
 use crate::filter::Focus;
 use crate::looper::Looper;
 use crate::stretch::{Stretcher, BLOCK_FRAMES};
+use std::sync::Arc;
 
 pub const GAIN_RAMP_FRAMES: usize = 240; // 5 ms
 
@@ -149,6 +150,14 @@ pub struct Pipeline {
     /// every-loop: the current pass has been fed up to the loop end; once the
     /// stretcher drains, the next pass begins with a count-in.
     ci_pass_at_end: bool,
+    // section-click overlay
+    clicks: Arc<Vec<ClickMark>>,
+    click_cursor: usize,
+    click_voice: ClickVoice,
+    /// Audible song position in source frames (advances by `rate` per output
+    /// frame). Decoupled from the looper's *feed* position so clicks line up
+    /// with what is actually heard, not what has been fed to the stretcher.
+    audible_frame: f64,
 }
 
 impl Pipeline {
@@ -176,7 +185,26 @@ impl Pipeline {
             ci_accent: false,
             ci_beat_index: 0,
             ci_pass_at_end: false,
+            clicks: Arc::new(Vec::new()),
+            click_cursor: 0,
+            click_voice: ClickVoice::default(),
+            audible_frame: 0.0,
         }
+    }
+
+    /// Install a new section-click schedule (sorted by `secs`). Re-seeks the
+    /// cursor to the current audible position; a ringing click finishes.
+    pub fn set_click_schedule(&mut self, clicks: Arc<Vec<ClickMark>>) {
+        self.clicks = clicks;
+        self.reseek_click_cursor();
+    }
+
+    /// Point the cursor at the first mark at or after the audible position.
+    fn reseek_click_cursor(&mut self) {
+        let pos = self.audible_frame;
+        self.click_cursor = self
+            .clicks
+            .partition_point(|m| m.secs * SAMPLE_RATE as f64 <= pos);
     }
 
     pub fn apply(&mut self, cmd: EngineCmd) {
@@ -196,6 +224,8 @@ impl Pipeline {
             EngineCmd::SeekSecs(secs) => {
                 self.looper.seek(secs_to_frames(secs));
                 self.stretch.reset();
+                self.audible_frame = secs.max(0.0) * SAMPLE_RATE as f64;
+                self.reseek_click_cursor();
             }
             EngineCmd::SetLoopSecs { start, end } => {
                 // Only flush the stretcher if the region change actually moved the
@@ -402,6 +432,51 @@ impl Pipeline {
             let scale = self.gain * self.volume;
             fr[0] *= scale;
             fr[1] *= scale;
+        }
+
+        // Section-click overlay: walk the audible position across the frames we
+        // just produced and mix a click ping at each scheduled beat. The click
+        // is added at full reference level (scaled by volume only, not the
+        // play/pause gain) so it stays a steady metronome.
+        if self.playing {
+            let region = self.looper.region();
+            if self.clicks.is_empty() {
+                // OFF fast path: no per-frame work — bulk-advance the audible
+                // cursor so it stays valid if a schedule is installed mid-play.
+                self.audible_frame += filled as f64 * self.rate;
+                if let Some((start, end)) = region {
+                    while self.audible_frame >= end as f64 {
+                        self.audible_frame -= (end - start) as f64;
+                    }
+                }
+            } else {
+                let vol = self.volume;
+                for fr in out[..filled * CHANNELS].chunks_exact_mut(CHANNELS) {
+                    let cur = self.audible_frame;
+                    while self.click_cursor < self.clicks.len() {
+                        let mark = self.clicks[self.click_cursor].secs * SAMPLE_RATE as f64;
+                        if mark < cur {
+                            self.click_cursor += 1; // stale (e.g. after a resize)
+                        } else if mark < cur + self.rate {
+                            self.click_voice.trigger(self.clicks[self.click_cursor].accent);
+                            self.click_cursor += 1;
+                            break;
+                        } else {
+                            break;
+                        }
+                    }
+                    let s = self.click_voice.sample(vol);
+                    fr[0] += s;
+                    fr[1] += s;
+                    self.audible_frame += self.rate;
+                    if let Some((start, end)) = region {
+                        if self.audible_frame >= end as f64 {
+                            self.audible_frame -= (end - start) as f64;
+                            self.reseek_click_cursor();
+                        }
+                    }
+                }
+            }
         }
 
         // A completed ramp-down means pause — unless we're muted (position
@@ -918,6 +993,54 @@ mod tests {
             min_pos >= 1.95,
             "must not play before the loop start, min = {min_pos}"
         );
+    }
+
+    #[test]
+    fn section_click_mixes_over_audio_at_scheduled_beat() {
+        use std::sync::Arc;
+        // 1s of silence so the click overlay is the only output signal.
+        let song = StemSet::new(vec![sine(1.0, 440.0, 0.0)]);
+        let mut p = Pipeline::new(song);
+        p.set_click_schedule(Arc::new(vec![ClickMark { secs: 0.5, accent: false }]));
+        p.apply(EngineCmd::Play);
+
+        let mut out = vec![0.0f32; 256 * CHANNELS];
+        let mut events = Vec::new();
+        let mut first_loud: Option<usize> = None;
+        let mut frame = 0usize;
+        for _ in 0..(SAMPLE_RATE as usize / 256) {
+            out.iter_mut().for_each(|s| *s = 0.0);
+            p.render(&mut out, &mut events);
+            for i in 0..256 {
+                if first_loud.is_none() && out[i * CHANNELS].abs() > 0.05 {
+                    first_loud = Some(frame + i);
+                }
+            }
+            frame += 256;
+            if frame as f64 / SAMPLE_RATE as f64 > 0.7 {
+                break;
+            }
+        }
+        let at = first_loud.expect("a click sounded");
+        let expected = (0.5 * SAMPLE_RATE as f64) as usize;
+        assert!(
+            (at as i64 - expected as i64).abs() < (SAMPLE_RATE as i64 / 50),
+            "click at frame {at}, expected ~{expected}"
+        );
+    }
+
+    #[test]
+    fn no_clicks_when_schedule_empty() {
+        let song = StemSet::new(vec![sine(1.0, 440.0, 0.0)]);
+        let mut p = Pipeline::new(song);
+        p.apply(EngineCmd::Play);
+        let mut out = vec![0.0f32; 256 * CHANNELS];
+        let mut events = Vec::new();
+        for _ in 0..20 {
+            out.iter_mut().for_each(|s| *s = 0.0);
+            p.render(&mut out, &mut events);
+            assert!(out.iter().all(|s| s.abs() < 1e-6), "silent with no schedule");
+        }
     }
 
     #[test]
