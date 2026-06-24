@@ -211,6 +211,26 @@ impl Library {
             .unwrap_or_default()
     }
 
+    /// Toggle a section's click guide and rewrite the bundle manifest.
+    pub fn set_section_click_guide(
+        &mut self,
+        song_id: SongId,
+        section_id: SectionId,
+        on: bool,
+    ) -> Result<()> {
+        let entry = self.entry_mut(song_id)?;
+        if let Some(s) = entry
+            .manifest
+            .sections
+            .iter_mut()
+            .find(|s| s.id == section_id)
+        {
+            s.click_guide = on;
+        }
+        Self::persist(entry)?;
+        Ok(())
+    }
+
     pub fn replace_sections(
         &mut self,
         song_id: SongId,
@@ -643,6 +663,42 @@ mod tests {
         assert_eq!(lib2.list_section_notes(song.id).len(), 1);
         let a2 = lib2.get_analysis(song.id).unwrap();
         assert_eq!(a2.bpm, Some(120.0));
+    }
+
+    #[test]
+    fn set_section_click_guide_persists_and_reloads() {
+        let lib_dir = tempfile::tempdir().unwrap();
+        let src_dir = tempfile::tempdir().unwrap();
+        let audio_src = src_dir.path().join("track.flac");
+        std::fs::write(&audio_src, b"AUDIO").unwrap();
+
+        let mut lib = Library::load(lib_dir.path().to_path_buf()).unwrap();
+        let song = lib
+            .create_song(&audio_src, "Click Song", None, "clickhash", 60.0)
+            .unwrap();
+        let sections = lib
+            .replace_sections(
+                song.id,
+                &[NewSection {
+                    name: "intro",
+                    start: 0.0,
+                    end: 10.0,
+                    position: 0,
+                }],
+            )
+            .unwrap();
+        let sec_id = sections[0].id;
+        assert!(!sections[0].click_guide, "starts off");
+
+        lib.set_section_click_guide(song.id, sec_id, true).unwrap();
+        let live = lib.list_sections(song.id);
+        assert!(live[0].click_guide, "flag is on in-memory");
+
+        // reload from disk to prove it persisted to the manifest
+        let lib2 = Library::load(lib_dir.path().to_path_buf()).unwrap();
+        let reloaded = lib2.list_sections(song.id);
+        assert!(reloaded[0].click_guide, "flag survived reload");
+        assert_eq!(reloaded[0].id, sec_id);
     }
 
     // ── rename tracks the bundle dir ──

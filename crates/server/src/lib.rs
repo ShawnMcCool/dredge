@@ -7,8 +7,6 @@ pub mod logging;
 mod profile;
 pub mod protocol;
 mod sampler;
-// Consumed by Task 7 (server commands); allow until then.
-#[allow(dead_code)]
 mod section_click;
 pub mod socket;
 pub mod stems;

@@ -459,6 +459,8 @@ impl App {
             "song.open" => self.song_open(p),
             "section.replace" => self.section_replace(p),
             "section.notes.set" => self.section_notes_set(p),
+            "section.click.set" => self.section_click_set(p),
+            "sectionclick.set" => self.section_click_enable(p),
             "loop.create" => self.loop_create(p),
             "loop.update" => self.loop_update(p),
             "loop.delete" => self.loop_delete(p),
@@ -717,6 +719,64 @@ impl App {
         });
     }
 
+    /// Recompute the section-click schedule from the persisted master switch,
+    /// the open song's sections, and its analyzed beat grid; push it to the
+    /// engine. Empty schedule when off, no song open, or no analysis.
+    fn push_section_click(&mut self) {
+        let enabled = self
+            .store
+            .get_setting("section_click")
+            .ok()
+            .flatten()
+            .and_then(|v| v.get("enabled").and_then(|e| e.as_bool()))
+            .unwrap_or(false);
+        let song_id = self.open_song.as_ref().map(|o| o.song.id);
+        let marks = match song_id {
+            Some(id) if enabled => match self.library.get_analysis(id) {
+                Some(a) => {
+                    let sections = self.library.list_sections(id);
+                    crate::section_click::build_schedule(&a, &sections)
+                }
+                None => Vec::new(),
+            },
+            _ => Vec::new(),
+        };
+        self.audio.set_click_schedule(marks);
+    }
+
+    fn section_click_set(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            section_id: SectionId,
+            on: bool,
+        }
+        let p: P = from_params(p)?;
+        let song_id = self
+            .open_song
+            .as_ref()
+            .map(|o| o.song.id)
+            .ok_or_else(|| "no song open".to_string())?;
+        self.library
+            .set_section_click_guide(song_id, p.section_id, p.on)
+            .err_str()?;
+        self.push_section_click();
+        let (sections, orphan_notes) = self.sections_payload(song_id)?;
+        Ok(json!({ "sections": sections, "orphan_notes": orphan_notes }))
+    }
+
+    fn section_click_enable(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            enabled: bool,
+        }
+        let p: P = from_params(p)?;
+        self.store
+            .set_setting("section_click", &json!({ "enabled": p.enabled }))
+            .err_str()?;
+        self.push_section_click();
+        Ok(Value::Null)
+    }
+
     fn status(&self) -> Result<Value, String> {
         let (secs, rate, playing, _count_in) =
             self.last_position.unwrap_or((0.0, 1.0, false, None));
@@ -757,6 +817,7 @@ impl App {
                         // at open time when no BPM existed yet).
                         if self.open_song.as_ref().map(|o| o.song.id) == Some(song_id) {
                             self.push_count_in();
+                            self.push_section_click();
                         }
                         json!({"song_id": song_id, "state": "done", "sections": sections})
                     }
@@ -1398,6 +1459,7 @@ impl App {
             stems: decoded.stems,
         });
         self.push_count_in();
+        self.push_section_click();
         Ok(out)
     }
 
