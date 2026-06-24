@@ -125,6 +125,7 @@
   .dot.accent {
     width: 12px;
     height: 12px;
+    background: var(--accent-dim); /* primary downbeat: largest + accented at rest */
   }
   .dot.lit {
     background: var(--accent);
