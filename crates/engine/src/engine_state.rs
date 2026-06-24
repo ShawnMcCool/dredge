@@ -178,6 +178,27 @@ mod tests {
     }
 
     #[test]
+    fn metronome_config_survives_observe_then_replay() {
+        // The metronome must be re-emitted on a device respawn, like count-in.
+        let mut s = EngineState::default();
+        s.observe(&EngineCmd::SetMetronome {
+            running: true,
+            beat_secs: 0.5,
+            beats_per_bar: 3,
+            cadence: Cadence::HalfBar,
+            kit: Kit::KickSnare,
+        });
+        assert_eq!(s.metronome, Some((true, 0.5, 3, Cadence::HalfBar, Kit::KickSnare)));
+        assert!(s.replay_cmds().contains(&EngineCmd::SetMetronome {
+            running: true,
+            beat_secs: 0.5,
+            beats_per_bar: 3,
+            cadence: Cadence::HalfBar,
+            kit: Kit::KickSnare,
+        }));
+    }
+
+    #[test]
     fn paused_snapshot_omits_trailing_play() {
         let mut s = EngineState::default();
         s.observe(&EngineCmd::Play);
