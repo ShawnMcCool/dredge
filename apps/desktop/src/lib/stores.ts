@@ -33,6 +33,8 @@ export interface Section {
   label?: string;
   /** Stored notes for this section, if any. */
   notes?: NotesDoc | null;
+  /** Per-section beat-click guide flag (wire field, snake_case from the server). */
+  click_guide?: boolean;
 }
 
 export interface OrphanNote {
@@ -258,6 +260,10 @@ export const countIn = writable<{ enabled: boolean; beats: number; loopMode: "fi
 });
 /** Count-in needs a tempo, so it only applies once the song has analysis. */
 export const countInAvailable = derived(openSong, ($o) => $o?.analysis?.bpm != null);
+/** Section-click master arm — gates whether per-section click guides sound. */
+export const sectionClick = writable<{ enabled: boolean }>({ enabled: false });
+/** Section click needs an analyzed beat grid — same gate as count-in. */
+export const sectionClickAvailable = countInAvailable;
 /** Bass focus on/off — low-pass + octave-up transcription trick. */
 export const bassFocus = writable(false);
 export const muted = writable(false);
@@ -335,6 +341,8 @@ export const OUTPUT_DEVICE = "output_device";
 export const INPUT_DEVICE = "input_device";
 /** Count-in config: `{ beats, loopMode }`. beats 0 = off. Persisted. */
 export const COUNT_IN = "count_in";
+/** Section-click master arm: `{ enabled }`. Persisted. */
+export const SECTION_CLICK = "section_click";
 
 /** Side-column collapse state — persisted to settings, restored at launch. */
 export const libraryCollapsed = writable(false);
@@ -446,6 +454,11 @@ export const actions = {
         beats: rawBeats > 0 ? rawBeats : 4,
         loopMode: c.loop_mode === "every" ? "every" : "first",
       });
+    }
+    const sc = all[SECTION_CLICK];
+    if (sc && typeof sc === "object") {
+      const s = sc as { enabled?: unknown };
+      sectionClick.set({ enabled: typeof s.enabled === "boolean" ? s.enabled : false });
     }
     const od = all[OUTPUT_DEVICE];
     outputDevice.set(typeof od === "string" && od ? od : null);
@@ -608,6 +621,22 @@ export const actions = {
       beats: next.beats,
       loop_mode: next.loopMode,
     });
+  },
+
+  async setSectionClick(enabled: boolean): Promise<void> {
+    sectionClick.set({ enabled });
+    await cmd("sectionclick.set", { enabled });
+  },
+
+  /** Toggle one section's beat-click guide; server returns refreshed sections. */
+  async toggleSectionClick(sectionId: number, on: boolean): Promise<void> {
+    const out = await cmd<{ sections: Section[]; orphan_notes: OrphanNote[] }>(
+      "section.click.set",
+      { section_id: sectionId, on },
+    );
+    openSong.update((o) =>
+      o ? { ...o, sections: out.sections, orphan_notes: out.orphan_notes } : o,
+    );
   },
 
   /** Bass focus: low-pass + the octave-up transcription trick (so the
