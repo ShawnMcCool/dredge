@@ -39,39 +39,58 @@ practice surface.
   BPM from the analyzed tempo (`$openSong.analysis.bpm`, rounded).
 - **Start / stop** — the primary verb; toggles the metronome running state. This
   is separate from the transport's play/pause.
-- **Time signature** — a selector of common signatures (2/4, 3/4, 4/4, 5/4, 6/8,
-  7/8, plus a small curated list). The **numerator** sets beats-per-bar (drives
-  the number of beat lights and the bar length and where the downbeat accent
-  falls). v1 places a single accent on beat 1; compound-meter sub-grouping
-  (e.g. accents every 3 in 6/8) is explicitly deferred.
+- **Time signature** — a selector of beats-per-bar (2–7). The numerator sets the
+  number of beat lights, the bar length, and — via the **accent grouping** below
+  — which beats are *strong*.
+- **Accent grouping (meter-derived).** Each beat is either **strong** (a
+  group-start) or **weak**, derived from the time signature's natural grouping.
+  Default groupings (no user picker in this version — sensible defaults only):
+  - 2 → `2` → strong beats {1}
+  - 3 → `3` → strong {1} (waltz)
+  - 4 → `2+2` → strong {1, 3}
+  - 5 → `3+2` → strong {1, 4}
+  - 6 → `2+2+2` → strong {1, 3, 5}
+  - 7 → `2+2+3` → strong {1, 3, 5}
+
+  This is the standard "accent grouping" model real metronome apps use for odd
+  meters, and it fixes the previous beat-1-only accent (which produced an
+  unmusical kick-snare-snare-snare). Beat 1 is additionally the **primary**
+  downbeat (extra visual emphasis), but for *sound* it is just another strong
+  beat. A grouping picker (e.g. 3+2 vs 2+3 for 5) is deferred.
 - **Cadence** — click on **every beat**, **every half-bar**, or **every bar**
   (downbeat only). Controls how sparse the click is:
   - every beat → all N beats of the bar click;
   - every bar → only beat 1 clicks;
   - every half-bar → beat 1 and the mid-bar beat click (`floor(N/2)` offset; for
     odd N this is the nearest sensible split, documented as approximate).
-- **Sound kit** — a selector; each kit pairs a **downbeat** sound with an
-  **other-beats** sound. v1 ships exactly three kits:
-  - **Click** — high ping (downbeat) / low ping (other beats) — the existing
-    `click_wave` voice at two pitches.
-  - **Kick/Snare** — kick (downbeat) / snare (other beats).
-  - **Cowbell** — high cowbell (downbeat) / low cowbell (other beats) — one
-    simple synth at two pitches.
+- **Sound kit** — a selector; each kit pairs a **strong-beat** (group-start)
+  sound with a **weak-beat** sound, applied *uniformly* (every strong beat gets
+  the strong sound, not just beat 1). v1 ships exactly three kits:
+  - **Click** — high ping (strong) / low ping (weak) — the existing `click_wave`
+    voice at two pitches. e.g. 4/4 → hi-lo-hi-lo.
+  - **Kick/Snare** — kick (strong) / snare (weak). e.g. 4/4 → kick-snare-kick-
+    snare (backbeat); 3/4 → kick-snare-snare (waltz); 5/4 → K-S-S-K-S.
+  - **Cowbell** — high cowbell (strong) / low cowbell (weak).
 
   The voice/kit abstraction is open for adding kits later, but v1 is these three.
-  (Judgment call, flagged in design: kits rather than independent accent/normal
-  pickers — one selector, musical, matches the kick/snare framing. Switchable to
-  two independent pickers later if wanted.)
+
+### Strong-beat encoding (one source of truth)
+
+The strong-beat set is computed on the **frontend** from `beatsPerBar` (a pure,
+tested helper) and sent to the engine as a `u32` **bitmask** (`strong_mask`, bit
+`i` set ⇒ beat `i+1` is strong) inside the metronome command — a `Copy` value, no
+duplication of the grouping table in Rust. The engine reads the mask to choose
+the voice per beat; the frontend uses the same mask to style the bar dots. A
+future grouping picker just changes how the frontend computes the mask.
 
 ## Visual bar indicator
 
 A row of dots inside the box — one dot per beat in the bar (count = the time
-signature numerator). As the metronome advances, the current beat's dot lights;
-beat 1 is emphasized (size/accent color); beats that don't sound under the
-current cadence are shown dimmer. Driven by the `MetronomeBeat` event the engine
-emits each beat (so the visual is sample-accurate to the audio, not a separate
-frontend timer). When stopped, the indicator rests (no dot lit, or beat 1
-pre-highlighted).
+signature numerator). **Strong** beats (group-starts, from the same `strong_mask`)
+render larger/emphasized; **beat 1** is the primary (largest). As the metronome
+advances, the current beat's dot lights. Driven by the `MetronomeBeat` event the
+engine emits each beat (so the visual is sample-accurate to the audio, not a
+separate frontend timer). When stopped, the indicator rests.
 
 ## Tap tempo
 
@@ -101,10 +120,11 @@ when `current_song` is `None` and no pipeline exists.
   (downbeat → kit accent voice, else kit normal voice); trigger it; push a
   `MetronomeBeat { beat, of, sounded }` event.
 - **Control:** one `Copy` command on the existing `EngineCmd` ring —
-  `SetMetronome { running, beat_secs, beats_per_bar, cadence, kit }` (cadence and
-  kit as small enums/`u8`). The render core intercepts it in the command-drain
-  loop (like the `SetVolume` latch) and applies it to `self.metronome` rather
-  than the pipeline. Changing BPM/time-sig/etc. while running re-derives the
+  `SetMetronome { running, beat_secs, beats_per_bar, strong_mask, cadence, kit }`
+  (cadence and kit as small enums, `strong_mask` a `u32` bitmask of strong beats).
+  The render core intercepts it in the command-drain loop (like the `SetVolume`
+  latch) and applies it to `self.metronome` rather than the pipeline. Per beat the
+  generator picks the strong vs weak voice via `strong_mask & (1 << beat)`. Changing BPM/time-sig/etc. while running re-derives the
   interval and keeps the phase sane (no awkward bar restart; recompute frames to
   next beat proportionally or continue the current beat then apply).
 - **Events:** `MetronomeBeat` is a new `EngineEvent` variant, surfaced through
