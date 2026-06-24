@@ -1,5 +1,5 @@
 use engine::buffer::StemSet;
-use engine::pipeline::{EngineCmd, EngineEvent};
+use engine::pipeline::{ClickMark, EngineCmd, EngineEvent};
 
 /// Everything App needs from the audio side — real Engine or test mock.
 pub trait AudioControl: Send {
@@ -7,6 +7,7 @@ pub trait AudioControl: Send {
     fn send(&mut self, cmd: EngineCmd);
     fn poll_events(&mut self) -> Vec<EngineEvent>;
     fn set_output_device(&mut self, target: Option<String>);
+    fn set_click_schedule(&mut self, marks: Vec<ClickMark>);
 }
 
 impl AudioControl for engine::Engine {
@@ -24,6 +25,9 @@ impl AudioControl for engine::Engine {
             let _ = engine::Engine::set_output_device(self, None);
         }
     }
+    fn set_click_schedule(&mut self, marks: Vec<ClickMark>) {
+        engine::Engine::set_click_schedule(self, marks);
+    }
 }
 
 /// Test double: records commands, plays back queued events.
@@ -36,6 +40,8 @@ pub struct MockEngine {
     pub loaded: Option<StemSet>,
     /// Log of every `set_output_device` call — `None` means "follow default".
     pub output_device_log: Vec<Option<String>>,
+    /// The most recent `set_click_schedule` marks.
+    pub click_schedule: Vec<ClickMark>,
 }
 
 impl AudioControl for MockEngine {
@@ -52,6 +58,9 @@ impl AudioControl for MockEngine {
     fn set_output_device(&mut self, target: Option<String>) {
         self.output_device_log.push(target);
     }
+    fn set_click_schedule(&mut self, marks: Vec<ClickMark>) {
+        self.click_schedule = marks;
+    }
 }
 
 /// Shared handle so tests can keep a clone while App owns the AudioControl.
@@ -67,5 +76,23 @@ impl AudioControl for std::sync::Arc<std::sync::Mutex<MockEngine>> {
     }
     fn set_output_device(&mut self, target: Option<String>) {
         self.lock().unwrap().set_output_device(target);
+    }
+    fn set_click_schedule(&mut self, marks: Vec<ClickMark>) {
+        self.lock().unwrap().set_click_schedule(marks);
+    }
+}
+
+#[cfg(test)]
+mod click_schedule_tests {
+    use super::*;
+    use engine::pipeline::ClickMark;
+
+    #[test]
+    fn mock_records_last_schedule() {
+        let mut m = MockEngine::default();
+        m.set_click_schedule(vec![ClickMark { secs: 1.0, accent: true }]);
+        assert_eq!(m.click_schedule.len(), 1);
+        assert!((m.click_schedule[0].secs - 1.0).abs() < 1e-9);
+        assert!(m.click_schedule[0].accent);
     }
 }
