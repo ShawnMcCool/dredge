@@ -21,6 +21,11 @@
     end: number;
     /** Came from analysis and is not saved yet — muted in the UI. */
     suggested?: boolean;
+    /** Identity of the saved section this row mirrors (set only when synced from
+     *  saved sections). Provisional rows from analysis leave it undefined. */
+    id?: number;
+    /** Whether that saved section carries a beat-click guide. */
+    clickGuide?: boolean;
   }
 
   let rows = $state<Row[]>([]);
@@ -47,7 +52,13 @@
         lastSongId = open.song.id;
         if (switching) editing = false;
         if (open.sections.length > 0) {
-          rows = open.sections.map((s) => ({ name: s.name, start: s.start, end: s.end }));
+          rows = open.sections.map((s) => ({
+            name: s.name,
+            start: s.start,
+            end: s.end,
+            id: s.id,
+            clickGuide: s.click_guide,
+          }));
           if (switching) dirty = false;
         } else {
           // no saved sections yet (e.g. a song analyzed before auto-save landed) —
@@ -81,10 +92,6 @@
   }
 
   let analysis = $derived($openSong?.analysis ?? null);
-  // The saved sections, in display order — used to back the per-row click-guide
-  // toggle with a real section (id + click_guide flag). Display rows mirror this
-  // list 1:1 when sections are saved; provisional (suggested) rows have no match.
-  let savedSections = $derived($openSong?.sections ?? []);
   let running = $derived($prepareState !== null);
   let hasAnalysis = $derived((analysis?.sections?.length ?? 0) > 0);
 
@@ -237,15 +244,14 @@
             <span class="name">{row.name}</span>
             <span class="range mono">{fmtDur(row.start, true)}–{fmtDur(row.end, true)}</span>
           </button>
-          {#if $sectionClickAvailable && savedSections[i]}
-            {@const section = savedSections[i]}
+          {#if $sectionClickAvailable && row.id != null}
             <button
               class="click-toggle"
-              class:on={section.click_guide}
-              onclick={() => actions.toggleSectionClick(section.id, !section.click_guide)}
+              class:on={row.clickGuide}
+              onclick={() => actions.toggleSectionClick(row.id!, !row.clickGuide)}
               title="beat-click guide during this section"
               aria-label="toggle beat click for this section"
-              aria-pressed={section.click_guide ?? false}
+              aria-pressed={row.clickGuide ?? false}
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M9 18V6l8-2v12" />
