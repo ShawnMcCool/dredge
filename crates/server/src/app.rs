@@ -4,6 +4,7 @@ use crate::protocol::{Event, Request, Response};
 use crate::sampler::{SharedWork, WorkReporter, WorkSample};
 use crate::stems::{StemSeparator, STEM_NAMES};
 use crate::tuner::{RealTuner, TunerControl, TunerReading};
+use engine::metronome::{Cadence, Kit};
 use engine::pipeline::{EngineCmd, EngineEvent};
 use practice::library::{LoopRename, NewLoop, NewSection};
 use practice::model::{
@@ -477,6 +478,7 @@ impl App {
             "mute" => self.mute(p),
             "pitch" => self.pitch(p),
             "countin.set" => self.countin_set(p),
+            "metronome.set" => self.metronome_set(p),
             "status" => self.status(),
             // device::list_* returns engine::error::Error (not String), so an
             // extra map_err converts it to String before err_str() takes over.
@@ -719,6 +721,68 @@ impl App {
         });
     }
 
+    fn metronome_set(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            running: bool,
+            bpm: f64,
+            beats_per_bar: u32,
+            cadence: String,
+            kit: String,
+        }
+        let p: P = from_params(p)?;
+        self.store
+            .set_setting(
+                "metronome",
+                &json!({
+                    "bpm": p.bpm.clamp(30.0, 300.0),
+                    "beats_per_bar": p.beats_per_bar.max(1),
+                    "cadence": p.cadence,
+                    "kit": p.kit,
+                }),
+            )
+            .err_str()?;
+        self.push_metronome(p.running);
+        Ok(Value::Null)
+    }
+
+    /// Send the persisted metronome config to the engine. `running` is carried
+    /// separately (transient) so launch never auto-starts the click.
+    fn push_metronome(&mut self, running: bool) {
+        let cfg = self
+            .store
+            .get_setting("metronome")
+            .ok()
+            .flatten()
+            .unwrap_or(Value::Null);
+        let bpm = cfg
+            .get("bpm")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(120.0)
+            .clamp(30.0, 300.0);
+        let beats_per_bar = cfg
+            .get("beats_per_bar")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(4) as u32;
+        let cadence = match cfg.get("cadence").and_then(|v| v.as_str()) {
+            Some("bar") => Cadence::EveryBar,
+            Some("half") => Cadence::HalfBar,
+            _ => Cadence::EveryBeat,
+        };
+        let kit = match cfg.get("kit").and_then(|v| v.as_str()) {
+            Some("kick_snare") => Kit::KickSnare,
+            Some("cowbell") => Kit::Cowbell,
+            _ => Kit::Click,
+        };
+        self.audio.set_metronome(EngineCmd::SetMetronome {
+            running,
+            beat_secs: 60.0 / bpm,
+            beats_per_bar: beats_per_bar.max(1),
+            cadence,
+            kit,
+        });
+    }
+
     /// Recompute the section-click schedule from the persisted master switch,
     /// the open song's sections, and its analyzed beat grid; push it to the
     /// engine. Empty schedule when off, no song open, or no analysis.
@@ -882,6 +946,12 @@ impl App {
                     event: "song_finished".into(),
                     data: Value::Null,
                 }),
+                EngineEvent::MetronomeBeat { beat, of, sounded } => {
+                    events.push(Event {
+                        event: "metronome_beat".into(),
+                        data: json!({ "beat": beat, "of": of, "sounded": sounded }),
+                    });
+                }
             }
         }
         // Only the final Position per tick is broadcast (throttling), and only
