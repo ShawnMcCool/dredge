@@ -127,7 +127,8 @@ impl RenderCore {
         // The metronome runs regardless of song/pipeline; mix it over whatever
         // the pipeline produced (audio, or the silence fill).
         self.metro_beats.clear();
-        self.metronome.render(out, self.volume, &mut self.metro_beats);
+        self.metronome
+            .render(out, self.volume, &mut self.metro_beats);
         for b in self.metro_beats.drain(..) {
             let _ = self.evt_tx.push(EngineEvent::MetronomeBeat {
                 beat: b.beat,
@@ -150,7 +151,10 @@ mod tests {
         let (evt_tx, _evt_rx) = rtrb::RingBuffer::<EngineEvent>::new(256);
         let song_slot = Arc::new(ArcSwapOption::<StemSet>::empty());
         let click_slot = Arc::new(ArcSwapOption::<Vec<crate::pipeline::ClickMark>>::empty());
-        (RenderCore::new(cmd_rx, evt_tx, song_slot, click_slot), cmd_tx)
+        (
+            RenderCore::new(cmd_rx, evt_tx, song_slot, click_slot),
+            cmd_tx,
+        )
     }
 
     #[test]

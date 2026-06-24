@@ -97,7 +97,11 @@ struct Voice {
 
 impl Default for Voice {
     fn default() -> Self {
-        Self { age: 0, sound: Sound::ClickLo, silent: true }
+        Self {
+            age: 0,
+            sound: Sound::ClickLo,
+            silent: true,
+        }
     }
 }
 
@@ -239,7 +243,11 @@ mod tests {
         let mut done = 0;
         while done < frames {
             let n = (frames - done).min(256);
-            m.render(&mut out[done * CHANNELS..(done + n) * CHANNELS], 1.0, &mut beats);
+            m.render(
+                &mut out[done * CHANNELS..(done + n) * CHANNELS],
+                1.0,
+                &mut beats,
+            );
             done += n;
         }
         (out, beats)
@@ -251,7 +259,11 @@ mod tests {
         m.configure(true, 0.5, 4, Cadence::EveryBeat, Kit::Click);
         let (_out, beats) = render_secs(&mut m, 2.1);
         let sounded: Vec<_> = beats.iter().filter(|b| b.sounded).collect();
-        assert!(sounded.len() >= 4 && sounded.len() <= 5, "got {} beats", sounded.len());
+        assert!(
+            sounded.len() >= 4 && sounded.len() <= 5,
+            "got {} beats",
+            sounded.len()
+        );
         assert_eq!(beats[0].beat, 1);
         assert_eq!(beats[0].of, 4);
     }
@@ -271,7 +283,13 @@ mod tests {
         m.configure(true, 0.25, 4, Cadence::EveryBar, Kit::Click);
         let (_o, beats) = render_secs(&mut m, 2.1);
         for b in &beats {
-            assert_eq!(b.sounded, b.beat == 1, "beat {} sounded={}", b.beat, b.sounded);
+            assert_eq!(
+                b.sounded,
+                b.beat == 1,
+                "beat {} sounded={}",
+                b.beat,
+                b.sounded
+            );
         }
     }
 
@@ -313,7 +331,10 @@ mod tests {
         let mut m = Metronome::default();
         m.configure(true, 0.5, 4, Cadence::EveryBeat, Kit::KickSnare);
         let (out, _b) = render_secs(&mut m, 1.0);
-        assert!(out.iter().any(|s| s.abs() > 0.01), "metronome produced audio");
+        assert!(
+            out.iter().any(|s| s.abs() > 0.01),
+            "metronome produced audio"
+        );
     }
 
     #[test]

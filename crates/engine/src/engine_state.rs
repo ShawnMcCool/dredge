@@ -188,7 +188,10 @@ mod tests {
             cadence: Cadence::HalfBar,
             kit: Kit::KickSnare,
         });
-        assert_eq!(s.metronome, Some((true, 0.5, 3, Cadence::HalfBar, Kit::KickSnare)));
+        assert_eq!(
+            s.metronome,
+            Some((true, 0.5, 3, Cadence::HalfBar, Kit::KickSnare))
+        );
         assert!(s.replay_cmds().contains(&EngineCmd::SetMetronome {
             running: true,
             beat_secs: 0.5,

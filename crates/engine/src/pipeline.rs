@@ -1,7 +1,7 @@
 use crate::buffer::{StemSet, CHANNELS, SAMPLE_RATE};
 use crate::filter::Focus;
-use crate::metronome::{Cadence, Kit};
 use crate::looper::Looper;
+use crate::metronome::{Cadence, Kit};
 use crate::stretch::{Stretcher, BLOCK_FRAMES};
 use std::sync::Arc;
 
