@@ -25,7 +25,7 @@ pub struct ClickMark {
 /// The click waveform sample for a given envelope age (frames since trigger),
 /// shared by the count-in pre-roll and the section-click overlay so they sound
 /// identical. Silent once the envelope has decayed.
-fn click_wave(age: usize, accent: bool, volume: f32) -> f32 {
+pub(crate) fn click_wave(age: usize, accent: bool, volume: f32) -> f32 {
     if age >= CLICK_LEN_FRAMES {
         return 0.0;
     }

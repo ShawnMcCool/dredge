@@ -15,6 +15,7 @@ pub mod export;
 pub mod ffi;
 pub mod filter;
 pub mod looper;
+pub mod metronome;
 #[cfg(target_os = "linux")]
 pub mod output;
 #[cfg(not(target_os = "linux"))]
