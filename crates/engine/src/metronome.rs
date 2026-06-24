@@ -287,6 +287,19 @@ mod tests {
     }
 
     #[test]
+    fn half_bar_cadence_in_odd_meter_sounds_one_and_mid() {
+        // 5/4: HalfBar sounds beat 1 and the integer mid-bar beat (1 + 5/2 = 3).
+        let mut m = Metronome::default();
+        m.configure(true, 0.2, 5, Cadence::HalfBar, Kit::Click);
+        let (_o, beats) = render_secs(&mut m, 2.1);
+        assert!(beats.iter().any(|b| b.beat == 3), "saw a beat 3 to check");
+        for b in &beats {
+            let want = b.beat == 1 || b.beat == 3;
+            assert_eq!(b.sounded, want, "beat {} sounded={}", b.beat, b.sounded);
+        }
+    }
+
+    #[test]
     fn stopped_metronome_is_silent_and_emits_no_beats() {
         let mut m = Metronome::default();
         m.configure(false, 0.5, 4, Cadence::EveryBeat, Kit::Click);
