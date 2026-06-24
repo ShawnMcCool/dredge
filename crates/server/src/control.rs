@@ -8,6 +8,7 @@ pub trait AudioControl: Send {
     fn poll_events(&mut self) -> Vec<EngineEvent>;
     fn set_output_device(&mut self, target: Option<String>);
     fn set_click_schedule(&mut self, marks: Vec<ClickMark>);
+    fn set_metronome(&mut self, cmd: EngineCmd);
 }
 
 impl AudioControl for engine::Engine {
@@ -27,6 +28,9 @@ impl AudioControl for engine::Engine {
     }
     fn set_click_schedule(&mut self, marks: Vec<ClickMark>) {
         engine::Engine::set_click_schedule(self, marks);
+    }
+    fn set_metronome(&mut self, cmd: EngineCmd) {
+        engine::Engine::send(self, cmd);
     }
 }
 
@@ -61,6 +65,9 @@ impl AudioControl for MockEngine {
     fn set_click_schedule(&mut self, marks: Vec<ClickMark>) {
         self.click_schedule = marks;
     }
+    fn set_metronome(&mut self, cmd: EngineCmd) {
+        self.sent.push(cmd);
+    }
 }
 
 /// Shared handle so tests can keep a clone while App owns the AudioControl.
@@ -79,6 +86,35 @@ impl AudioControl for std::sync::Arc<std::sync::Mutex<MockEngine>> {
     }
     fn set_click_schedule(&mut self, marks: Vec<ClickMark>) {
         self.lock().unwrap().set_click_schedule(marks);
+    }
+    fn set_metronome(&mut self, cmd: EngineCmd) {
+        self.lock().unwrap().set_metronome(cmd);
+    }
+}
+
+#[cfg(test)]
+mod metronome_control_tests {
+    use super::*;
+    use engine::metronome::{Cadence, Kit};
+
+    #[test]
+    fn mock_records_set_metronome() {
+        let mut m = MockEngine::default();
+        m.set_metronome(EngineCmd::SetMetronome {
+            running: true,
+            beat_secs: 0.5,
+            beats_per_bar: 4,
+            cadence: Cadence::EveryBeat,
+            kit: Kit::Click,
+        });
+        assert!(matches!(
+            m.sent.last(),
+            Some(EngineCmd::SetMetronome {
+                running: true,
+                beats_per_bar: 4,
+                ..
+            })
+        ));
     }
 }
 
