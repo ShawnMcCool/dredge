@@ -459,7 +459,8 @@ impl Pipeline {
                         if mark < cur {
                             self.click_cursor += 1; // stale (e.g. after a resize)
                         } else if mark < cur + self.rate {
-                            self.click_voice.trigger(self.clicks[self.click_cursor].accent);
+                            self.click_voice
+                                .trigger(self.clicks[self.click_cursor].accent);
                             self.click_cursor += 1;
                             break;
                         } else {
@@ -1005,7 +1006,10 @@ mod tests {
         // 1s of silence so the click overlay is the only output signal.
         let song = StemSet::new(vec![sine(1.0, 440.0, 0.0)]);
         let mut p = Pipeline::new(song);
-        p.set_click_schedule(Arc::new(vec![ClickMark { secs: 0.5, accent: false }]));
+        p.set_click_schedule(Arc::new(vec![ClickMark {
+            secs: 0.5,
+            accent: false,
+        }]));
         p.apply(EngineCmd::Play);
 
         let mut out = vec![0.0f32; 256 * CHANNELS];
@@ -1039,8 +1043,14 @@ mod tests {
         // Silent 4s song; loop [1.0, 3.0). One click at 1.5s (0.5s into loop).
         let song = StemSet::new(vec![sine(4.0, 440.0, 0.0)]);
         let mut p = Pipeline::new(song);
-        p.set_click_schedule(Arc::new(vec![ClickMark { secs: 1.5, accent: false }]));
-        p.apply(EngineCmd::SetLoopSecs { start: 1.0, end: 3.0 });
+        p.set_click_schedule(Arc::new(vec![ClickMark {
+            secs: 1.5,
+            accent: false,
+        }]));
+        p.apply(EngineCmd::SetLoopSecs {
+            start: 1.0,
+            end: 3.0,
+        });
         p.apply(EngineCmd::SeekSecs(1.0));
         p.apply(EngineCmd::Play);
 
@@ -1096,7 +1106,10 @@ mod tests {
         for _ in 0..20 {
             out.iter_mut().for_each(|s| *s = 0.0);
             p.render(&mut out, &mut events);
-            assert!(out.iter().all(|s| s.abs() < 1e-6), "silent with no schedule");
+            assert!(
+                out.iter().all(|s| s.abs() < 1e-6),
+                "silent with no schedule"
+            );
         }
     }
 
