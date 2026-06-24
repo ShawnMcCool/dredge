@@ -70,7 +70,11 @@ fn setup() -> Ctx {
     app.set_analyzer(Arc::new(FakeAnalyzer) as Arc<dyn Analyzer>);
     app.set_library_root(dir.path().join("library"));
 
-    let song = req(&mut app, "song.import", json!({"path": wav.to_string_lossy()}));
+    let song = req(
+        &mut app,
+        "song.import",
+        json!({"path": wav.to_string_lossy()}),
+    );
     let song_id = song["id"].as_i64().unwrap();
     req(&mut app, "song.open", json!({"song_id": song_id}));
 
@@ -121,7 +125,11 @@ fn master_arm_and_section_toggle_build_then_clear_schedule() {
 
     // Disable the master arm → schedule cleared even though the section
     // stays marked.
-    req(&mut ctx.app, "sectionclick.set", json!({ "enabled": false }));
+    req(
+        &mut ctx.app,
+        "sectionclick.set",
+        json!({ "enabled": false }),
+    );
     assert!(
         ctx.mock.lock().unwrap().click_schedule.is_empty(),
         "master off → empty schedule"

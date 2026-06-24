@@ -27,7 +27,10 @@ pub fn build_schedule(analysis: &Analysis, sections: &[Section]) -> Vec<ClickMar
         .beats
         .iter()
         .filter(|&&b| spans.iter().any(|&(s, e)| b >= s && b < e))
-        .map(|&b| ClickMark { secs: b, accent: is_downbeat(b, &analysis.downbeats) })
+        .map(|&b| ClickMark {
+            secs: b,
+            accent: is_downbeat(b, &analysis.downbeats),
+        })
         .collect()
 }
 
@@ -48,7 +51,13 @@ mod tests {
     }
 
     fn analysis(beats: Vec<f64>, downbeats: Vec<f64>) -> Analysis {
-        Analysis { bpm: Some(120.0), beats, downbeats, sections: vec![], engine: "test".into() }
+        Analysis {
+            bpm: Some(120.0),
+            beats,
+            downbeats,
+            sections: vec![],
+            engine: "test".into(),
+        }
     }
 
     #[test]

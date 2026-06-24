@@ -90,7 +90,10 @@ mod click_schedule_tests {
     #[test]
     fn mock_records_last_schedule() {
         let mut m = MockEngine::default();
-        m.set_click_schedule(vec![ClickMark { secs: 1.0, accent: true }]);
+        m.set_click_schedule(vec![ClickMark {
+            secs: 1.0,
+            accent: true,
+        }]);
         assert_eq!(m.click_schedule.len(), 1);
         assert!((m.click_schedule[0].secs - 1.0).abs() < 1e-9);
         assert!(m.click_schedule[0].accent);
