@@ -149,7 +149,13 @@
 
   async function save() {
     await actions.replaceSections(
-      rows.map((r, i) => ({ name: r.name, start: r.start, end: r.end, position: i })),
+      rows.map((r, i) => ({
+        name: r.name,
+        start: r.start,
+        end: r.end,
+        position: i,
+        clickGuide: r.clickGuide ?? false,
+      })),
     );
     dirty = false;
     editing = false;

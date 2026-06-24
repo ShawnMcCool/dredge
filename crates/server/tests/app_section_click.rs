@@ -143,3 +143,94 @@ fn master_arm_and_section_toggle_build_then_clear_schedule() {
         "re-arm rebuilds from the marked section"
     );
 }
+
+/// A structure edit (`section.replace`) must preserve each surviving section's
+/// click_guide flag AND recompute the schedule, instead of silently dropping
+/// the marks and leaving the engine clicking stale spans.
+#[test]
+fn section_replace_preserves_click_guide_and_recomputes() {
+    let mut ctx = setup();
+
+    let sections = req(&mut ctx.app, "song.open", json!({"song_id": ctx.song_id}))["sections"]
+        .as_array()
+        .unwrap()
+        .clone();
+    assert!(!sections.is_empty(), "analysis auto-committed sections");
+    let section_id = sections[0]["id"].as_i64().unwrap();
+
+    // Arm + mark a section → non-empty schedule.
+    req(&mut ctx.app, "sectionclick.set", json!({ "enabled": true }));
+    req(
+        &mut ctx.app,
+        "section.click.set",
+        json!({ "section_id": section_id, "on": true }),
+    );
+    assert!(
+        !ctx.mock.lock().unwrap().click_schedule.is_empty(),
+        "marked + armed → non-empty schedule before the edit"
+    );
+
+    // Re-send the same sections through section.replace WITH click_guide:true on
+    // the marked one (mirrors what the editor's save() now sends).
+    let payload: Vec<Value> = sections
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            json!({
+                "name": s["name"],
+                "start": s["start"],
+                "end": s["end"],
+                "position": i,
+                "click_guide": s["id"].as_i64() == Some(section_id),
+            })
+        })
+        .collect();
+    let res = req(
+        &mut ctx.app,
+        "section.replace",
+        json!({ "song_id": ctx.song_id, "sections": payload }),
+    );
+
+    // (a) The returned sections still carry the flag.
+    let out = res["sections"].as_array().unwrap();
+    let marked = out
+        .iter()
+        .find(|s| s["name"] == sections[0]["name"])
+        .expect("marked section survives the replace");
+    assert_eq!(
+        marked["click_guide"],
+        json!(true),
+        "click_guide survives section.replace"
+    );
+
+    // (b) The schedule was recomputed and is still non-empty (recompute fired +
+    //     flag preserved). No master-arm toggle was needed.
+    assert!(
+        !ctx.mock.lock().unwrap().click_schedule.is_empty(),
+        "section.replace recomputes the schedule from the preserved flag"
+    );
+
+    // A subsequent replace that omits/clears click_guide clears the schedule.
+    let cleared: Vec<Value> = sections
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            json!({
+                "name": s["name"],
+                "start": s["start"],
+                "end": s["end"],
+                "position": i,
+                "click_guide": false,
+            })
+        })
+        .collect();
+    req(
+        &mut ctx.app,
+        "section.replace",
+        json!({ "song_id": ctx.song_id, "sections": cleared }),
+    );
+    assert!(
+        ctx.mock.lock().unwrap().click_schedule.is_empty(),
+        "clearing the flag via section.replace empties the schedule"
+    );
+}

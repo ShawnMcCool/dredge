@@ -1501,6 +1501,8 @@ impl App {
             start: f64,
             end: f64,
             position: i32,
+            #[serde(default)]
+            click_guide: bool,
         }
         #[derive(Deserialize)]
         struct P {
@@ -1516,9 +1518,15 @@ impl App {
                 start: s.start,
                 end: s.end,
                 position: s.position,
+                click_guide: s.click_guide,
             })
             .collect();
         self.commit_sections(p.song_id, &news)?;
+        // Section spans changed, so the engine's beat-click schedule is stale
+        // (it may still be clicking deleted/moved spans). Rebuild it now. The
+        // post-analysis auto-commit path calls push_section_click separately, so
+        // this stays in section_replace to avoid a double-call there.
+        self.push_section_click();
         let (sections, orphan_notes) = self.sections_payload(p.song_id)?;
         Ok(json!({ "sections": sections, "orphan_notes": orphan_notes }))
     }
@@ -1584,6 +1592,8 @@ impl App {
                 start: s.start,
                 end: s.end,
                 position: i as i32,
+                // analysis suggestions start unmarked; the user opts in later.
+                click_guide: false,
             })
             .collect();
         let sections = self.commit_sections(song_id, &news)?;

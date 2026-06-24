@@ -916,13 +916,25 @@ export const actions = {
 
   /** Replace the whole section lane. */
   async replaceSections(
-    sections: { name: string; start: number; end: number; position: number }[],
+    sections: {
+      name: string;
+      start: number;
+      end: number;
+      position: number;
+      clickGuide?: boolean;
+    }[],
   ): Promise<void> {
     const open = get(openSong);
     if (!open) return;
     const out = await cmd<{ sections: Section[]; orphan_notes: OrphanNote[] }>("section.replace", {
       song_id: open.song.id,
-      sections,
+      sections: sections.map((s) => ({
+        name: s.name,
+        start: s.start,
+        end: s.end,
+        position: s.position,
+        click_guide: s.clickGuide ?? false,
+      })),
     });
     openSong.update((o) =>
       o ? { ...o, sections: out.sections, orphan_notes: out.orphan_notes } : o,

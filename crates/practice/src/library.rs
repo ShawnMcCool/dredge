@@ -10,6 +10,7 @@ pub struct NewSection<'a> {
     pub start: f64,
     pub end: f64,
     pub position: i32,
+    pub click_guide: bool,
 }
 
 pub struct NewLoop<'a> {
@@ -251,7 +252,7 @@ impl Library {
                 start: s.start,
                 end: s.end,
                 position: s.position,
-                click_guide: false,
+                click_guide: s.click_guide,
             })
             .collect();
         out.sort_by_key(|s| s.position);
@@ -621,6 +622,7 @@ mod tests {
                     start: 0.0,
                     end: 10.0,
                     position: 0,
+                    click_guide: false,
                 }],
             )
             .unwrap();
@@ -684,6 +686,7 @@ mod tests {
                     start: 0.0,
                     end: 10.0,
                     position: 0,
+                    click_guide: false,
                 }],
             )
             .unwrap();
@@ -699,6 +702,54 @@ mod tests {
         let reloaded = lib2.list_sections(song.id);
         assert!(reloaded[0].click_guide, "flag survived reload");
         assert_eq!(reloaded[0].id, sec_id);
+    }
+
+    #[test]
+    fn replace_sections_carries_click_guide() {
+        let lib_dir = tempfile::tempdir().unwrap();
+        let src_dir = tempfile::tempdir().unwrap();
+        let audio_src = src_dir.path().join("track.flac");
+        std::fs::write(&audio_src, b"AUDIO").unwrap();
+
+        let mut lib = Library::load(lib_dir.path().to_path_buf()).unwrap();
+        let song = lib
+            .create_song(&audio_src, "Replace Song", None, "replacehash", 60.0)
+            .unwrap();
+
+        // Replace with two sections; mark the second one's click guide on.
+        let saved = lib
+            .replace_sections(
+                song.id,
+                &[
+                    NewSection {
+                        name: "intro",
+                        start: 0.0,
+                        end: 10.0,
+                        position: 0,
+                        click_guide: false,
+                    },
+                    NewSection {
+                        name: "verse",
+                        start: 10.0,
+                        end: 20.0,
+                        position: 1,
+                        click_guide: true,
+                    },
+                ],
+            )
+            .unwrap();
+        assert_eq!(saved.len(), 2);
+        assert!(!saved[0].click_guide, "intro stays unmarked");
+        assert!(saved[1].click_guide, "verse keeps its mark through replace");
+
+        // And it persists to the manifest.
+        let lib2 = Library::load(lib_dir.path().to_path_buf()).unwrap();
+        let reloaded = lib2.list_sections(song.id);
+        assert!(!reloaded[0].click_guide);
+        assert!(
+            reloaded[1].click_guide,
+            "flag survived reload after replace"
+        );
     }
 
     // ── rename tracks the bundle dir ──
