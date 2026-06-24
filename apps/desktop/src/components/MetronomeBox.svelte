@@ -2,6 +2,7 @@
   import Box from "../lib/ui/Box.svelte";
   import Group from "../lib/ui/Group.svelte";
   import { actions, metronome, metronomeBeat, openSong, type Cadence, type Kit } from "../lib/stores";
+  import { clampBpm } from "../lib/metronome";
 
   const KITS: { id: Kit; label: string }[] = [
     { id: "click", label: "click" },
@@ -21,7 +22,7 @@
 
   function setBpm(raw: number) {
     if (!Number.isFinite(raw)) return;
-    void actions.setMetronome({ bpm: Math.round(raw) });
+    void actions.setMetronome({ bpm: clampBpm(raw) }); // clamp so the field self-corrects
   }
 </script>
 
