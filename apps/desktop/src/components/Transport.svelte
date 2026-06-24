@@ -1,7 +1,6 @@
 <script lang="ts">
   import { fmtClock } from "../lib/format";
-  import { actions, countIn, countInAvailable, muted, openSong, pitch, playbackVolume, position } from "../lib/stores";
-  import { stepCountInBeats } from "../lib/count-in";
+  import { actions, muted, openSong, pitch, playbackVolume, position } from "../lib/stores";
   import Fader from "../lib/ui/Fader.svelte";
 
   // pitch stepper: ± a semitone; scroll over it for ±5 cents
@@ -19,11 +18,6 @@
     `${$pitch.semitones > 0 ? "+" : ""}${$pitch.semitones} st` +
       ($pitch.cents ? ` ${$pitch.cents > 0 ? "+" : ""}${$pitch.cents}¢` : ""),
   );
-
-  function stepCount(d: number) {
-    void actions.setCountIn({ beats: stepCountInBeats($countIn.beats, d) });
-  }
-  let countLabel = $derived(`${$countIn.beats} beat${$countIn.beats === 1 ? "" : "s"}`);
 </script>
 
 <div class="transport">
@@ -125,38 +119,6 @@
         </span>
       </div>
     </div>
-
-    {#if $countInAvailable}
-      <span class="vsep"></span>
-
-      <!-- count in: beats of clicks before playback -->
-      <div class="seg">
-        <span class="mlabel">
-          count in
-          <button
-            class="modeword"
-            class:on={$countIn.enabled}
-            onclick={() =>
-              actions.setCountIn({ loopMode: $countIn.loopMode === "first" ? "every" : "first" })}
-            title="count in on the first pass, or before every loop"
-          >{$countIn.loopMode}</button>
-          loop
-        </span>
-        <div class="mbody">
-          <button
-            class="toggle"
-            class:on={$countIn.enabled}
-            onclick={() => actions.setCountIn({ enabled: !$countIn.enabled })}
-            title="count in before playback"
-          >{$countIn.enabled ? "on" : "off"}</button>
-          <span class="stepper" class:off={!$countIn.enabled} title="beats before playback">
-            <button onclick={() => stepCount(-1)} aria-label="fewer count-in beats">−</button>
-            <span class="pval mono">{countLabel}</span>
-            <button onclick={() => stepCount(1)} aria-label="more count-in beats">+</button>
-          </span>
-        </div>
-      </div>
-    {/if}
 
     <button
       class="reset"
@@ -329,51 +291,6 @@
     min-width: 5ch;
     text-align: center;
     font-size: 13px;
-    color: var(--fg);
-  }
-
-  /* count-in on/off: a small pill, accent when on, so the beat count is kept
-     while disabled */
-  .toggle {
-    background: none;
-    border: 1px solid var(--line);
-    color: var(--muted);
-    border-radius: 4px;
-    padding: 1px 6px;
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    cursor: pointer;
-  }
-  .toggle:hover {
-    color: var(--fg);
-  }
-  .toggle.on {
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-
-  /* the beats stepper dims while count-in is off, but stays adjustable */
-  .stepper.off {
-    opacity: 0.4;
-  }
-
-  /* count-in loop mode: inline label word ("count in EVERY loop"). Reads as the
-     label, accent-colored like the volume value when on, muted grey when off. */
-  .modeword {
-    background: none;
-    border: none;
-    padding: 0;
-    font: inherit;
-    text-transform: uppercase;
-    letter-spacing: inherit;
-    color: var(--muted);
-    cursor: pointer;
-  }
-  .modeword.on {
-    color: var(--accent);
-  }
-  .modeword:hover {
     color: var(--fg);
   }
 

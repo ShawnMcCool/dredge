@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, type Component } from "svelte";
+  import ClickTrack from "./components/ClickTrack.svelte";
   import Devices from "./components/Devices.svelte";
   import Drill from "./components/Drill.svelte";
   import Export from "./components/Export.svelte";
@@ -123,6 +124,7 @@
     <div class="boxes">
       {#if $openSong}
         <Isolation />
+        <ClickTrack />
         <Notes />
       {/if}
       <Tuner />
