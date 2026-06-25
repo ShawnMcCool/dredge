@@ -1,6 +1,7 @@
 //! Audio engine: decode, stretch/pitch, sample-accurate looping (stub).
 
 pub mod buffer;
+pub mod layers;
 pub mod capture;
 #[cfg(not(target_os = "linux"))]
 #[path = "capture_cpal.rs"]
