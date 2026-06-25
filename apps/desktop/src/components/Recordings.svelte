@@ -5,6 +5,7 @@
   import { actions, openSong, recordingActive, recordings, selection, currentLoop } from "../lib/stores";
   import { framesToMs, msToFrames } from "../lib/recording-math";
   import { cmd } from "../lib/ipc";
+  import { traceErr } from "../lib/trace";
   import Box from "../lib/ui/Box.svelte";
   import Button from "../lib/ui/Button.svelte";
   import Fader from "../lib/ui/Fader.svelte";
@@ -15,10 +16,12 @@
   let deviceId = $state<string>("");
 
   $effect(() => {
-    void cmd<{ id: string; name: string }[]>("device.inputs").then((d) => {
-      devices = d;
-      if (!deviceId && d.length) deviceId = d[0].id;
-    });
+    void cmd<{ id: string; name: string }[]>("device.inputs")
+      .then((d) => {
+        devices = d;
+        if (!deviceId && d.length) deviceId = d[0].id;
+      })
+      .catch((e) => traceErr("recordings", `device.inputs failed: ${e}`));
   });
 
   async function record() {
@@ -39,15 +42,20 @@
 {#if $openSong}
   <Box label="recordings" wide>
     <div class="bar">
-      <select bind:value={span} disabled={$recordingActive}>
+      <select bind:value={span} disabled={$recordingActive} aria-label="recording span">
         <option value="song">full song</option>
         <option value="selection" disabled={!$selection}>selection</option>
         <option value="loop" disabled={!$currentLoop}>loop</option>
       </select>
-      <select bind:value={deviceId} disabled={$recordingActive}>
+      <select bind:value={deviceId} disabled={$recordingActive} aria-label="input device">
         {#each devices as d (d.id)}<option value={d.id}>{d.name}</option>{/each}
       </select>
-      <Button variant="toggle" active={$recordingActive} onclick={() => void record()}>
+      <Button
+        variant="toggle"
+        active={$recordingActive}
+        disabled={!$recordingActive && !deviceId}
+        onclick={() => void record()}
+      >
         {$recordingActive ? "stop" : "record"}
       </Button>
     </div>
@@ -69,6 +77,7 @@
         <Button
           variant="chip"
           active={r.muted}
+          aria-pressed={r.muted}
           onclick={() => void actions.toggleRecordingMute(r.id)}
           title="mute"
         >M</Button>
@@ -80,7 +89,13 @@
           onchange={(e) => void actions.setRecordingNudge(r.id, msToFrames(+e.currentTarget.value))}
           title="nudge (ms)"
         />
-        <button class="del" onclick={() => void actions.deleteRecording(r.id)} title="delete">✕</button>
+        <button
+          type="button"
+          class="del"
+          onclick={() => void actions.deleteRecording(r.id)}
+          title="delete"
+          aria-label="delete recording"
+        >✕</button>
       </div>
     {/each}
   </Box>
