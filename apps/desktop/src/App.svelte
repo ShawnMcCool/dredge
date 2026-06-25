@@ -11,6 +11,7 @@
   import ProfilingPanel from "./components/ProfilingPanel.svelte";
   import Isolation from "./components/Isolation.svelte";
   import Notes from "./components/Notes.svelte";
+  import Recordings from "./components/Recordings.svelte";
   import Sections from "./components/Sections.svelte";
   import SettingsPanel from "./components/SettingsPanel.svelte";
   import Transport from "./components/Transport.svelte";
@@ -128,6 +129,7 @@
         <Isolation />
         <ClickTrack />
         <Notes />
+        <Recordings />
       {/if}
       <Tuner />
       {#if $openSong && $drillSpan}
