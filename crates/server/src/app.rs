@@ -377,6 +377,11 @@ struct PendingRecording {
     /// Span length in source frames; the take ends when playback reaches
     /// `(anchor_frame + len_frames) / SAMPLE_RATE`.
     len_frames: i64,
+    /// Capture-ring frame mapping to the song's `anchor_frame`, frozen at the
+    /// first real-playback tick (count-in done). `None` until pinned. Pinning at
+    /// playback start keeps the graph-time extrapolation short and excludes the
+    /// count-in cleanly, instead of extrapolating from span-end at finalize.
+    ring_start: Option<i64>,
 }
 
 const INPUT_LATENCY_KEY: &str = "input_latency_frames";
@@ -1063,6 +1068,35 @@ impl App {
                 });
             }
         }
+        // Pin the take's anchor at the first real-playback tick (count-in done):
+        // freeze the capture-ring frame that maps to the song's `anchor_frame`
+        // via the stream clocks. Snapshots are self-timestamping, so reading them
+        // a tick late is fine — and extrapolating to the anchor from *here*
+        // (playback start) is a few ms, versus extrapolating back from span end
+        // across the held-during-count-in audible frame (which delayed the take
+        // by the count-in length).
+        if let Some((_secs, _rate, playing, count_in)) = last_pos {
+            let anchor = self
+                .pending_recording
+                .as_ref()
+                .filter(|p| p.ring_start.is_none())
+                .map(|p| p.anchor_frame);
+            if playing && count_in.is_none() {
+                if let Some(anchor) = anchor {
+                    let play_snap = self.audio.playback_clock_snapshot();
+                    let cap = self.recorder.lock().unwrap().capture_snapshot();
+                    if let (Some(play), Some((cap_snap, ring_total))) = (play_snap, cap) {
+                        let t = play.ns_at_frame(anchor);
+                        let ring_start =
+                            engine::stream_clock::ring_frame_at_ns(&cap_snap, ring_total, t);
+                        if let Some(p) = self.pending_recording.as_mut() {
+                            p.ring_start = Some(ring_start);
+                        }
+                    }
+                }
+            }
+        }
+
         // Auto-finalize at span end: once playback reaches the take's end frame,
         // finalize regardless of whether the user has clicked stop yet — this is
         // what locks the take to the span instead of to the stop click. `take()`
@@ -1573,6 +1607,7 @@ impl App {
             song_id,
             anchor_frame: start,
             len_frames,
+            ring_start: None,
         });
         self.audio.send(EngineCmd::SeekSecs(
             start as f64 / engine::buffer::SAMPLE_RATE as f64,
@@ -1588,33 +1623,23 @@ impl App {
     /// (`recording_stop`) and the auto-finalize-at-span-end path (`tick`).
     fn finalize_recording(&mut self) -> Result<Recording, String> {
         let pending = self.pending_recording.take().ok_or("not recording")?;
-        // Read the playback clock before locking the recorder (distinct fields,
-        // but keeps the borrow windows tidy).
-        let play_snap = self.audio.playback_clock_snapshot();
         let samples = {
             let mut rec = self.recorder.lock().unwrap();
-            let cap = rec.capture_snapshot();
-            // Map the song's `anchor_frame` through graph time to the ring frame
-            // acquired at that instant; extract `len_frames` from there.
-            let extracted = match (cap, play_snap) {
-                (Some((cap_snap, ring_total)), Some(play)) => {
-                    let t = play.ns_at_frame(pending.anchor_frame);
-                    let ring_start =
-                        engine::stream_clock::ring_frame_at_ns(&cap_snap, ring_total, t);
-                    let got = rec.extract_range(ring_start, pending.len_frames);
-                    if got.is_none() {
-                        eprintln!(
-                            "dredge: recording range evicted (ring_start={ring_start}, \
-                             len={}); falling back to snapshot_last",
-                            pending.len_frames
-                        );
-                    }
-                    got
+            // `ring_start` was pinned at the first real-playback tick (see `tick`).
+            // Extract the take from there. `None` means the clocks never published
+            // (non-PipeWire backend) or playback never started — fall back to the
+            // tail of the ring.
+            let extracted = pending.ring_start.and_then(|ring_start| {
+                let got = rec.extract_range(ring_start, pending.len_frames);
+                if got.is_none() {
+                    eprintln!(
+                        "dredge: recording range evicted (ring_start={ring_start}, len={}); \
+                         falling back to snapshot_last",
+                        pending.len_frames
+                    );
                 }
-                // No published snapshots (clocks never ran, e.g. a non-PipeWire
-                // backend): fall back to the tail of the ring.
-                _ => None,
-            };
+                got
+            });
             rec.disarm_clock();
             // `stop()` tears down the capture session (joins its thread) in all
             // paths; its snapshot_last result is the fallback when the
