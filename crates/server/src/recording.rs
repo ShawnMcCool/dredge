@@ -50,6 +50,8 @@ pub trait RecordingControl: Send {
     /// Capture `secs` of input from `device_id` for latency calibration (the
     /// caller emits a click out the output and analyses the result with
     /// `detect_click_onset`). Returns the captured interleaved-stereo f32.
+    /// NOTE: blocks the calling thread for ~`secs` seconds — dispatch it outside
+    /// any hot lock.
     fn calibrate_capture(&mut self, device_id: &str, secs: f64) -> Result<Vec<f32>, String>;
 }
 
@@ -57,6 +59,7 @@ pub trait RecordingControl: Send {
 pub struct FakeRecorder {
     pub canned: Vec<f32>,
     pub started: Option<(String, i64)>,
+    pub stopped: bool,
 }
 
 #[cfg(test)]
@@ -66,6 +69,7 @@ impl RecordingControl for FakeRecorder {
         Ok(())
     }
     fn stop(&mut self) -> Result<Vec<f32>, String> {
+        self.stopped = true;
         Ok(self.canned.clone())
     }
     fn calibrate_capture(&mut self, _device_id: &str, _secs: f64) -> Result<Vec<f32>, String> {
@@ -97,6 +101,9 @@ impl RecordingControl for RealRecorder {
             .lock()
             .map_err(|_| "capture ring poisoned")?
             .snapshot_last(secs);
+        // the snapshot's MutexGuard is a temporary that drops at the end of the
+        // previous statement, so the lock is released before cap.stop() joins
+        // the capture thread (no deadlock).
         cap.stop();
         Ok(snap)
     }
@@ -111,6 +118,9 @@ impl RecordingControl for RealRecorder {
             .lock()
             .map_err(|_| "capture ring poisoned")?
             .snapshot_last(secs);
+        // the snapshot's MutexGuard is a temporary that drops at the end of the
+        // previous statement, so the lock is released before cap.stop() joins
+        // the capture thread (no deadlock).
         cap.stop();
         Ok(snap)
     }
