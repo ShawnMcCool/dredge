@@ -85,11 +85,14 @@ per-layer nudge is the pragmatic model the user chose.
   buffer **before** the stretcher. A negative or partial overlap is clamped.
   Because layers are read by source-frame, loop wrap and crossfade re-read them
   correctly with no extra logic.
-- **New `EngineCmd` variants:** `AddLayer`, `RemoveLayer { id }`,
-  `SetLayerGain { id, gain }`, `SetLayerMute { id, muted }`,
-  `SetLayerOffset { id, start_frame }` (for nudge / calibration re-apply). Layer
-  buffers are loaded on the control thread and handed over by `Arc` swap, never
-  allocated on the RT thread.
+- **Layers cross the audio-thread boundary via a new `layer_slot:
+  ArcSwapOption<Vec<Layer>>`**, mirroring the existing `song_slot` / `click_slot`
+  — *not* via new `EngineCmd` variants (an `EngineCmd` is `Copy` and cannot carry
+  an `Arc<SongBuffer>`). The control thread rebuilds the whole `Vec<Layer>` on
+  any change (add / delete / gain / mute / nudge — `Arc` clones are cheap, audio
+  is never copied) and stores it; the render core picks it up on its next block
+  and forwards it to the pipeline exactly like the click schedule. No layer
+  buffer is ever allocated on the RT thread.
 - **Targeted modularity improvement:** to avoid fattening the already-large
   `Pipeline::render_song()` (1141 lines), extract the "sum active layers into the
   pre-stretch buffer at offset" step into a small dedicated helper rather than
