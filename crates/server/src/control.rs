@@ -9,6 +9,8 @@ pub trait AudioControl: Send {
     fn set_output_device(&mut self, target: Option<String>);
     fn set_click_schedule(&mut self, marks: Vec<ClickMark>);
     fn set_metronome(&mut self, cmd: EngineCmd);
+    /// Replace the active overdub layer set (atomic swap on the engine side).
+    fn set_layers(&self, layers: Vec<engine::layers::Layer>);
 }
 
 impl AudioControl for engine::Engine {
@@ -32,6 +34,9 @@ impl AudioControl for engine::Engine {
     fn set_metronome(&mut self, cmd: EngineCmd) {
         engine::Engine::send(self, cmd);
     }
+    fn set_layers(&self, layers: Vec<engine::layers::Layer>) {
+        engine::Engine::set_layers(self, layers);
+    }
 }
 
 /// Test double: records commands, plays back queued events.
@@ -46,6 +51,8 @@ pub struct MockEngine {
     pub output_device_log: Vec<Option<String>>,
     /// The most recent `set_click_schedule` marks.
     pub click_schedule: Vec<ClickMark>,
+    /// Layer count from the most recent `set_layers`.
+    pub layers_len: usize,
 }
 
 impl AudioControl for MockEngine {
@@ -68,6 +75,11 @@ impl AudioControl for MockEngine {
     fn set_metronome(&mut self, cmd: EngineCmd) {
         self.sent.push(cmd);
     }
+    fn set_layers(&self, _layers: Vec<engine::layers::Layer>) {
+        // A bare MockEngine can't record through `&self`; the realistic test
+        // path wraps it in `Arc<Mutex<_>>` (below), which can. Left a no-op so
+        // the trait is satisfied for any direct use.
+    }
 }
 
 /// Shared handle so tests can keep a clone while App owns the AudioControl.
@@ -89,6 +101,9 @@ impl AudioControl for std::sync::Arc<std::sync::Mutex<MockEngine>> {
     }
     fn set_metronome(&mut self, cmd: EngineCmd) {
         self.lock().unwrap().set_metronome(cmd);
+    }
+    fn set_layers(&self, layers: Vec<engine::layers::Layer>) {
+        self.lock().unwrap().layers_len = layers.len();
     }
 }
 

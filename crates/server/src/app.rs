@@ -8,7 +8,8 @@ use engine::metronome::{Cadence, Kit};
 use engine::pipeline::{EngineCmd, EngineEvent};
 use practice::library::{LoopRename, NewLoop, NewSection};
 use practice::model::{
-    Analysis, AnalysisSection, LoopId, LoopKind, ProfileRun, Section, SectionId, Song, SongId,
+    Analysis, AnalysisSection, LoopId, LoopKind, ProfileRun, Recording, RecordingId, Section,
+    SectionId, Song, SongId,
 };
 use practice::notes::NotesDoc;
 use practice::store::Store;
@@ -45,6 +46,15 @@ fn beat_secs_from_bpm(bpm: f64) -> f64 {
     60.0 / bpm
 }
 
+/// Current UTC time as an RFC-3339 string for recording timestamps. Mirrors the
+/// formatting used by `logging.rs`; an unexpected format error yields "" rather
+/// than failing the command.
+fn now_rfc3339() -> String {
+    time::OffsetDateTime::now_utc()
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap_or_default()
+}
+
 // --- shared dispatch (lock-phased heavy commands) ---------------------------
 
 /// Dispatch that holds the App lock only for state work — known-heavy
@@ -58,6 +68,7 @@ pub fn dispatch_shared(app: &Arc<Mutex<App>>, req: Request) -> Response {
         "song.open" => open_phased(app, req.params),
         "song.import" => import_phased(app, req.params),
         "song.update" => update_phased(app, req.params),
+        "recording.calibrate" => calibrate_phased(app, req.params),
         _ => return app.lock().unwrap().dispatch(req),
     };
     match phased {
@@ -93,6 +104,32 @@ fn import_phased(app: &Arc<Mutex<App>>, p: Value) -> Result<Value, String> {
     }
     let prep = import_decode(p.path, p.title, hash)?;
     app.lock().unwrap().import_prepared(prep)
+}
+
+/// Latency calibration off the App lock. `calibrate_capture` blocks for ~1.5s,
+/// so the recorder lives behind its own mutex (cloned out under a brief App
+/// lock) and the long capture runs with neither lock held — the tick pump and
+/// other clients keep moving. We then re-lock only to persist the result and
+/// rebuild layers.
+fn calibrate_phased(app: &Arc<Mutex<App>>, p: Value) -> Result<Value, String> {
+    #[derive(Deserialize)]
+    struct P {
+        device_id: String,
+    }
+    let p: P = from_params(p)?;
+    let recorder = app.lock().unwrap().recorder.clone();
+    let captured = recorder
+        .lock()
+        .unwrap()
+        .calibrate_capture(&p.device_id, 1.5)?;
+    let latency = crate::recording::detect_click_onset(&captured, 0.3).unwrap_or(0) as i64;
+    let mut guard = app.lock().unwrap();
+    guard
+        .store
+        .set_setting(INPUT_LATENCY_KEY, &json!(latency))
+        .err_str()?;
+    guard.refresh_layers();
+    Ok(json!({ "latency_frames": latency }))
 }
 
 #[derive(Deserialize)]
@@ -315,6 +352,12 @@ pub struct App {
     tuner: Box<dyn TunerControl>,
     tuner_tx: mpsc::Sender<TunerReading>,
     tuner_rx: mpsc::Receiver<TunerReading>,
+    /// Input capture backend for overdub recording. Behind its own mutex so the
+    /// blocking `calibrate_capture` can run via `dispatch_shared` without
+    /// holding the App lock (which would stall the tick pump).
+    recorder: Arc<Mutex<Box<dyn crate::recording::RecordingControl>>>,
+    /// The take being captured between `recording.start` and `recording.stop`.
+    pending_recording: Option<PendingRecording>,
 }
 
 struct OpenSong {
@@ -322,6 +365,16 @@ struct OpenSong {
     /// True when the engine got a 4-stem StemSet for this song.
     stems: bool,
 }
+
+/// In-flight recording state: what span we're capturing and for which song.
+struct PendingRecording {
+    song_id: SongId,
+    anchor_frame: i64,
+    #[allow(dead_code)]
+    len_frames: i64,
+}
+
+const INPUT_LATENCY_KEY: &str = "input_latency_frames";
 
 impl App {
     pub fn new(
@@ -370,6 +423,8 @@ impl App {
             tuner: Box::new(RealTuner::default()),
             tuner_tx,
             tuner_rx,
+            recorder: Arc::new(Mutex::new(Box::new(crate::recording::RealRecorder::default()))),
+            pending_recording: None,
         };
         // Apply the saved output device if one was persisted. The Engine's
         // fallback handles a currently-absent device by reverting to default,
@@ -388,6 +443,12 @@ impl App {
     /// Swap the tuner (tests use `MockTuner`).
     pub fn set_tuner(&mut self, tuner: Box<dyn TunerControl>) {
         self.tuner = tuner;
+    }
+
+    /// Swap the recording backend (tests use `FakeRecorder`).
+    #[cfg(test)]
+    pub fn set_recorder(&mut self, recorder: Box<dyn crate::recording::RecordingControl>) {
+        self.recorder = Arc::new(Mutex::new(recorder));
     }
 
     /// Handles the sampler thread needs (work-state slot + sample sender).
@@ -514,6 +575,20 @@ impl App {
             "settings.get_all" => self.settings_get_all(),
             "settings.set" => self.settings_set(p),
             "profiles.list" => self.profiles_list(p),
+            "recording.start" => self.recording_start(p),
+            "recording.stop" => self.recording_stop(p),
+            "recording.list" => serde_json::to_value(
+                self.open_song
+                    .as_ref()
+                    .map(|o| self.library.recordings(o.song.id))
+                    .unwrap_or_default(),
+            )
+            .err_str(),
+            "recording.rename" => self.recording_rename(p),
+            "recording.delete" => self.recording_delete(p),
+            "recording.setGain" => self.recording_set_gain(p),
+            "recording.setMute" => self.recording_set_mute(p),
+            "recording.setNudge" => self.recording_set_nudge(p),
             _ => Err(format!("unknown command: {cmd}")),
         }
     }
@@ -1360,6 +1435,217 @@ impl App {
         Ok(Value::Null)
     }
 
+    // --- recording ---------------------------------------------------------
+
+    /// Persisted round-trip input latency in frames (0 until calibrated).
+    fn input_latency_frames(&self) -> i64 {
+        self.store
+            .get_setting(INPUT_LATENCY_KEY)
+            .ok()
+            .flatten()
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0)
+    }
+
+    /// Rebuild the engine's layer set from the open song's recordings. A take
+    /// whose WAV fails to decode is logged and skipped — never fails the caller.
+    fn refresh_layers(&mut self) {
+        let Some(open) = self.open_song.as_ref() else {
+            self.audio.set_layers(Vec::new());
+            return;
+        };
+        let song_id = open.song.id;
+        let Some(dir) = self.library.bundle_dir(song_id) else {
+            return;
+        };
+        let latency = self.input_latency_frames();
+        let mut layers = Vec::new();
+        for r in self.library.recordings(song_id) {
+            let path = dir.join(&r.file);
+            match engine::decode::decode_file(&path) {
+                Ok(buf) => layers.push(engine::layers::Layer {
+                    samples: Arc::new(buf),
+                    start_frame: r.anchor_frame - latency - r.nudge_frames,
+                    gain: r.gain,
+                    muted: r.muted,
+                }),
+                Err(e) => eprintln!(
+                    "dredge: skipping recording layer {} ({}): {e}",
+                    r.id.0,
+                    path.display()
+                ),
+            }
+        }
+        self.audio.set_layers(layers);
+    }
+
+    fn recording_start(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            span: String,
+            #[serde(default)]
+            start: Option<f64>,
+            #[serde(default)]
+            end: Option<f64>,
+            device_id: String,
+        }
+        let p: P = from_params(p)?;
+        let open = self.open_song.as_ref().ok_or("no song open")?;
+        let song_id = open.song.id;
+        let song_frames = (open.song.duration_secs * engine::buffer::SAMPLE_RATE as f64).round() as i64;
+        let span = match p.span.as_str() {
+            "song" => crate::recording::Span::Song,
+            "selection" => crate::recording::Span::Selection {
+                start: p.start.ok_or("selection span needs start/end")?,
+                end: p.end.ok_or("selection span needs start/end")?,
+            },
+            "loop" => crate::recording::Span::Loop {
+                start: p.start.ok_or("loop span needs start/end")?,
+                end: p.end.ok_or("loop span needs start/end")?,
+            },
+            other => return Err(format!("unknown span: {other}")),
+        };
+        let (start, end) =
+            crate::recording::resolve_span(span, song_frames).ok_or("empty span")?;
+        let len_frames = end - start;
+        self.recorder.lock().unwrap().start(&p.device_id, len_frames)?;
+        self.pending_recording = Some(PendingRecording {
+            song_id,
+            anchor_frame: start,
+            len_frames,
+        });
+        self.audio
+            .send(EngineCmd::SeekSecs(start as f64 / engine::buffer::SAMPLE_RATE as f64));
+        self.audio.send(EngineCmd::Play);
+        Ok(Value::Null)
+    }
+
+    fn recording_stop(&mut self, _p: Value) -> Result<Value, String> {
+        let pending = self.pending_recording.take().ok_or("not recording")?;
+        let samples = self.recorder.lock().unwrap().stop()?;
+        self.audio.send(EngineCmd::Pause);
+        let dir = self
+            .library
+            .bundle_dir(pending.song_id)
+            .ok_or("song not in library")?;
+        let mut recordings = self.library.recordings(pending.song_id);
+        let next_id = recordings.iter().map(|r| r.id.0).max().unwrap_or(0) + 1;
+        let file = format!("recordings/{next_id}.wav");
+        let abs = dir.join(&file);
+        if let Some(parent) = abs.parent() {
+            std::fs::create_dir_all(parent).err_str()?;
+        }
+        engine::capture::write_wav(&abs, &samples).err_str()?;
+        let len_frames = (samples.len() / engine::buffer::CHANNELS) as i64;
+        let rec = Recording {
+            id: RecordingId(next_id),
+            name: format!("take {next_id}"),
+            file,
+            anchor_frame: pending.anchor_frame,
+            len_frames,
+            nudge_frames: 0,
+            gain: 1.0,
+            muted: false,
+            created_at: now_rfc3339(),
+        };
+        recordings.push(rec.clone());
+        self.library
+            .set_recordings(pending.song_id, recordings)
+            .err_str()?;
+        self.refresh_layers();
+        let data = serde_json::to_value(&rec).err_str()?;
+        let _ = self.job_tx.send(Event {
+            event: "recording.finished".into(),
+            data: data.clone(),
+        });
+        Ok(data)
+    }
+
+    /// Load this song's recordings, mutate the one matching `id`, persist, and
+    /// rebuild layers. Shared by rename/gain/mute/nudge. Requires an open song.
+    fn recording_mutate(
+        &mut self,
+        id: RecordingId,
+        f: impl FnOnce(&mut Recording),
+    ) -> Result<Value, String> {
+        let song_id = self.open_song.as_ref().ok_or("no song open")?.song.id;
+        let mut recordings = self.library.recordings(song_id);
+        let rec = recordings
+            .iter_mut()
+            .find(|r| r.id == id)
+            .ok_or_else(|| format!("recording not found: {}", id.0))?;
+        f(rec);
+        self.library.set_recordings(song_id, recordings).err_str()?;
+        self.refresh_layers();
+        Ok(Value::Null)
+    }
+
+    fn recording_rename(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            id: RecordingId,
+            name: String,
+        }
+        let p: P = from_params(p)?;
+        self.recording_mutate(p.id, |r| r.name = p.name)
+    }
+
+    fn recording_set_gain(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            id: RecordingId,
+            gain: f32,
+        }
+        let p: P = from_params(p)?;
+        self.recording_mutate(p.id, |r| r.gain = p.gain)
+    }
+
+    fn recording_set_mute(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            id: RecordingId,
+            muted: bool,
+        }
+        let p: P = from_params(p)?;
+        self.recording_mutate(p.id, |r| r.muted = p.muted)
+    }
+
+    fn recording_set_nudge(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            id: RecordingId,
+            nudge_ms: f64,
+        }
+        let p: P = from_params(p)?;
+        let frames = (p.nudge_ms / 1000.0 * engine::buffer::SAMPLE_RATE as f64).round() as i64;
+        self.recording_mutate(p.id, |r| r.nudge_frames = frames)
+    }
+
+    fn recording_delete(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            id: RecordingId,
+        }
+        let p: P = from_params(p)?;
+        let song_id = self.open_song.as_ref().ok_or("no song open")?.song.id;
+        let dir = self.library.bundle_dir(song_id).ok_or("song not in library")?;
+        let mut recordings = self.library.recordings(song_id);
+        let pos = recordings
+            .iter()
+            .position(|r| r.id == p.id)
+            .ok_or_else(|| format!("recording not found: {}", p.id.0))?;
+        let removed = recordings.remove(pos);
+        // Best-effort WAV removal: a missing file shouldn't fail the command.
+        if let Err(e) = std::fs::remove_file(dir.join(&removed.file)) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                eprintln!("dredge: recording WAV cleanup failed: {e}");
+            }
+        }
+        self.library.set_recordings(song_id, recordings).err_str()?;
+        self.refresh_layers();
+        Ok(Value::Null)
+    }
+
     // --- library ---------------------------------------------------------
 
     fn song_import(&mut self, p: Value) -> Result<Value, String> {
@@ -1527,11 +1813,14 @@ impl App {
             "stems": decoded.stems,
             "analysis": self.library.get_analysis(song_id),
             "orphan_notes": orphan_notes,
+            "recordings": self.library.recordings(song_id),
         });
         self.open_song = Some(OpenSong {
             song,
             stems: decoded.stems,
         });
+        // Attach this song's overdub layers (a reopened song restores its takes).
+        self.refresh_layers();
         self.push_count_in();
         self.push_section_click();
         Ok(out)
@@ -2237,5 +2526,167 @@ mod count_in_tests {
                 _ => None,
             });
         assert_eq!(last, Some(true));
+    }
+}
+
+#[cfg(test)]
+mod recording_tests {
+    use super::*;
+    use crate::control::MockEngine;
+    use crate::recording::FakeRecorder;
+    use crate::stems::FakeSeparator;
+    use engine::buffer::{CHANNELS, SAMPLE_RATE};
+    use practice::store::Store;
+    use std::sync::{Arc, Mutex};
+
+    /// Like `make_shared_mock` but installs a recording backend and a tempdir
+    /// library, then registers + opens a song so handlers have a bundle dir.
+    fn make_shared_mock_with_recorder(
+        rec: Box<dyn crate::recording::RecordingControl>,
+    ) -> (Arc<Mutex<MockEngine>>, App, SongId, tempfile::TempDir) {
+        let mock = Arc::new(Mutex::new(MockEngine::default()));
+        let mut app = App::new(
+            Store::open_in_memory().unwrap(),
+            Box::new(mock.clone()),
+            Arc::new(FakeSeparator),
+        );
+        app.set_recorder(rec);
+        let lib_dir = tempfile::tempdir().unwrap();
+        app.set_library_root(lib_dir.path().to_path_buf());
+
+        // A real (silent) audio file in a source dir; create_song copies it in.
+        let src = lib_dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        let audio = src.join("a.flac");
+        std::fs::write(&audio, b"AUDIO").unwrap();
+        let song = app
+            .library
+            .create_song(&audio, "Title", Some("Band"), "hash", 2.0)
+            .unwrap();
+        // Mark it open without paying a real decode — handlers only need the
+        // open-song header + bundle dir.
+        app.open_song = Some(OpenSong {
+            song: song.clone(),
+            stems: false,
+        });
+        (mock, app, song.id, lib_dir)
+    }
+
+    #[test]
+    fn record_start_stop_persists_a_take_and_pushes_a_layer() {
+        let (mock, mut app, song_id, _lib) = make_shared_mock_with_recorder(Box::new(FakeRecorder {
+            canned: vec![0.3f32; SAMPLE_RATE as usize * CHANNELS],
+            started: None,
+            stopped: false,
+        }));
+
+        let started = app.dispatch(Request {
+            id: 1,
+            cmd: "recording.start".into(),
+            params: json!({ "span": "song", "device_id": "0" }),
+        });
+        assert!(started.ok, "start failed: {:?}", started.error);
+
+        let finished = app.dispatch(Request {
+            id: 2,
+            cmd: "recording.stop".into(),
+            params: json!(null),
+        });
+        assert!(finished.ok, "stop failed: {:?}", finished.error);
+
+        let recs = app.library.recordings(song_id);
+        assert_eq!(recs.len(), 1);
+        let dir = app.song_bundle_dir(song_id).unwrap();
+        assert!(dir.join(&recs[0].file).exists(), "WAV should be written");
+        assert_eq!(mock.lock().unwrap().layers_len, 1, "one layer pushed");
+    }
+
+    #[test]
+    fn set_mute_and_delete_round_trip_through_the_manifest() {
+        let (mock, mut app, song_id, _lib) = make_shared_mock_with_recorder(Box::new(FakeRecorder {
+            canned: vec![0.3f32; SAMPLE_RATE as usize * CHANNELS],
+            started: None,
+            stopped: false,
+        }));
+        app.dispatch(Request {
+            id: 1,
+            cmd: "recording.start".into(),
+            params: json!({ "span": "song", "device_id": "0" }),
+        });
+        let finished = app.dispatch(Request {
+            id: 2,
+            cmd: "recording.stop".into(),
+            params: json!(null),
+        });
+        let rec: Recording = serde_json::from_value(finished.data).unwrap();
+
+        // Mute keeps the layer present (muted layers still count in the set).
+        let muted = app.dispatch(Request {
+            id: 3,
+            cmd: "recording.setMute".into(),
+            params: json!({ "id": rec.id, "muted": true }),
+        });
+        assert!(muted.ok, "setMute failed: {:?}", muted.error);
+        assert!(app.library.recordings(song_id)[0].muted);
+        assert_eq!(mock.lock().unwrap().layers_len, 1);
+
+        // Delete removes the take and its WAV, then rebuilds to zero layers.
+        let dir = app.song_bundle_dir(song_id).unwrap();
+        let wav = dir.join(&rec.file);
+        let deleted = app.dispatch(Request {
+            id: 4,
+            cmd: "recording.delete".into(),
+            params: json!({ "id": rec.id }),
+        });
+        assert!(deleted.ok, "delete failed: {:?}", deleted.error);
+        assert!(app.library.recordings(song_id).is_empty());
+        assert!(!wav.exists(), "WAV should be removed");
+        assert_eq!(mock.lock().unwrap().layers_len, 0);
+    }
+
+    #[test]
+    fn set_nudge_converts_ms_to_frames() {
+        let (_mock, mut app, song_id, _lib) = make_shared_mock_with_recorder(Box::new(FakeRecorder {
+            canned: vec![0.3f32; SAMPLE_RATE as usize * CHANNELS],
+            started: None,
+            stopped: false,
+        }));
+        app.dispatch(Request {
+            id: 1,
+            cmd: "recording.start".into(),
+            params: json!({ "span": "song", "device_id": "0" }),
+        });
+        let finished = app.dispatch(Request {
+            id: 2,
+            cmd: "recording.stop".into(),
+            params: json!(null),
+        });
+        let rec: Recording = serde_json::from_value(finished.data).unwrap();
+
+        let nudged = app.dispatch(Request {
+            id: 3,
+            cmd: "recording.setNudge".into(),
+            params: json!({ "id": rec.id, "nudge_ms": 10.0 }),
+        });
+        assert!(nudged.ok, "setNudge failed: {:?}", nudged.error);
+        // 10 ms at 48 kHz = 480 frames.
+        assert_eq!(app.library.recordings(song_id)[0].nudge_frames, 480);
+    }
+
+    #[test]
+    fn stop_without_start_errors() {
+        let (_mock, mut app, _song_id, _lib) =
+            make_shared_mock_with_recorder(Box::new(FakeRecorder {
+                canned: vec![],
+                started: None,
+                stopped: false,
+            }));
+        let resp = app.dispatch(Request {
+            id: 1,
+            cmd: "recording.stop".into(),
+            params: json!(null),
+        });
+        assert!(!resp.ok);
+        assert!(resp.error.unwrap().contains("not recording"));
     }
 }

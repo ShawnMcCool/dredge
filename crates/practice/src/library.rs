@@ -393,6 +393,22 @@ impl Library {
         Ok(())
     }
 
+    // ── recordings ───────────────────────────────────────────────────────────────
+
+    pub fn recordings(&self, song_id: SongId) -> Vec<Recording> {
+        self.entries
+            .get(&song_id.0)
+            .map(|e| e.manifest.recordings.clone())
+            .unwrap_or_default()
+    }
+
+    /// Replace the song's recordings and write the manifest through to disk.
+    pub fn set_recordings(&mut self, song_id: SongId, recordings: Vec<Recording>) -> Result<()> {
+        let entry = self.entry_mut(song_id)?;
+        entry.manifest.recordings = recordings;
+        Self::persist(entry)
+    }
+
     // ── analysis ───────────────────────────────────────────────────────────────
 
     pub fn has_analysis(&self, song_id: SongId) -> bool {
