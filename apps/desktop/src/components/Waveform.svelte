@@ -16,6 +16,7 @@
     openingSong,
     openSong,
     position,
+    recordings,
     selection,
     workingLoop,
     workspaceReset,
@@ -49,11 +50,13 @@
     zoom,
     type View,
   } from "../lib/waveform-math";
+  import { layerSpanSecs } from "../lib/recording-math";
 
   const GRID_SUBDIVS = ["bar", "beat", "eighth"] as const;
   const SAMPLE_RATE = 48000;
   const LANE_H = 24; // section lane above the waveform
   const WAVE_H = 200;
+  const LAYER_LANE_H = 18; // height of each recording layer lane below the waveform
   const EDGE_PX = 4; // loop-edge hit zone
   const CLICK_PX = 5; // below this a drag is a click → seek
   const SNAP_PX = 10; // grid-snap pull radius around a downbeat
@@ -192,6 +195,7 @@
     void $gridVisible;
     void $gridLines;
     void $gridSubdivision;
+    void $recordings;
     void view;
     void activeSpan;
     requestRedraw();
@@ -230,8 +234,10 @@
       mono: v("--mono"),
     };
 
+    const recs = get(recordings);
+    const totalH = LANE_H + WAVE_H + recs.length * LAYER_LANE_H;
     ctx.fillStyle = c.bg;
-    ctx.fillRect(0, 0, w, LANE_H + WAVE_H);
+    ctx.fillRect(0, 0, w, totalH);
 
     if (!open) return; // empty state is the .wave-empty HTML overlay
 
@@ -495,16 +501,65 @@
       const lx = Math.min(Math.max(x0 + lpad, lpad), x1 - lpad);
       ctx.fillText(s.name, lx, LANE_H - 8, Math.max(x1 - lx - lpad, 0));
     }
+
+    // recording layer lanes — one thin lane per overdub, stacked beneath the
+    // waveform body, time-aligned to the same zoom/scroll. No per-sample peaks
+    // yet (v1): each lane renders as a labeled tinted block spanning its
+    // time extent. Muted recordings render at reduced opacity.
+    for (let i = 0; i < recs.length; i++) {
+      const r = recs[i];
+      const { start, end } = layerSpanSecs(r.anchor_frame, r.len_frames);
+      const x0 = secToX(view, start);
+      const x1 = secToX(view, end);
+      if (x1 < 0 || x0 > w) continue;
+      const laneTop = LANE_H + WAVE_H + i * LAYER_LANE_H;
+      const { fill, edge } = labelColor(r.name, baseHue);
+      ctx.globalAlpha = r.muted ? 0.35 : 0.85;
+      ctx.fillStyle = c.bg;
+      ctx.fillRect(x0, laneTop + 2, x1 - x0 - 1, LAYER_LANE_H - 4);
+      ctx.fillStyle = fill;
+      ctx.fillRect(x0, laneTop + 2, x1 - x0 - 1, LAYER_LANE_H - 4);
+      ctx.globalAlpha = r.muted ? 0.35 : 1;
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x0 + 0.5, laneTop + 2.5, x1 - x0 - 2, LAYER_LANE_H - 5);
+      ctx.fillStyle = c.fg;
+      ctx.font = "10px " + c.mono;
+      const llpad = 4;
+      const llx = Math.min(Math.max(x0 + llpad, llpad), x1 - llpad);
+      ctx.fillText(r.name, llx, laneTop + LAYER_LANE_H - 5, Math.max(x1 - llx - llpad, 0));
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  function canvasH(): number {
+    return LANE_H + WAVE_H + get(recordings).length * LAYER_LANE_H;
   }
 
   function applySize(w: number, _h: number, dpr: number) {
     if (!canvas) return;
+    const h = canvasH();
     canvas.width = Math.round(w * dpr);
-    canvas.height = Math.round((LANE_H + WAVE_H) * dpr);
+    canvas.height = Math.round(h * dpr);
     canvas.style.width = `${w}px`;
-    canvas.style.height = `${LANE_H + WAVE_H}px`;
+    canvas.style.height = `${h}px`;
     view = { ...view, width: w };
   }
+
+  // Re-apply canvas dimensions when the recording count changes so layer lanes
+  // aren't clipped. The canvasSize action fires on container resize; this
+  // effect fires when recordings are added/removed.
+  $effect(() => {
+    const layerCount = $recordings.length;
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = view.width;
+    const h = LANE_H + WAVE_H + layerCount * LAYER_LANE_H;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${h}px`;
+  });
 
   onMount(() => {
     requestRedraw(); // initial paint; subsequent ones are demand-driven
