@@ -1150,8 +1150,15 @@ export const actions = {
   // --- recordings ---
 
   async startRecording(span: "song" | "selection" | "loop", deviceId: string, range?: { start: number; end: number }): Promise<void> {
-    await cmd("recording.start", { span, device_id: deviceId, ...(range ?? {}) });
+    // optimistic: flip active before the round-trip so the record button can't
+    // double-fire; roll back if the command is rejected (e.g. no device).
     recordingActive.set(true);
+    try {
+      await cmd("recording.start", { span, device_id: deviceId, ...(range ?? {}) });
+    } catch (e) {
+      recordingActive.set(false);
+      throw e;
+    }
   },
 
   async stopRecording(): Promise<void> {
