@@ -40,7 +40,7 @@ at the bottom of the Progress log.)
 | — | spec written + committed | done |
 | — | campaign file created | done |
 | — | plan written + committed | pending |
-| 1 | Feasibility spike: PipeWire stream timing API in the `pipewire` Rust crate (or FFI needed?) | pending |
+| 1 | Feasibility spike: PipeWire stream timing API in the `pipewire` Rust crate (or FFI needed?) | DONE — no FFI; `Stream::time()` exists |
 | 2 | RollingRing monotonic frame index + absolute-range read | pending |
 | 3 | Capture↔playback frame correspondence (transport-locked extraction) | pending |
 | 4 | Wire transport-locked take into recording_start/stop | pending |
@@ -65,3 +65,10 @@ at the bottom of the Progress log.)
 - 2026-06-25: Diagnosed root cause (snapshot_last + stop-timing, not just RTL).
   Researched pro approach (Reaper/Audacity/Ardour: transport-lock + constant RTL,
   loopback ping). Brainstormed + got design approval. Spec + campaign written.
+- 2026-06-25: Feasibility spike DONE. `pipewire` 0.10 exposes
+  `Stream::time() -> Time` (wraps `pw_stream_get_time`); `pw_time` carries `now`
+  (shared graph-clock ns), `ticks` (sample pos), `rate`, and `delay` (per-stream
+  hardware latency). NO FFI shim needed. `pw_time.delay` also gives Part 2's
+  reported-latency baseline for free. Note: engine has feature `v0_3_49`; `time()`
+  falls back to the (deprecated but working) `pw_stream_get_time` — optionally bump
+  to `v0_3_50` for the non-deprecated `_n` variant.
