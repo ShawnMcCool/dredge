@@ -1649,12 +1649,29 @@ impl App {
             // (non-PipeWire backend) or playback never started — fall back to the
             // tail of the ring.
             let extracted = pending.ring_start.and_then(|ring_start| {
-                let got = rec.extract_range(ring_start, pending.len_frames);
+                // Clamp the take to what was actually captured. A user who stops
+                // early — or picks "full song" but cuts it short — has fewer than
+                // `len_frames` frames in the ring; extracting the full span would
+                // overrun what's written, fail, and fall back to snapshot_last,
+                // which re-includes the count-in. Clamping keeps the take anchored
+                // at `ring_start` (count-in already excluded), just shorter.
+                let available = rec
+                    .capture_snapshot()
+                    .map(|(_, total)| (total - ring_start).max(0))
+                    .unwrap_or(pending.len_frames);
+                let take_len = pending.len_frames.min(available);
+                if std::env::var("DREDGE_DEBUG").is_ok() {
+                    eprintln!(
+                        "dredge finalize[count-in-fix]: ring_start={ring_start} \
+                         len_frames={} available={available} take_len={take_len}",
+                        pending.len_frames
+                    );
+                }
+                let got = rec.extract_range(ring_start, take_len);
                 if got.is_none() {
                     eprintln!(
-                        "dredge: recording range evicted (ring_start={ring_start}, len={}); \
-                         falling back to snapshot_last",
-                        pending.len_frames
+                        "dredge: recording range evicted (ring_start={ring_start}, \
+                         take_len={take_len}); falling back to snapshot_last"
                     );
                 }
                 got
