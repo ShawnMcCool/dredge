@@ -427,7 +427,9 @@ impl App {
             tuner: Box::new(RealTuner::default()),
             tuner_tx,
             tuner_rx,
-            recorder: Arc::new(Mutex::new(Box::new(crate::recording::RealRecorder::default()))),
+            recorder: Arc::new(Mutex::new(Box::new(
+                crate::recording::RealRecorder::default(),
+            ))),
             pending_recording: None,
             layer_cache: std::collections::HashMap::new(),
         };
@@ -1515,7 +1517,8 @@ impl App {
         let p: P = from_params(p)?;
         let open = self.open_song.as_ref().ok_or("no song open")?;
         let song_id = open.song.id;
-        let song_frames = (open.song.duration_secs * engine::buffer::SAMPLE_RATE as f64).round() as i64;
+        let song_frames =
+            (open.song.duration_secs * engine::buffer::SAMPLE_RATE as f64).round() as i64;
         let span = match p.span.as_str() {
             "song" => crate::recording::Span::Song,
             "selection" => crate::recording::Span::Selection {
@@ -1528,16 +1531,19 @@ impl App {
             },
             other => return Err(format!("unknown span: {other}")),
         };
-        let (start, end) =
-            crate::recording::resolve_span(span, song_frames).ok_or("empty span")?;
+        let (start, end) = crate::recording::resolve_span(span, song_frames).ok_or("empty span")?;
         let len_frames = end - start;
-        self.recorder.lock().unwrap().start(&p.device_id, len_frames)?;
+        self.recorder
+            .lock()
+            .unwrap()
+            .start(&p.device_id, len_frames)?;
         self.pending_recording = Some(PendingRecording {
             song_id,
             anchor_frame: start,
         });
-        self.audio
-            .send(EngineCmd::SeekSecs(start as f64 / engine::buffer::SAMPLE_RATE as f64));
+        self.audio.send(EngineCmd::SeekSecs(
+            start as f64 / engine::buffer::SAMPLE_RATE as f64,
+        ));
         self.audio.send(EngineCmd::Play);
         Ok(Value::Null)
     }
@@ -1650,7 +1656,10 @@ impl App {
         }
         let p: P = from_params(p)?;
         let song_id = self.open_song.as_ref().ok_or("no song open")?.song.id;
-        let dir = self.library.bundle_dir(song_id).ok_or("song not in library")?;
+        let dir = self
+            .library
+            .bundle_dir(song_id)
+            .ok_or("song not in library")?;
         let mut recordings = self.library.recordings(song_id);
         let pos = recordings
             .iter()
@@ -2597,11 +2606,12 @@ mod recording_tests {
 
     #[test]
     fn record_start_stop_persists_a_take_and_pushes_a_layer() {
-        let (mock, mut app, song_id, _lib) = make_shared_mock_with_recorder(Box::new(FakeRecorder {
-            canned: vec![0.3f32; SAMPLE_RATE as usize * CHANNELS],
-            started: None,
-            stopped: false,
-        }));
+        let (mock, mut app, song_id, _lib) =
+            make_shared_mock_with_recorder(Box::new(FakeRecorder {
+                canned: vec![0.3f32; SAMPLE_RATE as usize * CHANNELS],
+                started: None,
+                stopped: false,
+            }));
 
         let started = app.dispatch(Request {
             id: 1,
@@ -2626,11 +2636,12 @@ mod recording_tests {
 
     #[test]
     fn set_mute_and_delete_round_trip_through_the_manifest() {
-        let (mock, mut app, song_id, _lib) = make_shared_mock_with_recorder(Box::new(FakeRecorder {
-            canned: vec![0.3f32; SAMPLE_RATE as usize * CHANNELS],
-            started: None,
-            stopped: false,
-        }));
+        let (mock, mut app, song_id, _lib) =
+            make_shared_mock_with_recorder(Box::new(FakeRecorder {
+                canned: vec![0.3f32; SAMPLE_RATE as usize * CHANNELS],
+                started: None,
+                stopped: false,
+            }));
         app.dispatch(Request {
             id: 1,
             cmd: "recording.start".into(),
@@ -2669,11 +2680,12 @@ mod recording_tests {
 
     #[test]
     fn set_nudge_converts_ms_to_frames() {
-        let (_mock, mut app, song_id, _lib) = make_shared_mock_with_recorder(Box::new(FakeRecorder {
-            canned: vec![0.3f32; SAMPLE_RATE as usize * CHANNELS],
-            started: None,
-            stopped: false,
-        }));
+        let (_mock, mut app, song_id, _lib) =
+            make_shared_mock_with_recorder(Box::new(FakeRecorder {
+                canned: vec![0.3f32; SAMPLE_RATE as usize * CHANNELS],
+                started: None,
+                stopped: false,
+            }));
         app.dispatch(Request {
             id: 1,
             cmd: "recording.start".into(),

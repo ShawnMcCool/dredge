@@ -86,8 +86,8 @@ pub struct RealRecorder {
 impl RecordingControl for RealRecorder {
     fn start(&mut self, device_id: &str, len_frames: i64) -> Result<(), String> {
         let secs = (len_frames as f64 / SAMPLE_RATE as f64) + 1.0; // +1s margin
-        let cap = engine::capture::start_capture_by_id(device_id, secs)
-            .map_err(|e| e.to_string())?;
+        let cap =
+            engine::capture::start_capture_by_id(device_id, secs).map_err(|e| e.to_string())?;
         self.capture = Some(cap);
         self.len_frames = len_frames;
         Ok(())
@@ -137,7 +137,10 @@ mod tests {
 
     #[test]
     fn resolve_selection_converts_seconds_and_clamps() {
-        let s = Span::Selection { start: 1.0, end: 2.0 };
+        let s = Span::Selection {
+            start: 1.0,
+            end: 2.0,
+        };
         assert_eq!(
             resolve_span(s, 10 * SAMPLE_RATE as i64),
             Some((SAMPLE_RATE as i64, 2 * SAMPLE_RATE as i64))
@@ -146,7 +149,10 @@ mod tests {
 
     #[test]
     fn resolve_empty_span_is_none() {
-        let s = Span::Selection { start: 2.0, end: 2.0 };
+        let s = Span::Selection {
+            start: 2.0,
+            end: 2.0,
+        };
         assert_eq!(resolve_span(s, 10 * SAMPLE_RATE as i64), None);
     }
 

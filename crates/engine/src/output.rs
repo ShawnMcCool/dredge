@@ -40,7 +40,9 @@ pub fn spawn(
     let handle = std::thread::Builder::new()
         .name("dredge-pw".into())
         .spawn(move || {
-            if let Err(e) = run(cmd_rx, evt_tx, song_slot, click_slot, layer_slot, target, stop) {
+            if let Err(e) = run(
+                cmd_rx, evt_tx, song_slot, click_slot, layer_slot, target, stop,
+            ) {
                 eprintln!("dredge pipewire thread failed: {e}");
             }
         })?;

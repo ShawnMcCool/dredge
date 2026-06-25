@@ -416,7 +416,11 @@ impl Pipeline {
                 events.push(EngineEvent::LoopWrapped);
             }
             if info.frames > 0 {
-                mix_layers(&self.layers, src_start, &mut self.feed_buf[..info.frames * CHANNELS]);
+                mix_layers(
+                    &self.layers,
+                    src_start,
+                    &mut self.feed_buf[..info.frames * CHANNELS],
+                );
                 self.stretch.feed(&self.feed_buf[..info.frames * CHANNELS]);
             }
             if info.finished {
