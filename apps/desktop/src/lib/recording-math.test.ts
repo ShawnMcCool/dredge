@@ -20,4 +20,7 @@ describe("layerSpanSecs", () => {
   it("converts anchor/len frames to a seconds span", () => {
     expect(layerSpanSecs(48000, 96000)).toEqual({ start: 1, end: 3 });
   });
+  it("handles a zero anchor", () => {
+    expect(layerSpanSecs(0, 48000)).toEqual({ start: 0, end: 1 });
+  });
 });

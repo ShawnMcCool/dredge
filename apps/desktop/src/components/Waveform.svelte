@@ -235,9 +235,8 @@
     };
 
     const recs = get(recordings);
-    const totalH = LANE_H + WAVE_H + recs.length * LAYER_LANE_H;
     ctx.fillStyle = c.bg;
-    ctx.fillRect(0, 0, w, totalH);
+    ctx.fillRect(0, 0, w, canvasH());
 
     if (!open) return; // empty state is the .wave-empty HTML overlay
 
@@ -506,6 +505,7 @@
     // waveform body, time-aligned to the same zoom/scroll. No per-sample peaks
     // yet (v1): each lane renders as a labeled tinted block spanning its
     // time extent. Muted recordings render at reduced opacity.
+    ctx.setLineDash([]); // order-independent: don't inherit a dashed stroke
     for (let i = 0; i < recs.length; i++) {
       const r = recs[i];
       const { start, end } = layerSpanSecs(r.anchor_frame, r.len_frames);
@@ -548,17 +548,11 @@
 
   // Re-apply canvas dimensions when the recording count changes so layer lanes
   // aren't clipped. The canvasSize action fires on container resize; this
-  // effect fires when recordings are added/removed.
+  // effect fires when recordings are added/removed. Routing through applySize
+  // keeps a single height formula (canvasH) and syncs view.width.
   $effect(() => {
-    const layerCount = $recordings.length;
-    if (!canvas) return;
-    const dpr = window.devicePixelRatio || 1;
-    const w = view.width;
-    const h = LANE_H + WAVE_H + layerCount * LAYER_LANE_H;
-    canvas.width = Math.round(w * dpr);
-    canvas.height = Math.round(h * dpr);
-    canvas.style.width = `${w}px`;
-    canvas.style.height = `${h}px`;
+    void $recordings.length;
+    applySize(view.width, 0, window.devicePixelRatio || 1);
   });
 
   onMount(() => {
