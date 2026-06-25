@@ -9,9 +9,9 @@
 
 use crate::buffer::{CHANNELS, SAMPLE_RATE};
 use crate::ring::RollingRing;
-use crate::stream_clock::StreamClock;
 #[cfg(target_os = "linux")]
 use crate::stream_clock::ClockSnapshot;
+use crate::stream_clock::StreamClock;
 #[cfg(target_os = "linux")]
 use pipewire as pw;
 #[cfg(target_os = "linux")]

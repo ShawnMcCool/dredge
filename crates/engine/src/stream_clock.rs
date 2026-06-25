@@ -78,7 +78,8 @@ impl StreamClock {
     /// Called from the RT callback. No-op (and no allocation) unless armed.
     pub fn store(&self, snap: ClockSnapshot, ring_total: i64, delay_frames: i64) {
         if self.armed.load(Ordering::Acquire) {
-            self.ring_total_at_snapshot.store(ring_total, Ordering::Release);
+            self.ring_total_at_snapshot
+                .store(ring_total, Ordering::Release);
             self.delay_frames.store(delay_frames, Ordering::Release);
             self.snapshot.store(Some(Arc::new(snap))); // publish last
         }
@@ -103,7 +104,11 @@ mod tests {
 
     #[test]
     fn maps_graph_time_to_stream_frame() {
-        let s = ClockSnapshot { now_ns: 1_000_000_000, ticks: 48_000, rate_hz: 48_000 };
+        let s = ClockSnapshot {
+            now_ns: 1_000_000_000,
+            ticks: 48_000,
+            rate_hz: 48_000,
+        };
         assert_eq!(s.frame_at_ns(1_000_000_000), 48_000); // at the snapshot instant
         assert_eq!(s.frame_at_ns(1_500_000_000), 48_000 + 24_000); // +0.5s
         assert_eq!(s.frame_at_ns(500_000_000), 48_000 - 24_000); // 0.5s before
@@ -111,14 +116,22 @@ mod tests {
 
     #[test]
     fn maps_stream_frame_to_graph_time() {
-        let s = ClockSnapshot { now_ns: 1_000_000_000, ticks: 48_000, rate_hz: 48_000 };
+        let s = ClockSnapshot {
+            now_ns: 1_000_000_000,
+            ticks: 48_000,
+            rate_hz: 48_000,
+        };
         assert_eq!(s.ns_at_frame(48_000), 1_000_000_000);
         assert_eq!(s.ns_at_frame(72_000), 1_500_000_000);
     }
 
     #[test]
     fn frame_ns_round_trip() {
-        let s = ClockSnapshot { now_ns: 5_000_000_000, ticks: 123_456, rate_hz: 48_000 };
+        let s = ClockSnapshot {
+            now_ns: 5_000_000_000,
+            ticks: 123_456,
+            rate_hz: 48_000,
+        };
         // round-trip on multiples of the rate to avoid integer-division remainder
         for f in [123_456_i64, 123_456 + 48_000, 123_456 + 96_000] {
             assert_eq!(s.frame_at_ns(s.ns_at_frame(f)), f);
@@ -128,10 +141,18 @@ mod tests {
     #[test]
     fn ring_frame_maps_through_graph_time() {
         // capture stream: at now=0 it's at tick 1000; ring had written 1000 frames then.
-        let cap = ClockSnapshot { now_ns: 0, ticks: 1000, rate_hz: 48_000 };
+        let cap = ClockSnapshot {
+            now_ns: 0,
+            ticks: 1000,
+            rate_hz: 48_000,
+        };
         let ring_total_at_snapshot = 1000;
         // playback song clock: song frame `start` was output at graph time T.
-        let song = ClockSnapshot { now_ns: 0, ticks: 0, rate_hz: 48_000 };
+        let song = ClockSnapshot {
+            now_ns: 0,
+            ticks: 0,
+            rate_hz: 48_000,
+        };
         let start_song_frame = 48_000; // 1.0s into the song
         let t = song.ns_at_frame(start_song_frame);
         // the ring frame acquired at that same instant:
@@ -143,9 +164,17 @@ mod tests {
     #[test]
     fn ring_frame_with_offset_clocks() {
         // capture and song clocks taken at different `now_ns` but same graph clock
-        let cap = ClockSnapshot { now_ns: 2_000_000_000, ticks: 500_000, rate_hz: 48_000 };
+        let cap = ClockSnapshot {
+            now_ns: 2_000_000_000,
+            ticks: 500_000,
+            rate_hz: 48_000,
+        };
         let ring_total_at_snapshot = 500_000;
-        let song = ClockSnapshot { now_ns: 1_900_000_000, ticks: 90_000, rate_hz: 48_000 };
+        let song = ClockSnapshot {
+            now_ns: 1_900_000_000,
+            ticks: 90_000,
+            rate_hz: 48_000,
+        };
         let start_song_frame = 96_000; // 2.0s in song
         let t = song.ns_at_frame(start_song_frame); // graph time the song reaches frame 96000
         let ring_frame = ring_frame_at_ns(&cap, ring_total_at_snapshot, t);
@@ -155,7 +184,11 @@ mod tests {
     }
 
     fn sample_snapshot() -> ClockSnapshot {
-        ClockSnapshot { now_ns: 7_000_000_000, ticks: 333_000, rate_hz: 48_000 }
+        ClockSnapshot {
+            now_ns: 7_000_000_000,
+            ticks: 333_000,
+            rate_hz: 48_000,
+        }
     }
 
     #[test]

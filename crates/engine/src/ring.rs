@@ -189,7 +189,10 @@ mod tests {
             r.push(&frames(&[f as f32]));
         }
         assert!(r.read_range(0, 4).is_none()); // evicted (window holds 6..10)
-        assert_eq!(firsts(&r.read_range(6, 10).unwrap()), vec![6.0, 7.0, 8.0, 9.0]);
+        assert_eq!(
+            firsts(&r.read_range(6, 10).unwrap()),
+            vec![6.0, 7.0, 8.0, 9.0]
+        );
     }
 
     #[test]
