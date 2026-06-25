@@ -10,4 +10,5 @@ mod sampler;
 mod section_click;
 pub mod socket;
 pub mod stems;
+pub mod recording;
 pub mod tuner;
