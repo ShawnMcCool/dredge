@@ -9,7 +9,7 @@ import { bisect, nudgeEdge, rateForRep, runUp, type Span } from "./drill";
 import { deriveLoopName } from "./loop-name";
 import { meterNumerator } from "./meter";
 import { tapTempo as computeTap, clampBpm, strongMask, type TapState } from "./metronome";
-import { resolveTunerInput } from "./devices";
+import { resolveInputDevice } from "./devices";
 import type { NotesDoc } from "./notes-doc";
 import { framesToMs } from "./recording-math";
 
@@ -1087,7 +1087,7 @@ export const actions = {
   /** Power on: resolve the effective input id and start capture. */
   async tunerPowerOn(): Promise<void> {
     await this.refreshInputs();
-    const id = resolveTunerInput(get(tunerInput), get(inputDevice), get(inputDevices));
+    const id = resolveInputDevice(get(tunerInput), get(inputDevice), get(inputDevices));
     if (id === null) throw new Error("no audio input devices found");
     await cmd("tuner.start", { device_id: id });
     tunerOn.set(true);
@@ -1105,7 +1105,7 @@ export const actions = {
     tunerInput.set(sel);
     await this.setSetting(TUNER_INPUT, sel);
     if (get(tunerOn)) {
-      const id = resolveTunerInput(sel, get(inputDevice), get(inputDevices));
+      const id = resolveInputDevice(sel, get(inputDevice), get(inputDevices));
       if (id === null) throw new Error("no audio input devices found");
       await cmd("tuner.start", { device_id: id });
     }

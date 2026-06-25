@@ -6,11 +6,12 @@ export function defaultName(devices: AudioDevice[]): string | null {
 }
 
 /**
- * Resolve the tuner's effective input id from its selection + the global input.
- * `sel` is either a device id or the sentinel "default" (= follow global input);
- * the `| "default"` is documentation only — it collapses to `string` in TS.
+ * Resolve an effective input id from a selection + the global (devices-panel)
+ * input. Shared by the tuner and recordings. `sel` is either a device id or the
+ * sentinel "default" (= follow the global input); the `| "default"` is
+ * documentation only — it collapses to `string` in TS.
  */
-export function resolveTunerInput(
+export function resolveInputDevice(
   sel: string | "default",
   globalInput: string | null,
   inputs: AudioDevice[],
