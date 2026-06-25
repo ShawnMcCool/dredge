@@ -3,6 +3,7 @@
 **Status:** IN PROGRESS — started 2026-06-25
 **Spec:** `docs/superpowers/specs/2026-06-25-overdub-autosync-design.md`
 **Plan:** `docs/superpowers/plans/2026-06-25-overdub-autosync.md`
+**Research/reference (critical — read before touching alignment):** `docs/research/recording-latency-compensation.md`
 **Branch:** main (local; not pushed)
 
 ## Goal
@@ -42,10 +43,10 @@ at the bottom of the Progress log.)
 | — | plan written + committed | pending |
 | 1 | Feasibility spike: PipeWire stream timing API in the `pipewire` Rust crate (or FFI needed?) | DONE — no FFI; `Stream::time()` exists |
 | AS-1 | RollingRing monotonic frame index + absolute-range read | DONE (52dec02) |
-| AS-2 | StreamClock timing snapshot + mapping math | in progress |
-| AS-3 | Capture stream clock + input delay (device-bound) | pending |
-| AS-4 | Playback song-frame clock + output delay (device-bound) | pending |
-| AS-5 | Transport-locked take extraction | pending |
+| AS-2 | StreamClock timing snapshot + mapping math | DONE (b524c35) |
+| AS-3 | Capture stream clock + input delay (device-bound) | DONE (5e73aa4) |
+| AS-4 | Playback song-frame clock + output delay (device-bound) | DONE (ce5e514) |
+| AS-5 | Transport-locked take extraction | DONE (b548249) — Part 1 code-complete |
 | AS-6 | Part 2: PipeWire-reported latency baseline | pending |
 | AS-7 | Part 2: loopback ping calibration | pending |
 | AS-8 | Full gate + smoke + manual device verification | pending |
@@ -62,11 +63,25 @@ at the bottom of the Progress log.)
   manually verified. UI/audio paths need a real-app + chrome-console smoke test
   (see memory: ui-runtime-smoke-test).
 
+## Cleanup candidates (do in AS-8)
+
+- `output::spawn`/`run` now take 8 args (`#[allow(too_many_arguments)]`). Bundle
+  the slots (song_slot, click_slot, layer_slot, playback_clock) into a struct —
+  per the keep-code-modular directive.
+- AS-2's `stream_clock.rs` was missed by a `git commit -am` (fixed in a follow-up
+  commit). Implementer dispatches must use explicit `git add` for new files.
+
 ## Progress log
 
 - 2026-06-25: Diagnosed root cause (snapshot_last + stop-timing, not just RTL).
   Researched pro approach (Reaper/Audacity/Ardour: transport-lock + constant RTL,
   loopback ping). Brainstormed + got design approval. Spec + campaign written.
+- 2026-06-25: Part 1 (AS-1..5) CODE-COMPLETE. Ring absolute indexing (52dec02),
+  StreamClock math (b524c35 + fix), capture clock (5e73aa4), playback clock
+  (ce5e514), transport-locked extraction + auto-finalize at span end (b548249).
+  Needs on-Focusrite verification (DREDGE_DEBUG pw_time + a take that lands in
+  time) before Part 2 (RTL calibration) builds on the validated timing.
+  Wrote research/reference doc `docs/research/recording-latency-compensation.md`.
 - 2026-06-25: Feasibility spike DONE. `pipewire` 0.10 exposes
   `Stream::time() -> Time` (wraps `pw_stream_get_time`); `pw_time` carries `now`
   (shared graph-clock ns), `ticks` (sample pos), `rate`, and `delay` (per-stream
