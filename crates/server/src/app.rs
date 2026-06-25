@@ -122,7 +122,8 @@ fn calibrate_phased(app: &Arc<Mutex<App>>, p: Value) -> Result<Value, String> {
         .lock()
         .unwrap()
         .calibrate_capture(&p.device_id, 1.5)?;
-    let latency = crate::recording::detect_click_onset(&captured, 0.3).unwrap_or(0) as i64;
+    let latency = crate::recording::detect_click_onset(&captured, CALIBRATION_CLICK_THRESHOLD)
+        .ok_or("calibration: no click detected")? as i64;
     let mut guard = app.lock().unwrap();
     guard
         .store
@@ -358,6 +359,9 @@ pub struct App {
     recorder: Arc<Mutex<Box<dyn crate::recording::RecordingControl>>>,
     /// The take being captured between `recording.start` and `recording.stop`.
     pending_recording: Option<PendingRecording>,
+    /// Decoded recording audio, keyed by id. A take's WAV is immutable, so a
+    /// cached buffer is reused across edits — only a brand-new take decodes.
+    layer_cache: std::collections::HashMap<RecordingId, Arc<engine::buffer::SongBuffer>>,
 }
 
 struct OpenSong {
@@ -370,11 +374,11 @@ struct OpenSong {
 struct PendingRecording {
     song_id: SongId,
     anchor_frame: i64,
-    #[allow(dead_code)]
-    len_frames: i64,
 }
 
 const INPUT_LATENCY_KEY: &str = "input_latency_frames";
+/// Absolute-sample threshold for the latency-calibration click onset detector.
+const CALIBRATION_CLICK_THRESHOLD: f32 = 0.3;
 
 impl App {
     pub fn new(
@@ -425,6 +429,7 @@ impl App {
             tuner_rx,
             recorder: Arc::new(Mutex::new(Box::new(crate::recording::RealRecorder::default()))),
             pending_recording: None,
+            layer_cache: std::collections::HashMap::new(),
         };
         // Apply the saved output device if one was persisted. The Engine's
         // fallback handles a currently-absent device by reverting to default,
@@ -1461,20 +1466,35 @@ impl App {
         let latency = self.input_latency_frames();
         let mut layers = Vec::new();
         for r in self.library.recordings(song_id) {
-            let path = dir.join(&r.file);
-            match engine::decode::decode_file(&path) {
-                Ok(buf) => layers.push(engine::layers::Layer {
-                    samples: Arc::new(buf),
-                    start_frame: r.anchor_frame - latency - r.nudge_frames,
-                    gain: r.gain,
-                    muted: r.muted,
-                }),
-                Err(e) => eprintln!(
-                    "dredge: skipping recording layer {} ({}): {e}",
-                    r.id.0,
-                    path.display()
-                ),
-            }
+            // Reuse the decoded buffer when cached (a take's audio never
+            // changes); otherwise decode once and cache. A bad file is logged
+            // and skipped, never aborting the rest.
+            let samples = if let Some(buf) = self.layer_cache.get(&r.id) {
+                buf.clone()
+            } else {
+                let path = dir.join(&r.file);
+                match engine::decode::decode_file(&path) {
+                    Ok(buf) => {
+                        let buf = Arc::new(buf);
+                        self.layer_cache.insert(r.id, buf.clone());
+                        buf
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "dredge: skipping recording layer {} ({}): {e}",
+                            r.id.0,
+                            path.display()
+                        );
+                        continue;
+                    }
+                }
+            };
+            layers.push(engine::layers::Layer {
+                samples,
+                start_frame: r.anchor_frame - latency - r.nudge_frames,
+                gain: r.gain,
+                muted: r.muted,
+            });
         }
         self.audio.set_layers(layers);
     }
@@ -1488,6 +1508,9 @@ impl App {
             #[serde(default)]
             end: Option<f64>,
             device_id: String,
+        }
+        if self.pending_recording.is_some() {
+            return Err("already recording".into());
         }
         let p: P = from_params(p)?;
         let open = self.open_song.as_ref().ok_or("no song open")?;
@@ -1512,7 +1535,6 @@ impl App {
         self.pending_recording = Some(PendingRecording {
             song_id,
             anchor_frame: start,
-            len_frames,
         });
         self.audio
             .send(EngineCmd::SeekSecs(start as f64 / engine::buffer::SAMPLE_RATE as f64));
@@ -1635,6 +1657,7 @@ impl App {
             .position(|r| r.id == p.id)
             .ok_or_else(|| format!("recording not found: {}", p.id.0))?;
         let removed = recordings.remove(pos);
+        self.layer_cache.remove(&removed.id);
         // Best-effort WAV removal: a missing file shouldn't fail the command.
         if let Err(e) = std::fs::remove_file(dir.join(&removed.file)) {
             if e.kind() != std::io::ErrorKind::NotFound {
@@ -2671,6 +2694,29 @@ mod recording_tests {
         assert!(nudged.ok, "setNudge failed: {:?}", nudged.error);
         // 10 ms at 48 kHz = 480 frames.
         assert_eq!(app.library.recordings(song_id)[0].nudge_frames, 480);
+    }
+
+    #[test]
+    fn start_twice_without_stop_errors() {
+        let (_mock, mut app, _song_id, _lib) =
+            make_shared_mock_with_recorder(Box::new(FakeRecorder {
+                canned: vec![0.3f32; SAMPLE_RATE as usize * CHANNELS],
+                started: None,
+                stopped: false,
+            }));
+        let first = app.dispatch(Request {
+            id: 1,
+            cmd: "recording.start".into(),
+            params: json!({ "span": "song", "device_id": "0" }),
+        });
+        assert!(first.ok, "first start failed: {:?}", first.error);
+        let second = app.dispatch(Request {
+            id: 2,
+            cmd: "recording.start".into(),
+            params: json!({ "span": "song", "device_id": "0" }),
+        });
+        assert!(!second.ok, "second start should be rejected");
+        assert!(second.error.unwrap().contains("already recording"));
     }
 
     #[test]
