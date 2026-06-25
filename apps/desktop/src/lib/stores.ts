@@ -11,6 +11,7 @@ import { meterNumerator } from "./meter";
 import { tapTempo as computeTap, clampBpm, strongMask, type TapState } from "./metronome";
 import { resolveTunerInput } from "./devices";
 import type { NotesDoc } from "./notes-doc";
+import { framesToMs } from "./recording-math";
 
 // --- wire types ----------------------------------------------------------
 
@@ -128,11 +129,24 @@ export interface OpenSong {
   analysis: Analysis | null;
   /** Notes whose label matches no current section. Never auto-deleted. */
   orphan_notes: OrphanNote[];
+  recordings: Recording[];
 }
 
 /** Fixed stem order contract: vocals/drums/bass/other. */
 export const STEM_LABELS = ["VOCALS", "DRUMS", "BASS", "OTHER"] as const;
 export const BASS_STEM = 2;
+
+export interface Recording {
+  id: number;
+  name: string;
+  file: string;
+  anchor_frame: number;
+  len_frames: number;
+  nudge_frames: number;
+  gain: number;
+  muted: boolean;
+  created_at: string;
+}
 
 export interface StemMix {
   levels: number[]; // 0..100 per stem
@@ -313,6 +327,10 @@ export const tunerInput = writable<string>("default");
 /** Mixer state for the open song's stems (sliders × mute × solo). */
 export const stemMix = writable<StemMix>(defaultStemMix());
 export const stemsError = writable<string | null>(null);
+/** All overdub recordings for the open song. */
+export const recordings = writable<Recording[]>([]);
+/** True while a recording.start has been sent and recording.stop has not yet resolved. */
+export const recordingActive = writable<boolean>(false);
 export const analysisError = writable<string | null>(null);
 /** Loop edges snap to downbeats while on (only meaningful with analysis). */
 export const gridSnap = writable(true);
@@ -621,6 +639,8 @@ export const actions = {
       stemMix.set(defaultStemMix());
       stemsError.set(null);
       analysisError.set(null);
+      recordings.set(data.recordings ?? []);
+      recordingActive.set(false);
     } finally {
       openingSong.set(null);
       trace("open", `#${id} spinner cleared`);
@@ -1127,6 +1147,45 @@ export const actions = {
     await this.applyStemMix();
   },
 
+  // --- recordings ---
+
+  async startRecording(span: "song" | "selection" | "loop", deviceId: string, range?: { start: number; end: number }): Promise<void> {
+    await cmd("recording.start", { span, device_id: deviceId, ...(range ?? {}) });
+    recordingActive.set(true);
+  },
+
+  async stopRecording(): Promise<void> {
+    const rec = await cmd<Recording>("recording.stop");
+    recordingActive.set(false);
+    recordings.update((rs) => (rs.some((r) => r.id === rec.id) ? rs : [...rs, rec]));
+  },
+
+  async deleteRecording(id: number): Promise<void> {
+    await cmd("recording.delete", { id });
+    recordings.update((rs) => rs.filter((r) => r.id !== id));
+  },
+
+  async renameRecording(id: number, name: string): Promise<void> {
+    await cmd("recording.rename", { id, name });
+    recordings.update((rs) => rs.map((r) => (r.id === id ? { ...r, name } : r)));
+  },
+
+  async setRecordingGain(id: number, gain: number): Promise<void> {
+    recordings.update((rs) => rs.map((r) => (r.id === id ? { ...r, gain } : r)));
+    await cmd("recording.setGain", { id, gain });
+  },
+
+  async toggleRecordingMute(id: number): Promise<void> {
+    let muted = false;
+    recordings.update((rs) => rs.map((r) => (r.id === id ? ((muted = !r.muted), { ...r, muted }) : r)));
+    await cmd("recording.setMute", { id, muted });
+  },
+
+  async setRecordingNudge(id: number, nudgeFrames: number): Promise<void> {
+    recordings.update((rs) => rs.map((r) => (r.id === id ? { ...r, nudge_frames: nudgeFrames } : r)));
+    await cmd("recording.setNudge", { id, nudge_ms: framesToMs(nudgeFrames) });
+  },
+
   // --- prepare (analysis → stems) ---
 
   /** One button: structure/beat analysis, then stem separation —
@@ -1359,6 +1418,12 @@ export async function initEvents(): Promise<() => void> {
         // socket-driven imports land in the sidebar
         void actions.refreshSongs();
         break;
+      case "recording.finished": {
+        const r = ev.data as Recording;
+        recordings.update((rs) => (rs.some((x) => x.id === r.id) ? rs : [...rs, r]));
+        recordingActive.set(false);
+        break;
+      }
     }
   });
 }
