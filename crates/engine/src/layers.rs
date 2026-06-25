@@ -71,7 +71,7 @@ mod tests {
         mix_layers(&layers, 98, &mut out);
         // frames 98,99 are before the layer → silent
         assert_eq!(out[0], 0.0);
-        assert_eq!(out[1 * CHANNELS], 0.0);
+        assert_eq!(out[CHANNELS], 0.0);
         // frames 100..104 carry the layer
         for f in 2..6 {
             assert!((out[f * CHANNELS] - 0.5).abs() < 1e-6, "frame {f}");
