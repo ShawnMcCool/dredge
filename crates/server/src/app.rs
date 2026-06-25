@@ -1089,6 +1089,19 @@ impl App {
                         let t = play.ns_at_frame(anchor);
                         let ring_start =
                             engine::stream_clock::ring_frame_at_ns(&cap_snap, ring_total, t);
+                        if std::env::var("DREDGE_DEBUG").is_ok() {
+                            eprintln!(
+                                "dredge anchor[count-in-fix]: pinned ring_start={ring_start} \
+                                 anchor={anchor} play(now={} ticks={} rate={}) \
+                                 cap(now={} ticks={} rate={}) ring_total={ring_total}",
+                                play.now_ns,
+                                play.ticks,
+                                play.rate_hz,
+                                cap_snap.now_ns,
+                                cap_snap.ticks,
+                                cap_snap.rate_hz
+                            );
+                        }
                         if let Some(p) = self.pending_recording.as_mut() {
                             p.ring_start = Some(ring_start);
                         }
@@ -1623,6 +1636,12 @@ impl App {
     /// (`recording_stop`) and the auto-finalize-at-span-end path (`tick`).
     fn finalize_recording(&mut self) -> Result<Recording, String> {
         let pending = self.pending_recording.take().ok_or("not recording")?;
+        if std::env::var("DREDGE_DEBUG").is_ok() {
+            eprintln!(
+                "dredge finalize[count-in-fix]: ring_start={:?} anchor={} len={}",
+                pending.ring_start, pending.anchor_frame, pending.len_frames
+            );
+        }
         let samples = {
             let mut rec = self.recorder.lock().unwrap();
             // `ring_start` was pinned at the first real-playback tick (see `tick`).
