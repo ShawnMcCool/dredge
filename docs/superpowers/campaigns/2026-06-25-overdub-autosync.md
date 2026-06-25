@@ -77,11 +77,20 @@ on the Focusrite (with count-in) and confirms it lands in time. Then Part 2.
 
 ## Field feedback (during testing)
 
-- **Count-in delay bug** (3c7dcff): non-count-in records aligned (Part 1 works!)
-  but a count-in delayed the take by ~the count-in length. Root cause: finalize
-  extrapolated `ring_start` back from span-end across the held-during-count-in
-  audible frame. Fix: pin `ring_start` at the first real-playback tick (count-in
-  done) — short extrapolation, count-in excluded. Awaiting on-hardware re-test.
+- **Count-in delay bug — TWO causes, second was the real one:**
+  - First attempt (3c7dcff): pin `ring_start` at the first real-playback tick
+    instead of extrapolating back from span-end. Necessary but not sufficient.
+  - **Real root cause** (next commit): the user picked "full song" but STOPPED
+    EARLY (a few seconds). `extract_range(ring_start, full_song_len)` overran the
+    ring (only seconds captured) → `None` → fell back to `snapshot_last`, which
+    returns ALL captured audio INCLUDING the count-in. That's also why it
+    "worked without a count-in" (captured-from-start happens to begin at song-0).
+    Fix: clamp `take_len = min(len_frames, ring_total - ring_start)` so the take
+    stays anchored at count-in-end and is simply shorter — never hits the
+    count-in-including fallback. Awaiting re-test.
+  - Note: `DREDGE_DEBUG=1 ./cmd` does NOT set the env in **fish** (user's shell);
+    use `env DREDGE_DEBUG=1 ./target/release/dredge 2>log`. The empty debug log
+    in the first re-test was this, not a stale binary (binary had the strings).
 - **UI** (35067c2): recordings input now has "default (follow devices)" (mirrors
   the tuner via shared `resolveInputDevice` — renamed from `resolveTunerInput`),
   and a "from playhead" span option (maps to a selection from the playhead to
