@@ -27,6 +27,7 @@ pub mod pipeline;
 pub mod pitch;
 pub mod render_core;
 pub mod ring;
+pub mod stream_clock;
 pub mod stretch;
 
 pub use engine::Engine;

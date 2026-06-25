@@ -41,12 +41,14 @@ at the bottom of the Progress log.)
 | — | campaign file created | done |
 | — | plan written + committed | pending |
 | 1 | Feasibility spike: PipeWire stream timing API in the `pipewire` Rust crate (or FFI needed?) | DONE — no FFI; `Stream::time()` exists |
-| 2 | RollingRing monotonic frame index + absolute-range read | pending |
-| 3 | Capture↔playback frame correspondence (transport-locked extraction) | pending |
-| 4 | Wire transport-locked take into recording_start/stop | pending |
-| 5 | Part 2: PipeWire-reported latency baseline | pending |
-| 6 | Part 2: loopback ping calibration (recording.calibrate) | pending |
-| 7 | Full gate + manual device verification | pending |
+| AS-1 | RollingRing monotonic frame index + absolute-range read | DONE (52dec02) |
+| AS-2 | StreamClock timing snapshot + mapping math | in progress |
+| AS-3 | Capture stream clock + input delay (device-bound) | pending |
+| AS-4 | Playback song-frame clock + output delay (device-bound) | pending |
+| AS-5 | Transport-locked take extraction | pending |
+| AS-6 | Part 2: PipeWire-reported latency baseline | pending |
+| AS-7 | Part 2: loopback ping calibration | pending |
+| AS-8 | Full gate + smoke + manual device verification | pending |
 
 ## Risks / open questions
 
