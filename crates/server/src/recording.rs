@@ -3,6 +3,7 @@
 //! `RecordingControl` trait so the dispatcher can be tested with a fake.
 
 use engine::buffer::{CHANNELS, SAMPLE_RATE};
+use engine::stream_clock::ClockSnapshot;
 
 /// Which region a recording pass covers, chosen by the user at record time.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -47,6 +48,18 @@ pub trait RecordingControl: Send {
     fn start(&mut self, device_id: &str, len_frames: i64) -> Result<(), String>;
     /// Stop and return the captured interleaved-stereo f32 (up to `len_frames`).
     fn stop(&mut self) -> Result<Vec<f32>, String>;
+    /// Arm the capture stream clock so it begins publishing timing snapshots.
+    fn arm_clock(&self);
+    /// Latest capture clock snapshot paired with the ring's
+    /// `total_frames_written` sampled at the same instant, or `None` if nothing
+    /// has been published yet.
+    fn capture_snapshot(&self) -> Option<(ClockSnapshot, i64)>;
+    /// Interleaved-stereo samples for the absolute ring-frame range
+    /// `[ring_start, ring_start + len)`, or `None` if `ring_start` is negative or
+    /// the range has been evicted from the ring.
+    fn extract_range(&self, ring_start: i64, len: i64) -> Option<Vec<f32>>;
+    /// Stop the capture clock publishing.
+    fn disarm_clock(&self);
     /// Capture `secs` of input from `device_id` for latency calibration (the
     /// caller emits a click out the output and analyses the result with
     /// `detect_click_onset`). Returns the captured interleaved-stereo f32.
@@ -75,6 +88,21 @@ impl RecordingControl for FakeRecorder {
     fn calibrate_capture(&mut self, _device_id: &str, _secs: f64) -> Result<Vec<f32>, String> {
         Ok(self.canned.clone())
     }
+    fn arm_clock(&self) {}
+    fn capture_snapshot(&self) -> Option<(ClockSnapshot, i64)> {
+        Some((
+            ClockSnapshot {
+                now_ns: 0,
+                ticks: 0,
+                rate_hz: 48_000,
+            },
+            0,
+        ))
+    }
+    fn extract_range(&self, _ring_start: i64, _len: i64) -> Option<Vec<f32>> {
+        Some(self.canned.clone())
+    }
+    fn disarm_clock(&self) {}
 }
 
 #[derive(Default)]
@@ -106,6 +134,33 @@ impl RecordingControl for RealRecorder {
         // the capture thread (no deadlock).
         cap.stop();
         Ok(snap)
+    }
+
+    fn arm_clock(&self) {
+        if let Some(cap) = &self.capture {
+            cap.clock().arm();
+        }
+    }
+
+    fn capture_snapshot(&self) -> Option<(ClockSnapshot, i64)> {
+        let clock = self.capture.as_ref()?.clock();
+        let snap = clock.load()?;
+        Some((snap, clock.ring_total_at_snapshot()))
+    }
+
+    fn extract_range(&self, ring_start: i64, len: i64) -> Option<Vec<f32>> {
+        if ring_start < 0 {
+            return None;
+        }
+        let cap = self.capture.as_ref()?;
+        let ring = cap.ring.lock().ok()?;
+        ring.read_range(ring_start as u64, (ring_start + len) as u64)
+    }
+
+    fn disarm_clock(&self) {
+        if let Some(cap) = &self.capture {
+            cap.clock().disarm();
+        }
     }
 
     fn calibrate_capture(&mut self, device_id: &str, secs: f64) -> Result<Vec<f32>, String> {

@@ -374,6 +374,9 @@ struct OpenSong {
 struct PendingRecording {
     song_id: SongId,
     anchor_frame: i64,
+    /// Span length in source frames; the take ends when playback reaches
+    /// `(anchor_frame + len_frames) / SAMPLE_RATE`.
+    len_frames: i64,
 }
 
 const INPUT_LATENCY_KEY: &str = "input_latency_frames";
@@ -1060,6 +1063,30 @@ impl App {
                 });
             }
         }
+        // Auto-finalize at span end: once playback reaches the take's end frame,
+        // finalize regardless of whether the user has clicked stop yet — this is
+        // what locks the take to the span instead of to the stop click. `take()`
+        // in `finalize_recording` makes this fire exactly once.
+        if let Some((secs, ..)) = last_pos {
+            let reached_end = self.pending_recording.as_ref().is_some_and(|p| {
+                let end_secs =
+                    (p.anchor_frame + p.len_frames) as f64 / engine::buffer::SAMPLE_RATE as f64;
+                secs >= end_secs
+            });
+            if reached_end {
+                match self.finalize_recording() {
+                    Ok(rec) => {
+                        if let Ok(data) = serde_json::to_value(&rec) {
+                            events.push(Event {
+                                event: "recording.finished".into(),
+                                data,
+                            });
+                        }
+                    }
+                    Err(e) => eprintln!("dredge: auto-finalize at span end failed: {e}"),
+                }
+            }
+        }
         events
     }
 
@@ -1533,13 +1560,19 @@ impl App {
         };
         let (start, end) = crate::recording::resolve_span(span, song_frames).ok_or("empty span")?;
         let len_frames = end - start;
-        self.recorder
-            .lock()
-            .unwrap()
-            .start(&p.device_id, len_frames)?;
+        {
+            let mut rec = self.recorder.lock().unwrap();
+            rec.start(&p.device_id, len_frames)?;
+            // Arm both stream clocks so the capture and output RT threads begin
+            // publishing timing snapshots; the take is anchored against them at
+            // finalize.
+            rec.arm_clock();
+        }
+        self.audio.arm_playback_clock();
         self.pending_recording = Some(PendingRecording {
             song_id,
             anchor_frame: start,
+            len_frames,
         });
         self.audio.send(EngineCmd::SeekSecs(
             start as f64 / engine::buffer::SAMPLE_RATE as f64,
@@ -1548,9 +1581,53 @@ impl App {
         Ok(Value::Null)
     }
 
-    fn recording_stop(&mut self, _p: Value) -> Result<Value, String> {
+    /// Finalize the in-flight take: extract the transport-locked range from the
+    /// capture ring (anchored to the song timeline via the capture/playback
+    /// clocks), write the WAV, append the manifest entry, rebuild layers, and
+    /// disarm both clocks. Shared by the user early-stop path
+    /// (`recording_stop`) and the auto-finalize-at-span-end path (`tick`).
+    fn finalize_recording(&mut self) -> Result<Recording, String> {
         let pending = self.pending_recording.take().ok_or("not recording")?;
-        let samples = self.recorder.lock().unwrap().stop()?;
+        // Read the playback clock before locking the recorder (distinct fields,
+        // but keeps the borrow windows tidy).
+        let play_snap = self.audio.playback_clock_snapshot();
+        let samples = {
+            let mut rec = self.recorder.lock().unwrap();
+            let cap = rec.capture_snapshot();
+            // Map the song's `anchor_frame` through graph time to the ring frame
+            // acquired at that instant; extract `len_frames` from there.
+            let extracted = match (cap, play_snap) {
+                (Some((cap_snap, ring_total)), Some(play)) => {
+                    let t = play.ns_at_frame(pending.anchor_frame);
+                    let ring_start =
+                        engine::stream_clock::ring_frame_at_ns(&cap_snap, ring_total, t);
+                    let got = rec.extract_range(ring_start, pending.len_frames);
+                    if got.is_none() {
+                        eprintln!(
+                            "dredge: recording range evicted (ring_start={ring_start}, \
+                             len={}); falling back to snapshot_last",
+                            pending.len_frames
+                        );
+                    }
+                    got
+                }
+                // No published snapshots (clocks never ran, e.g. a non-PipeWire
+                // backend): fall back to the tail of the ring.
+                _ => None,
+            };
+            rec.disarm_clock();
+            // `stop()` tears down the capture session (joins its thread) in all
+            // paths; its snapshot_last result is the fallback when the
+            // transport-locked range was unavailable.
+            match extracted {
+                Some(s) => {
+                    let _ = rec.stop();
+                    s
+                }
+                None => rec.stop()?,
+            }
+        };
+        self.audio.disarm_playback_clock();
         self.audio.send(EngineCmd::Pause);
         let dir = self
             .library
@@ -1581,6 +1658,11 @@ impl App {
             .set_recordings(pending.song_id, recordings)
             .err_str()?;
         self.refresh_layers();
+        Ok(rec)
+    }
+
+    fn recording_stop(&mut self, _p: Value) -> Result<Value, String> {
+        let rec = self.finalize_recording()?;
         let data = serde_json::to_value(&rec).err_str()?;
         let _ = self.job_tx.send(Event {
             event: "recording.finished".into(),
@@ -2638,6 +2720,37 @@ mod recording_tests {
         let dir = app.song_bundle_dir(song_id).unwrap();
         assert!(dir.join(&recs[0].file).exists(), "WAV should be written");
         assert_eq!(mock.lock().unwrap().layers_len, 1, "one layer pushed");
+    }
+
+    /// Locks the anchor wiring used by `finalize_recording`: a song frame is
+    /// mapped through graph time (playback clock) to the capture ring frame
+    /// acquired at that instant (capture clock + ring total). Mirrors
+    /// `stream_clock::ring_frame_maps_through_graph_time` at this layer so a
+    /// change to the finalize expression that diverges from the clock math is
+    /// caught here.
+    #[test]
+    fn anchor_math_maps_song_frame_to_ring_start() {
+        use engine::stream_clock::{ring_frame_at_ns, ClockSnapshot};
+        // Capture stream: at graph time 0 it was at tick 1000, and the ring had
+        // written 1000 frames by then.
+        let cap = ClockSnapshot {
+            now_ns: 0,
+            ticks: 1000,
+            rate_hz: 48_000,
+        };
+        let ring_total = 1000;
+        // Playback song clock: song frame 0 was output at graph time 0.
+        let play = ClockSnapshot {
+            now_ns: 0,
+            ticks: 0,
+            rate_hz: 48_000,
+        };
+        let anchor = 48_000; // 1.0s into the song
+                             // Exactly the expression `finalize_recording` runs:
+        let t = play.ns_at_frame(anchor);
+        let ring_start = ring_frame_at_ns(&cap, ring_total, t);
+        // 1.0s after the snapshot the ring advanced 48_000 frames from 1000.
+        assert_eq!(ring_start, 1000 + 48_000);
     }
 
     #[test]

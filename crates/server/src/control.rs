@@ -1,5 +1,6 @@
 use engine::buffer::StemSet;
 use engine::pipeline::{ClickMark, EngineCmd, EngineEvent};
+use engine::stream_clock::ClockSnapshot;
 
 /// Everything App needs from the audio side — real Engine or test mock.
 pub trait AudioControl: Send {
@@ -11,6 +12,16 @@ pub trait AudioControl: Send {
     fn set_metronome(&mut self, cmd: EngineCmd);
     /// Replace the active overdub layer set (atomic swap on the engine side).
     fn set_layers(&self, layers: Vec<engine::layers::Layer>);
+    /// Arm the playback (song-frame) clock so the output RT thread starts
+    /// publishing timing snapshots. Call around a recording.
+    fn arm_playback_clock(&self);
+    /// Latest playback song-frame clock snapshot, or `None` if nothing has been
+    /// published (e.g. clock never armed, or a non-PipeWire backend).
+    fn playback_clock_snapshot(&self) -> Option<ClockSnapshot>;
+    /// Stop the playback clock publishing.
+    fn disarm_playback_clock(&self);
+    /// Output round-trip delay (frames) reported by the audio graph.
+    fn output_delay_frames(&self) -> i64;
 }
 
 impl AudioControl for engine::Engine {
@@ -36,6 +47,18 @@ impl AudioControl for engine::Engine {
     }
     fn set_layers(&self, layers: Vec<engine::layers::Layer>) {
         engine::Engine::set_layers(self, layers);
+    }
+    fn arm_playback_clock(&self) {
+        engine::Engine::playback_clock(self).arm();
+    }
+    fn playback_clock_snapshot(&self) -> Option<ClockSnapshot> {
+        engine::Engine::playback_clock(self).load()
+    }
+    fn disarm_playback_clock(&self) {
+        engine::Engine::playback_clock(self).disarm();
+    }
+    fn output_delay_frames(&self) -> i64 {
+        engine::Engine::output_delay_frames(self)
     }
 }
 
@@ -80,6 +103,18 @@ impl AudioControl for MockEngine {
         // path wraps it in `Arc<Mutex<_>>` (below), which can. Left a no-op so
         // the trait is satisfied for any direct use.
     }
+    fn arm_playback_clock(&self) {}
+    fn playback_clock_snapshot(&self) -> Option<ClockSnapshot> {
+        Some(ClockSnapshot {
+            now_ns: 0,
+            ticks: 0,
+            rate_hz: 48_000,
+        })
+    }
+    fn disarm_playback_clock(&self) {}
+    fn output_delay_frames(&self) -> i64 {
+        0
+    }
 }
 
 /// Shared handle so tests can keep a clone while App owns the AudioControl.
@@ -104,6 +139,18 @@ impl AudioControl for std::sync::Arc<std::sync::Mutex<MockEngine>> {
     }
     fn set_layers(&self, layers: Vec<engine::layers::Layer>) {
         self.lock().unwrap().layers_len = layers.len();
+    }
+    fn arm_playback_clock(&self) {
+        self.lock().unwrap().arm_playback_clock();
+    }
+    fn playback_clock_snapshot(&self) -> Option<ClockSnapshot> {
+        self.lock().unwrap().playback_clock_snapshot()
+    }
+    fn disarm_playback_clock(&self) {
+        self.lock().unwrap().disarm_playback_clock();
+    }
+    fn output_delay_frames(&self) -> i64 {
+        self.lock().unwrap().output_delay_frames()
     }
 }
 
