@@ -11,6 +11,7 @@ pub struct Engine {
     evt_rx: rtrb::Consumer<EngineEvent>,
     song_slot: Arc<ArcSwapOption<StemSet>>,
     click_slot: Arc<ArcSwapOption<Vec<ClickMark>>>,
+    layer_slot: Arc<ArcSwapOption<Vec<crate::layers::Layer>>>,
     /// Signals the current output thread to quit; replaced on each retarget.
     stop: Arc<AtomicBool>,
     /// Live snapshot of engine state, replayed onto a fresh pipeline when the
@@ -26,12 +27,14 @@ impl Engine {
         let (evt_tx, evt_rx) = rtrb::RingBuffer::<EngineEvent>::new(1024);
         let song_slot = Arc::new(ArcSwapOption::<StemSet>::empty());
         let click_slot = Arc::new(ArcSwapOption::<Vec<ClickMark>>::empty());
+        let layer_slot = Arc::new(ArcSwapOption::<Vec<crate::layers::Layer>>::empty());
         let stop = Arc::new(AtomicBool::new(false));
         let audio_thread = crate::output::spawn(
             cmd_rx,
             evt_tx,
             song_slot.clone(),
             click_slot.clone(),
+            layer_slot.clone(),
             None,
             stop.clone(),
         )?;
@@ -40,6 +43,7 @@ impl Engine {
             evt_rx,
             song_slot,
             click_slot,
+            layer_slot,
             stop,
             state: EngineState::default(),
             _audio_thread: Some(audio_thread),
@@ -49,6 +53,12 @@ impl Engine {
     /// Swap in a new song; audio thread picks it up at the next block.
     pub fn load(&self, set: StemSet) {
         self.song_slot.store(Some(Arc::new(set)));
+    }
+
+    /// Replace the active overdub layer set (atomic pointer swap; the audio
+    /// thread picks it up on its next block).
+    pub fn set_layers(&self, layers: Vec<crate::layers::Layer>) {
+        self.layer_slot.store(Some(Arc::new(layers)));
     }
 
     /// Replace the section-click schedule; the audio thread picks it up next block.
@@ -89,6 +99,7 @@ impl Engine {
             evt_tx,
             self.song_slot.clone(),
             self.click_slot.clone(),
+            self.layer_slot.clone(),
             target,
             self.stop.clone(),
         )?;

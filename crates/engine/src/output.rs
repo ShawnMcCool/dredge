@@ -33,13 +33,14 @@ pub fn spawn(
     evt_tx: rtrb::Producer<EngineEvent>,
     song_slot: Arc<ArcSwapOption<StemSet>>,
     click_slot: Arc<ArcSwapOption<Vec<ClickMark>>>,
+    layer_slot: Arc<ArcSwapOption<Vec<crate::layers::Layer>>>,
     target: Option<String>,
     stop: Arc<AtomicBool>,
 ) -> crate::error::Result<JoinHandle<()>> {
     let handle = std::thread::Builder::new()
         .name("dredge-pw".into())
         .spawn(move || {
-            if let Err(e) = run(cmd_rx, evt_tx, song_slot, click_slot, target, stop) {
+            if let Err(e) = run(cmd_rx, evt_tx, song_slot, click_slot, layer_slot, target, stop) {
                 eprintln!("dredge pipewire thread failed: {e}");
             }
         })?;
@@ -51,6 +52,7 @@ fn run(
     evt_tx: rtrb::Producer<EngineEvent>,
     song_slot: Arc<ArcSwapOption<StemSet>>,
     click_slot: Arc<ArcSwapOption<Vec<ClickMark>>>,
+    layer_slot: Arc<ArcSwapOption<Vec<crate::layers::Layer>>>,
     target: Option<String>,
     stop: Arc<AtomicBool>,
 ) -> Result<(), pw::Error> {
@@ -77,7 +79,9 @@ fn run(
     let stream = pw::stream::StreamBox::new(&core, "dredge", props)?;
 
     let state = State {
-        core: crate::render_core::RenderCore::new(cmd_rx, evt_tx, song_slot, click_slot),
+        core: crate::render_core::RenderCore::new(
+            cmd_rx, evt_tx, song_slot, click_slot, layer_slot,
+        ),
         render_buf: vec![0.0; MAX_QUANTUM_FRAMES * CHANNELS],
     };
 

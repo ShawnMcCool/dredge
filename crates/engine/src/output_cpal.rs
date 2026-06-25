@@ -18,13 +18,14 @@ pub fn spawn(
     evt_tx: rtrb::Producer<EngineEvent>,
     song_slot: Arc<ArcSwapOption<StemSet>>,
     click_slot: Arc<ArcSwapOption<Vec<ClickMark>>>,
+    layer_slot: Arc<ArcSwapOption<Vec<crate::layers::Layer>>>,
     target: Option<String>,
     stop: Arc<AtomicBool>,
 ) -> crate::error::Result<JoinHandle<()>> {
     let handle = std::thread::Builder::new()
         .name("dredge-audio".into())
         .spawn(move || {
-            if let Err(e) = run(cmd_rx, evt_tx, song_slot, click_slot, target, stop) {
+            if let Err(e) = run(cmd_rx, evt_tx, song_slot, click_slot, layer_slot, target, stop) {
                 eprintln!("dredge audio thread failed: {e}");
             }
         })?;
@@ -36,6 +37,7 @@ fn run(
     evt_tx: rtrb::Producer<EngineEvent>,
     song_slot: Arc<ArcSwapOption<StemSet>>,
     click_slot: Arc<ArcSwapOption<Vec<ClickMark>>>,
+    layer_slot: Arc<ArcSwapOption<Vec<crate::layers::Layer>>>,
     target: Option<String>,
     stop: Arc<AtomicBool>,
 ) -> crate::error::Result<()> {
@@ -67,7 +69,7 @@ fn run(
         buffer_size: cpal::BufferSize::Default,
     };
 
-    let mut core = RenderCore::new(cmd_rx, evt_tx, song_slot, click_slot);
+    let mut core = RenderCore::new(cmd_rx, evt_tx, song_slot, click_slot, layer_slot);
 
     let stream = device
         .build_output_stream(

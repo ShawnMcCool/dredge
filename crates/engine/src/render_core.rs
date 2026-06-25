@@ -4,6 +4,7 @@
 //! pushes engine events out. Never allocates or locks on the steady path.
 
 use crate::buffer::StemSet;
+use crate::layers::Layer;
 use crate::metronome::{Metronome, MetronomeBeat};
 use crate::pipeline::{ClickMark, EngineCmd, EngineEvent, Pipeline};
 use arc_swap::ArcSwapOption;
@@ -14,9 +15,11 @@ pub struct RenderCore {
     evt_tx: rtrb::Producer<EngineEvent>,
     song_slot: Arc<ArcSwapOption<StemSet>>,
     click_slot: Arc<ArcSwapOption<Vec<ClickMark>>>,
+    layer_slot: Arc<ArcSwapOption<Vec<Layer>>>,
     pipeline: Option<Pipeline>,
     current_song: Option<Arc<StemSet>>,
     current_clicks: Option<Arc<Vec<ClickMark>>>,
+    current_layers: Option<Arc<Vec<Layer>>>,
     events: Vec<EngineEvent>,
     /// User volume, held here (not just in the Pipeline) so it survives song
     /// swaps and a SetVolume that arrives before any song is loaded.
@@ -33,15 +36,18 @@ impl RenderCore {
         evt_tx: rtrb::Producer<EngineEvent>,
         song_slot: Arc<ArcSwapOption<StemSet>>,
         click_slot: Arc<ArcSwapOption<Vec<ClickMark>>>,
+        layer_slot: Arc<ArcSwapOption<Vec<Layer>>>,
     ) -> Self {
         Self {
             cmd_rx,
             evt_tx,
             song_slot,
             click_slot,
+            layer_slot,
             pipeline: None,
             current_song: None,
             current_clicks: None,
+            current_layers: None,
             events: Vec::with_capacity(64),
             volume: 1.0,
             metronome: Metronome::default(),
@@ -88,6 +94,22 @@ impl RenderCore {
                 p.set_click_schedule(clicks.clone().unwrap_or_default());
             }
             self.current_clicks = clicks;
+        }
+
+        // Layer-set swap: detect by pointer like the click slot; re-apply on a
+        // song swap too, since that built a fresh pipeline.
+        let lguard = self.layer_slot.load();
+        let lswapped = match (lguard.as_ref(), self.current_layers.as_ref()) {
+            (Some(a), Some(b)) => !Arc::ptr_eq(a, b),
+            (Some(_), None) | (None, Some(_)) => true,
+            (None, None) => false,
+        };
+        if lswapped || swapped {
+            let layers = (*lguard).clone();
+            if let Some(p) = self.pipeline.as_mut() {
+                p.set_layers(layers.clone().unwrap_or_default());
+            }
+            self.current_layers = layers;
         }
 
         // Drain control commands. SetVolume is latched into self.volume so it
@@ -149,7 +171,8 @@ impl RenderCore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::buffer::CHANNELS;
+    use crate::buffer::{SongBuffer, CHANNELS, SAMPLE_RATE};
+    use crate::layers::Layer;
     use crate::metronome::{Cadence, Kit};
     use crate::pipeline::EngineCmd;
 
@@ -158,10 +181,64 @@ mod tests {
         let (evt_tx, _evt_rx) = rtrb::RingBuffer::<EngineEvent>::new(256);
         let song_slot = Arc::new(ArcSwapOption::<StemSet>::empty());
         let click_slot = Arc::new(ArcSwapOption::<Vec<crate::pipeline::ClickMark>>::empty());
+        let layer_slot = Arc::new(ArcSwapOption::<Vec<Layer>>::empty());
         (
-            RenderCore::new(cmd_rx, evt_tx, song_slot, click_slot),
+            RenderCore::new(cmd_rx, evt_tx, song_slot, click_slot, layer_slot),
             cmd_tx,
         )
+    }
+
+    fn core_with(
+        song: StemSet,
+        layers: Option<Vec<Layer>>,
+    ) -> (RenderCore, rtrb::Producer<EngineCmd>) {
+        let (cmd_tx, cmd_rx) = rtrb::RingBuffer::<EngineCmd>::new(16);
+        let (evt_tx, _evt_rx) = rtrb::RingBuffer::<EngineEvent>::new(64);
+        let song_slot = Arc::new(ArcSwapOption::new(Some(Arc::new(song))));
+        let click_slot = Arc::new(ArcSwapOption::<Vec<ClickMark>>::empty());
+        let layer_slot = Arc::new(ArcSwapOption::new(layers.map(Arc::new)));
+        let core = RenderCore::new(cmd_rx, evt_tx, song_slot, click_slot, layer_slot);
+        (core, cmd_tx)
+    }
+
+    fn peak(core: &mut RenderCore) -> f32 {
+        let mut max = 0.0f32;
+        let mut out = vec![0.0f32; 1024 * CHANNELS];
+        for _ in 0..32 {
+            core.fill(&mut out);
+            for s in &out {
+                max = max.max(s.abs());
+            }
+        }
+        max
+    }
+
+    #[test]
+    fn a_loud_layer_becomes_audible_over_a_silent_song() {
+        let silent = StemSet::single(SongBuffer {
+            data: vec![0.0; SAMPLE_RATE as usize * CHANNELS],
+        });
+        let layer = Layer {
+            samples: Arc::new(SongBuffer {
+                data: vec![0.5; SAMPLE_RATE as usize * CHANNELS],
+            }),
+            start_frame: 0,
+            gain: 1.0,
+            muted: false,
+        };
+        let (mut core, mut tx) = core_with(silent, Some(vec![layer]));
+        tx.push(EngineCmd::Play).unwrap();
+        assert!(peak(&mut core) > 0.1, "layer should be audible");
+    }
+
+    #[test]
+    fn silent_song_with_no_layers_stays_silent() {
+        let silent = StemSet::single(SongBuffer {
+            data: vec![0.0; SAMPLE_RATE as usize * CHANNELS],
+        });
+        let (mut core, mut tx) = core_with(silent, None);
+        tx.push(EngineCmd::Play).unwrap();
+        assert!(peak(&mut core) < 1e-3, "should be silent");
     }
 
     #[test]

@@ -1,5 +1,6 @@
 use crate::buffer::{StemSet, CHANNELS, SAMPLE_RATE};
 use crate::filter::Focus;
+use crate::layers::{mix_layers, Layer};
 use crate::looper::Looper;
 use crate::metronome::{Cadence, Kit};
 use crate::stretch::{Stretcher, BLOCK_FRAMES};
@@ -169,6 +170,8 @@ pub struct Pipeline {
     ci_pass_at_end: bool,
     // section-click overlay
     clicks: Arc<Vec<ClickMark>>,
+    /// Overdub layers, mixed into the feed buffer before the stretcher.
+    layers: Arc<Vec<Layer>>,
     click_cursor: usize,
     click_voice: ClickVoice,
     /// Audible song position in source frames (advances by `rate` per output
@@ -203,6 +206,7 @@ impl Pipeline {
             ci_beat_index: 0,
             ci_pass_at_end: false,
             clicks: Arc::new(Vec::new()),
+            layers: Arc::new(Vec::new()),
             click_cursor: 0,
             click_voice: ClickVoice::default(),
             audible_frame: 0.0,
@@ -214,6 +218,10 @@ impl Pipeline {
     pub fn set_click_schedule(&mut self, clicks: Arc<Vec<ClickMark>>) {
         self.clicks = clicks;
         self.reseek_click_cursor();
+    }
+
+    pub fn set_layers(&mut self, layers: Arc<Vec<Layer>>) {
+        self.layers = layers;
     }
 
     /// Point the cursor at the first mark at or after the audible position.
@@ -397,15 +405,18 @@ impl Pipeline {
                     .looper
                     .read_contiguous(&mut self.feed_buf[..cap * CHANNELS], cap);
                 if n > 0 {
+                    mix_layers(&self.layers, pos, &mut self.feed_buf[..n * CHANNELS]);
                     self.stretch.feed(&self.feed_buf[..n * CHANNELS]);
                 }
                 continue;
             }
+            let src_start = self.looper.pos_frames();
             let info = self.looper.read(&mut self.feed_buf[..want * CHANNELS]);
             if info.wrapped {
                 events.push(EngineEvent::LoopWrapped);
             }
             if info.frames > 0 {
+                mix_layers(&self.layers, src_start, &mut self.feed_buf[..info.frames * CHANNELS]);
                 self.stretch.feed(&self.feed_buf[..info.frames * CHANNELS]);
             }
             if info.finished {
