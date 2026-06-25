@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { fade } from "svelte/transition";
   import { get } from "svelte/store";
   import { canvasSize } from "../lib/actions/canvasSize";
@@ -547,12 +547,15 @@
   }
 
   // Re-apply canvas dimensions when the recording count changes so layer lanes
-  // aren't clipped. The canvasSize action fires on container resize; this
-  // effect fires when recordings are added/removed. Routing through applySize
-  // keeps a single height formula (canvasH) and syncs view.width.
+  // aren't clipped. The canvasSize action fires on container resize; this effect
+  // fires when recordings are added/removed. The whole applySize call is
+  // untracked: it both reads `view` (the {...view} spread) and writes it, so
+  // without untrack this effect would depend on `view` and re-trigger its own
+  // write — an effect_update_depth_exceeded loop. The effect therefore depends
+  // ONLY on the recording count.
   $effect(() => {
     void $recordings.length;
-    applySize(view.width, 0, window.devicePixelRatio || 1);
+    untrack(() => applySize(view.width, 0, window.devicePixelRatio || 1));
   });
 
   onMount(() => {
