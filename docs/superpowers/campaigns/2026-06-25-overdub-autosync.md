@@ -71,6 +71,17 @@ at the bottom of the Progress log.)
 - AS-2's `stream_clock.rs` was missed by a `git commit -am` (fixed in a follow-up
   commit). Implementer dispatches must use explicit `git add` for new files.
 
+## Field feedback (during testing)
+
+- **Count-in delay bug:** non-count-in records aligned (Part 1 works!) but a
+  count-in delayed the take by ~the count-in length. Root cause: finalize
+  extrapolated `ring_start` back from span-end across the held-during-count-in
+  audible frame. Fix: pin `ring_start` at the first real-playback tick (count-in
+  done) — short extrapolation, count-in excluded. Awaiting on-hardware re-test.
+- **UI:** recordings input now has "default (follow devices)" (mirrors the tuner
+  via shared `resolveInputDevice`), and a "from playhead" span option (maps to a
+  selection from the playhead to song end).
+
 ## Progress log
 
 - 2026-06-25: Diagnosed root cause (snapshot_last + stop-timing, not just RTL).
