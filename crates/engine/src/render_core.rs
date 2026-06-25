@@ -55,6 +55,15 @@ impl RenderCore {
         }
     }
 
+    /// Latest audible song frame + song-frame rate (frames/sec), for the
+    /// playback clock. `None` when no song is loaded — nothing to anchor to, so
+    /// the caller skips publishing. Read right after `fill`.
+    pub fn playback_position(&self) -> Option<(i64, i64)> {
+        self.pipeline
+            .as_ref()
+            .map(|p| (p.audible_song_frame(), p.song_rate_hz()))
+    }
+
     /// Render `out.len() / CHANNELS` interleaved stereo frames into `out`.
     /// Call from the audio thread: does not allocate or lock on the steady
     /// path (a song swap is the one exception, building a fresh pipeline).

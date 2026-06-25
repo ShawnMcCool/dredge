@@ -1,6 +1,7 @@
 use crate::buffer::StemSet;
 use crate::engine_state::EngineState;
 use crate::pipeline::{ClickMark, EngineCmd, EngineEvent};
+use crate::stream_clock::StreamClock;
 use arc_swap::ArcSwapOption;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -12,6 +13,9 @@ pub struct Engine {
     song_slot: Arc<ArcSwapOption<StemSet>>,
     click_slot: Arc<ArcSwapOption<Vec<ClickMark>>>,
     layer_slot: Arc<ArcSwapOption<Vec<crate::layers::Layer>>>,
+    /// Publishes the audible song frame + output latency against the graph
+    /// clock. Survives output retargets so the control thread keeps one handle.
+    playback_clock: Arc<StreamClock>,
     /// Signals the current output thread to quit; replaced on each retarget.
     stop: Arc<AtomicBool>,
     /// Live snapshot of engine state, replayed onto a fresh pipeline when the
@@ -28,6 +32,7 @@ impl Engine {
         let song_slot = Arc::new(ArcSwapOption::<StemSet>::empty());
         let click_slot = Arc::new(ArcSwapOption::<Vec<ClickMark>>::empty());
         let layer_slot = Arc::new(ArcSwapOption::<Vec<crate::layers::Layer>>::empty());
+        let playback_clock = Arc::new(StreamClock::default());
         let stop = Arc::new(AtomicBool::new(false));
         let audio_thread = crate::output::spawn(
             cmd_rx,
@@ -35,6 +40,7 @@ impl Engine {
             song_slot.clone(),
             click_slot.clone(),
             layer_slot.clone(),
+            playback_clock.clone(),
             None,
             stop.clone(),
         )?;
@@ -44,10 +50,24 @@ impl Engine {
             song_slot,
             click_slot,
             layer_slot,
+            playback_clock,
             stop,
             state: EngineState::default(),
             _audio_thread: Some(audio_thread),
         })
+    }
+
+    /// The playback timing publisher. Arm it briefly around a recording, then
+    /// read `load()` to map graph time to the audible song frame; it does
+    /// nothing on the steady playback path otherwise.
+    pub fn playback_clock(&self) -> Arc<StreamClock> {
+        self.playback_clock.clone()
+    }
+
+    /// Output-stream latency (frames) reported by the last published snapshot;
+    /// `0` until the clock has been armed and a snapshot stored.
+    pub fn output_delay_frames(&self) -> i64 {
+        self.playback_clock.delay_frames()
     }
 
     /// Swap in a new song; audio thread picks it up at the next block.
@@ -100,6 +120,7 @@ impl Engine {
             self.song_slot.clone(),
             self.click_slot.clone(),
             self.layer_slot.clone(),
+            self.playback_clock.clone(),
             target,
             self.stop.clone(),
         )?;

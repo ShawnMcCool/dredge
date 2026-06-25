@@ -7,6 +7,7 @@
 
 use crate::buffer::{StemSet, CHANNELS, SAMPLE_RATE};
 use crate::pipeline::{ClickMark, EngineCmd, EngineEvent};
+use crate::stream_clock::{ClockSnapshot, StreamClock};
 use arc_swap::ArcSwapOption;
 use pipewire as pw;
 use pw::{properties::properties, spa};
@@ -26,14 +27,21 @@ const MAX_QUANTUM_FRAMES: usize = 8192;
 struct State {
     core: crate::render_core::RenderCore,
     render_buf: Vec<f32>,
+    /// Publishes the audible song frame against the graph clock. A no-op on the
+    /// steady path unless the control thread arms it around a recording.
+    playback_clock: Arc<StreamClock>,
+    /// One-shot guard for the `DREDGE_DEBUG` raw-`pw_time` dump.
+    debug_printed: bool,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn spawn(
     cmd_rx: rtrb::Consumer<EngineCmd>,
     evt_tx: rtrb::Producer<EngineEvent>,
     song_slot: Arc<ArcSwapOption<StemSet>>,
     click_slot: Arc<ArcSwapOption<Vec<ClickMark>>>,
     layer_slot: Arc<ArcSwapOption<Vec<crate::layers::Layer>>>,
+    playback_clock: Arc<StreamClock>,
     target: Option<String>,
     stop: Arc<AtomicBool>,
 ) -> crate::error::Result<JoinHandle<()>> {
@@ -41,7 +49,14 @@ pub fn spawn(
         .name("dredge-pw".into())
         .spawn(move || {
             if let Err(e) = run(
-                cmd_rx, evt_tx, song_slot, click_slot, layer_slot, target, stop,
+                cmd_rx,
+                evt_tx,
+                song_slot,
+                click_slot,
+                layer_slot,
+                playback_clock,
+                target,
+                stop,
             ) {
                 eprintln!("dredge pipewire thread failed: {e}");
             }
@@ -49,12 +64,14 @@ pub fn spawn(
     Ok(handle)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run(
     cmd_rx: rtrb::Consumer<EngineCmd>,
     evt_tx: rtrb::Producer<EngineEvent>,
     song_slot: Arc<ArcSwapOption<StemSet>>,
     click_slot: Arc<ArcSwapOption<Vec<ClickMark>>>,
     layer_slot: Arc<ArcSwapOption<Vec<crate::layers::Layer>>>,
+    playback_clock: Arc<StreamClock>,
     target: Option<String>,
     stop: Arc<AtomicBool>,
 ) -> Result<(), pw::Error> {
@@ -85,6 +102,8 @@ fn run(
             cmd_rx, evt_tx, song_slot, click_slot, layer_slot,
         ),
         render_buf: vec![0.0; MAX_QUANTUM_FRAMES * CHANNELS],
+        playback_clock,
+        debug_printed: false,
     };
 
     let _listener = stream
@@ -117,6 +136,33 @@ fn run(
             *chunk.offset_mut() = 0;
             *chunk.stride_mut() = stride as _;
             *chunk.size_mut() = (stride * n_frames) as _;
+
+            // Publish the audible song frame against the graph clock so the
+            // control thread can map graph time → song frame (the playback
+            // mirror of the capture clock). Only touch `stream.time()` while
+            // armed, so the steady playback path pays nothing. Skip when no song
+            // is loaded — there is no song frame to anchor.
+            if state.playback_clock.is_armed() {
+                if let Some((song_frame, song_rate_hz)) = state.core.playback_position() {
+                    if let Ok(t) = stream.time() {
+                        let raw = t.as_raw();
+                        if !state.debug_printed && std::env::var("DREDGE_DEBUG").is_ok() {
+                            eprintln!(
+                                "dredge playback pw_time: now={} rate.num={} rate.denom={} ticks={} delay={}",
+                                raw.now, raw.rate.num, raw.rate.denom, raw.ticks, raw.delay
+                            );
+                            state.debug_printed = true;
+                        }
+                        let snap = ClockSnapshot {
+                            now_ns: t.now(),
+                            ticks: song_frame,
+                            rate_hz: song_rate_hz,
+                        };
+                        // `ring_total` is capture-specific; unused for playback.
+                        state.playback_clock.store(snap, 0, raw.delay);
+                    }
+                }
+            }
         })
         .register()?;
 

@@ -7,18 +7,21 @@ use crate::buffer::{StemSet, CHANNELS, SAMPLE_RATE};
 use crate::error::Error;
 use crate::pipeline::{ClickMark, EngineCmd, EngineEvent};
 use crate::render_core::RenderCore;
+use crate::stream_clock::StreamClock;
 use arc_swap::ArcSwapOption;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
+#[allow(clippy::too_many_arguments)]
 pub fn spawn(
     cmd_rx: rtrb::Consumer<EngineCmd>,
     evt_tx: rtrb::Producer<EngineEvent>,
     song_slot: Arc<ArcSwapOption<StemSet>>,
     click_slot: Arc<ArcSwapOption<Vec<ClickMark>>>,
     layer_slot: Arc<ArcSwapOption<Vec<crate::layers::Layer>>>,
+    playback_clock: Arc<StreamClock>,
     target: Option<String>,
     stop: Arc<AtomicBool>,
 ) -> crate::error::Result<JoinHandle<()>> {
@@ -26,7 +29,14 @@ pub fn spawn(
         .name("dredge-audio".into())
         .spawn(move || {
             if let Err(e) = run(
-                cmd_rx, evt_tx, song_slot, click_slot, layer_slot, target, stop,
+                cmd_rx,
+                evt_tx,
+                song_slot,
+                click_slot,
+                layer_slot,
+                playback_clock,
+                target,
+                stop,
             ) {
                 eprintln!("dredge audio thread failed: {e}");
             }
@@ -34,12 +44,16 @@ pub fn spawn(
     Ok(handle)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run(
     cmd_rx: rtrb::Consumer<EngineCmd>,
     evt_tx: rtrb::Producer<EngineEvent>,
     song_slot: Arc<ArcSwapOption<StemSet>>,
     click_slot: Arc<ArcSwapOption<Vec<ClickMark>>>,
     layer_slot: Arc<ArcSwapOption<Vec<crate::layers::Layer>>>,
+    // cpal exposes no graph-clock `pw_time`, so the playback clock is not
+    // published on this backend; accepted to keep one `spawn` signature.
+    _playback_clock: Arc<StreamClock>,
     target: Option<String>,
     stop: Arc<AtomicBool>,
 ) -> crate::error::Result<()> {

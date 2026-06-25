@@ -301,6 +301,19 @@ impl Pipeline {
         }
     }
 
+    /// Current audible song position in source frames (what is being heard
+    /// right now, decoupled from the looper feed position). Read after `render`
+    /// to anchor the playback clock to the song timeline.
+    pub fn audible_song_frame(&self) -> i64 {
+        self.audible_frame as i64
+    }
+
+    /// Audible song-frame advance rate in frames/sec (the song timeline rate,
+    /// scaled by the speed fader). At 1× playback this is `SAMPLE_RATE`.
+    pub fn song_rate_hz(&self) -> i64 {
+        (SAMPLE_RATE as f64 * self.rate).round() as i64
+    }
+
     /// Render interleaved stereo into `out`; push events into `events`.
     pub fn render(&mut self, out: &mut [f32], events: &mut Vec<EngineEvent>) {
         if self.ci_active {
