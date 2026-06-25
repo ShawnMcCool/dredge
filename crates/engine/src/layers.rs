@@ -24,9 +24,10 @@ pub struct Layer {
 /// the looper's mixed track frames for the same window). Frames outside a
 /// layer's extent contribute nothing.
 pub fn mix_layers(layers: &[Layer], src_start: usize, out: &mut [f32]) {
+    debug_assert!(out.len().is_multiple_of(CHANNELS));
     let frames = out.len() / CHANNELS;
     for layer in layers {
-        if layer.muted || layer.gain == 0.0 {
+        if layer.muted {
             continue;
         }
         let len = layer.samples.frames() as i64;
@@ -68,8 +69,10 @@ mod tests {
         let layers = vec![layer(100, 10, 0.5)];
         let mut out = vec![0.0f32; 6 * CHANNELS]; // window [98, 104)
         mix_layers(&layers, 98, &mut out);
+        // frames 98,99 are before the layer → silent
         assert_eq!(out[0], 0.0);
         assert_eq!(out[1 * CHANNELS], 0.0);
+        // frames 100..104 carry the layer
         for f in 2..6 {
             assert!((out[f * CHANNELS] - 0.5).abs() < 1e-6, "frame {f}");
             assert!((out[f * CHANNELS + 1] - 0.5).abs() < 1e-6, "frame {f}");
@@ -114,5 +117,14 @@ mod tests {
         for s in &out {
             assert!((s - 0.5).abs() < 1e-6, "got {s}");
         }
+    }
+
+    #[test]
+    fn frames_after_the_layer_end_contribute_nothing() {
+        // layer occupies frames [0,4); window [10,14) is entirely past it
+        let layers = vec![layer(0, 4, 0.5)];
+        let mut out = vec![0.0f32; 4 * CHANNELS];
+        mix_layers(&layers, 10, &mut out);
+        assert!(out.iter().all(|s| *s == 0.0));
     }
 }
