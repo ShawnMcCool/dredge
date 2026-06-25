@@ -1851,6 +1851,12 @@ impl App {
             song,
             stems: decoded.stems,
         });
+        // The layer cache only ever holds the open song's takes, and recording
+        // ids are assigned per-song (each song's takes start at 1). Clearing on
+        // every open makes cross-song id collisions impossible — a take from the
+        // previous song can't be served as this song's same-id layer. The new
+        // song re-decodes its own takes once via `refresh_layers`.
+        self.layer_cache.clear();
         // Attach this song's overdub layers (a reopened song restores its takes).
         self.refresh_layers();
         self.push_count_in();
@@ -2729,6 +2735,72 @@ mod recording_tests {
         });
         assert!(!second.ok, "second start should be rejected");
         assert!(second.error.unwrap().contains("already recording"));
+    }
+
+    /// 0.5 s of silence as a real, decodable 48 kHz stereo WAV — used as the
+    /// source audio for a song we open through the real `song.open` path.
+    fn write_silent_wav(path: &std::path::Path) {
+        let spec = hound::WavSpec {
+            channels: 2,
+            sample_rate: SAMPLE_RATE,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut w = hound::WavWriter::create(path, spec).unwrap();
+        for _ in 0..(SAMPLE_RATE as usize / 2 * CHANNELS) {
+            w.write_sample(0i16).unwrap();
+        }
+        w.finalize().unwrap();
+    }
+
+    #[test]
+    fn opening_a_different_song_clears_the_layer_cache() {
+        // Song A: record a take so the cache holds A's RecordingId 1.
+        let (_mock, mut app, song_a, lib) =
+            make_shared_mock_with_recorder(Box::new(FakeRecorder {
+                canned: vec![0.3f32; SAMPLE_RATE as usize * CHANNELS],
+                started: None,
+                stopped: false,
+            }));
+        app.dispatch(Request {
+            id: 1,
+            cmd: "recording.start".into(),
+            params: json!({ "span": "song", "device_id": "0" }),
+        });
+        let finished = app.dispatch(Request {
+            id: 2,
+            cmd: "recording.stop".into(),
+            params: json!(null),
+        });
+        let rec_a: Recording = serde_json::from_value(finished.data).unwrap();
+        assert!(
+            app.layer_cache.contains_key(&rec_a.id),
+            "song A's take should be cached"
+        );
+
+        // Song B: a real decodable WAV opened through the real `song.open` path,
+        // which is what fires the clear. Its own RecordingId space starts at 1,
+        // colliding with A's id — the bug would serve A's audio for B.
+        let wav = lib.path().join("b.wav");
+        write_silent_wav(&wav);
+        let song_b = app
+            .library
+            .create_song(&wav, "Other", Some("Artist"), "hash-b", 0.5)
+            .unwrap();
+        let opened = app.dispatch(Request {
+            id: 3,
+            cmd: "song.open".into(),
+            params: json!({ "song_id": song_b.id }),
+        });
+        assert!(opened.ok, "song.open failed: {:?}", opened.error);
+
+        assert_ne!(song_a, song_b.id, "the two songs must be distinct");
+        assert!(
+            !app.layer_cache.contains_key(&rec_a.id),
+            "opening song B must evict song A's cached take (no cross-song bleed)"
+        );
+        // B has no takes, so the cache is empty after the switch.
+        assert!(app.layer_cache.is_empty(), "cache holds only the open song");
     }
 
     #[test]
