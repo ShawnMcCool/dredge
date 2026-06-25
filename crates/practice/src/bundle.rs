@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::Result;
-use crate::model::{Analysis, LoopRegion, Section, SectionNote, Song};
+use crate::model::{Analysis, LoopRegion, Recording, Section, SectionNote, Song};
 use serde::{Deserialize, Serialize};
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -34,6 +34,8 @@ pub struct BundleManifest {
     pub notes: Vec<SectionNote>,
     #[serde(default)]
     pub analysis: Option<Analysis>,
+    #[serde(default)]
+    pub recordings: Vec<Recording>,
 }
 
 // ── slug ───────────────────────────────────────────────────────────────────────
@@ -159,6 +161,7 @@ mod tests {
             }],
             notes: vec![],
             analysis: None,
+            recordings: vec![],
         }
     }
 
@@ -175,6 +178,34 @@ mod tests {
     #[test]
     fn manifest_json_roundtrips() {
         let m = sample_manifest();
+        let bytes = serde_json::to_vec(&m).unwrap();
+        let back: BundleManifest = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(m, back);
+    }
+
+    #[test]
+    fn manifest_without_recordings_field_still_loads() {
+        // Older bundles have no `recordings` key; #[serde(default)] must apply.
+        let json = r#"{"version":1,"song":{"id":1,"title":"T","artist":null,
+            "path":"/tmp/a.flac","file_hash":"h","duration_secs":1.0}}"#;
+        let m: BundleManifest = serde_json::from_str(json).unwrap();
+        assert!(m.recordings.is_empty());
+    }
+
+    #[test]
+    fn recordings_roundtrip_in_manifest() {
+        let mut m = sample_manifest();
+        m.recordings.push(crate::model::Recording {
+            id: crate::model::RecordingId(1),
+            name: "take 1".into(),
+            file: "recordings/1.wav".into(),
+            anchor_frame: 48_000,
+            len_frames: 240_000,
+            nudge_frames: -120,
+            gain: 1.0,
+            muted: false,
+            created_at: "2026-06-25T12:00:00Z".into(),
+        });
         let bytes = serde_json::to_vec(&m).unwrap();
         let back: BundleManifest = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(m, back);

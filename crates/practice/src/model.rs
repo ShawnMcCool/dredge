@@ -6,6 +6,8 @@ pub struct SongId(pub i64);
 pub struct SectionId(pub i64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct LoopId(pub i64);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct RecordingId(pub i64);
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Song {
@@ -53,6 +55,30 @@ pub struct LoopRegion {
     pub start: f64,
     pub end: f64,
     pub kind: LoopKind,
+}
+
+/// An overdub take: your own input recorded over one pass of a span, held as an
+/// additive layer. Audio lives at `<bundle>/recordings/<file>`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Recording {
+    pub id: RecordingId,
+    pub name: String,
+    /// Path relative to the bundle dir, e.g. "recordings/1.wav".
+    pub file: String,
+    /// Source frame where capture began (the span start).
+    pub anchor_frame: i64,
+    /// Recorded length in frames.
+    pub len_frames: i64,
+    /// Per-layer manual alignment offset in frames (added to global latency).
+    #[serde(default)]
+    pub nudge_frames: i64,
+    /// Playback gain, 0.0..=1.5.
+    pub gain: f32,
+    /// Muted in the layer mix.
+    #[serde(default)]
+    pub muted: bool,
+    /// ISO-8601 creation time (set by the server when written).
+    pub created_at: String,
 }
 
 /// One section's notes, keyed by occurrence label (e.g. "verse 2"). Mirrors a

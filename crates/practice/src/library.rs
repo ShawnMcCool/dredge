@@ -176,6 +176,7 @@ impl Library {
             loops: vec![],
             notes: vec![],
             analysis: None,
+            recordings: vec![],
         };
         bundle::write_manifest(&dir, &manifest)?;
         self.entries.insert(song.id.0, Entry { dir, manifest });
@@ -510,6 +511,7 @@ mod tests {
                 loops: vec![],
                 notes: vec![],
                 analysis: None,
+                recordings: vec![],
             };
             bundle::write_manifest(&bundle_dir, &manifest).unwrap();
         }
@@ -586,6 +588,7 @@ mod tests {
             loops: vec![],
             notes: vec![],
             analysis: None,
+            recordings: vec![],
         };
         bundle::write_manifest(&bundle_dir, &manifest).unwrap();
 
