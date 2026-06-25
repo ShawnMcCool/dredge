@@ -1,6 +1,6 @@
 # Campaign: Overdub auto-sync
 
-**Status:** IN PROGRESS — started 2026-06-25
+**Status:** IN PROGRESS — Part 1 code-complete + count-in fix; **awaiting on-Focusrite re-test** before Part 2 (RTL calibration). Started 2026-06-25.
 **Spec:** `docs/superpowers/specs/2026-06-25-overdub-autosync-design.md`
 **Plan:** `docs/superpowers/plans/2026-06-25-overdub-autosync.md`
 **Research/reference (critical — read before touching alignment):** `docs/research/recording-latency-compensation.md`
@@ -33,28 +33,32 @@ timing today; the ring has no absolute frame index.
 
 ## Task status
 
-(Filled in once the plan is written. Updated as tasks complete — newest progress
-at the bottom of the Progress log.)
-
 | # | Task | Status |
 |---|------|--------|
-| — | spec written + committed | done |
-| — | campaign file created | done |
-| — | plan written + committed | pending |
-| 1 | Feasibility spike: PipeWire stream timing API in the `pipewire` Rust crate (or FFI needed?) | DONE — no FFI; `Stream::time()` exists |
+| — | spec written + committed | DONE |
+| — | plan written + committed | DONE |
+| 1 | Feasibility spike: PipeWire stream timing API (FFI needed?) | DONE — no FFI; `Stream::time()` exists |
 | AS-1 | RollingRing monotonic frame index + absolute-range read | DONE (52dec02) |
-| AS-2 | StreamClock timing snapshot + mapping math | DONE (b524c35) |
+| AS-2 | StreamClock timing snapshot + mapping math | DONE (b524c35, +fix) |
 | AS-3 | Capture stream clock + input delay (device-bound) | DONE (5e73aa4) |
 | AS-4 | Playback song-frame clock + output delay (device-bound) | DONE (ce5e514) |
-| AS-5 | Transport-locked take extraction | DONE (b548249) — Part 1 code-complete |
-| AS-6 | Part 2: PipeWire-reported latency baseline | pending |
+| AS-5 | Transport-locked take extraction | DONE (b548249) |
+| AS-5b | Count-in fix: pin anchor at playback start | DONE (3c7dcff) — **awaiting re-test** |
+| — | Recordings UI: "default (follow devices)" + "from playhead" | DONE (35067c2) |
+| AS-6 | Part 2: PipeWire-reported latency baseline | pending (after Part 1 re-test) |
 | AS-7 | Part 2: loopback ping calibration | pending |
 | AS-8 | Full gate + smoke + manual device verification | pending |
 
+**Part 1 = AS-1..5 + AS-5b: CODE-COMPLETE.** Blocking gate: user records a take
+on the Focusrite (with count-in) and confirms it lands in time. Then Part 2.
+
 ## Risks / open questions
 
-- **PipeWire timing binding:** does the `pipewire` Rust crate expose
-  `pw_stream_get_time`? If not, needs a small FFI shim (Task 1 settles this).
+- ~~**PipeWire timing binding:** needs an FFI shim?~~ RESOLVED — `Stream::time()`
+  exists in the crate; no FFI. Field names confirmed against bindgen output.
+- **pw_time field semantics on hardware:** still unverified — `rate` direction
+  (frames/sec = denom/num), `delay` units/sign, `ticks` advance. `DREDGE_DEBUG=1`
+  prints them once per stream. If alignment is off, check these first.
 - **Two-clock setups:** if the user ever outputs through a different device than
   the Focusrite input, the streams aren't sample-locked. Documented limitation;
   nudge covers it.
@@ -73,17 +77,25 @@ at the bottom of the Progress log.)
 
 ## Field feedback (during testing)
 
-- **Count-in delay bug:** non-count-in records aligned (Part 1 works!) but a
-  count-in delayed the take by ~the count-in length. Root cause: finalize
+- **Count-in delay bug** (3c7dcff): non-count-in records aligned (Part 1 works!)
+  but a count-in delayed the take by ~the count-in length. Root cause: finalize
   extrapolated `ring_start` back from span-end across the held-during-count-in
   audible frame. Fix: pin `ring_start` at the first real-playback tick (count-in
   done) — short extrapolation, count-in excluded. Awaiting on-hardware re-test.
-- **UI:** recordings input now has "default (follow devices)" (mirrors the tuner
-  via shared `resolveInputDevice`), and a "from playhead" span option (maps to a
-  selection from the playhead to song end).
+- **UI** (35067c2): recordings input now has "default (follow devices)" (mirrors
+  the tuner via shared `resolveInputDevice` — renamed from `resolveTunerInput`),
+  and a "from playhead" span option (maps to a selection from the playhead to
+  song end). svelte-check clean; vite+chrome smoke test confirmed no crash.
 
 ## Progress log
 
+(Newest first.)
+
+- 2026-06-25: Field testing → two changes. (1) Recordings UI: "default (follow
+  devices)" input + "from playhead" span (35067c2). (2) Count-in delay fix
+  (3c7dcff) — pin the take anchor at the first real-playback tick instead of
+  extrapolating from span-end across the count-in. Rebuilt release; awaiting
+  on-Focusrite re-test of the count-in case before Part 2.
 - 2026-06-25: Diagnosed root cause (snapshot_last + stop-timing, not just RTL).
   Researched pro approach (Reaper/Audacity/Ardour: transport-lock + constant RTL,
   loopback ping). Brainstormed + got design approval. Spec + campaign written.
