@@ -7,6 +7,7 @@ use crate::buffer::{CHANNELS, SAMPLE_RATE};
 use crate::capture::{CaptureNode, CaptureSession};
 use crate::error::Error;
 use crate::ring::RollingRing;
+use crate::stream_clock::StreamClock;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -50,7 +51,13 @@ pub fn start_capture(node: CaptureNode, buffer_secs: f64) -> crate::error::Resul
                 }
             })?
     };
-    Ok(CaptureSession::from_parts(ring, node, stop, thread))
+    Ok(CaptureSession::from_parts(
+        ring,
+        node,
+        Arc::new(StreamClock::default()),
+        stop,
+        thread,
+    ))
 }
 
 /// Tap an input by its opaque device id (the `AudioDevice.id` from
@@ -77,7 +84,13 @@ pub fn start_capture_by_id(id: &str, buffer_secs: f64) -> crate::error::Result<C
                 }
             })?
     };
-    Ok(CaptureSession::from_parts(ring, node, stop, thread))
+    Ok(CaptureSession::from_parts(
+        ring,
+        node,
+        Arc::new(StreamClock::default()),
+        stop,
+        thread,
+    ))
 }
 
 /// Capture from the input device whose name matches `name`, falling back to the

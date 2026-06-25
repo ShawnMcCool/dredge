@@ -6,6 +6,11 @@
 //! playback) taken against the same graph clock, we can map a song-playback
 //! frame to the capture ring frame that was being acquired at the same instant.
 
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::Arc;
+
+use arc_swap::ArcSwapOption;
+
 /// One reading of a stream's position against the shared graph clock.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ClockSnapshot {
@@ -41,6 +46,55 @@ impl ClockSnapshot {
 pub fn ring_frame_at_ns(cap: &ClockSnapshot, ring_total_at_snapshot: i64, t_ns: i64) -> i64 {
     let stream_frame = cap.frame_at_ns(t_ns);
     ring_total_at_snapshot + (stream_frame - cap.ticks)
+}
+
+/// Publishes the latest capture timing to the control thread. Writes are gated
+/// by `armed` so the steady audio path does no allocation; the control thread
+/// arms briefly around a recording.
+#[derive(Default)]
+pub struct StreamClock {
+    armed: AtomicBool,
+    snapshot: ArcSwapOption<ClockSnapshot>,
+    ring_total_at_snapshot: AtomicI64,
+    delay_frames: AtomicI64,
+}
+
+impl StreamClock {
+    /// Arm publishing: clear any stale snapshot, then allow `store` to publish.
+    pub fn arm(&self) {
+        self.snapshot.store(None);
+        self.armed.store(true, Ordering::Release);
+    }
+
+    /// Stop publishing; subsequent `store` calls are no-ops.
+    pub fn disarm(&self) {
+        self.armed.store(false, Ordering::Release);
+    }
+
+    pub fn is_armed(&self) -> bool {
+        self.armed.load(Ordering::Acquire)
+    }
+
+    /// Called from the RT callback. No-op (and no allocation) unless armed.
+    pub fn store(&self, snap: ClockSnapshot, ring_total: i64, delay_frames: i64) {
+        if self.armed.load(Ordering::Acquire) {
+            self.ring_total_at_snapshot.store(ring_total, Ordering::Release);
+            self.delay_frames.store(delay_frames, Ordering::Release);
+            self.snapshot.store(Some(Arc::new(snap))); // publish last
+        }
+    }
+
+    pub fn load(&self) -> Option<ClockSnapshot> {
+        self.snapshot.load_full().map(|a| *a)
+    }
+
+    pub fn ring_total_at_snapshot(&self) -> i64 {
+        self.ring_total_at_snapshot.load(Ordering::Acquire)
+    }
+
+    pub fn delay_frames(&self) -> i64 {
+        self.delay_frames.load(Ordering::Acquire)
+    }
 }
 
 #[cfg(test)]
@@ -98,5 +152,45 @@ mod tests {
         // sanity: ring_frame is finite and equals ring_total + (cap.frame_at_ns(t) - cap.ticks)
         let expect = ring_total_at_snapshot + (cap.frame_at_ns(t) - cap.ticks);
         assert_eq!(ring_frame, expect);
+    }
+
+    fn sample_snapshot() -> ClockSnapshot {
+        ClockSnapshot { now_ns: 7_000_000_000, ticks: 333_000, rate_hz: 48_000 }
+    }
+
+    #[test]
+    fn clock_load_is_none_before_arming() {
+        let clock = StreamClock::default();
+        assert!(!clock.is_armed());
+        assert_eq!(clock.load(), None);
+    }
+
+    #[test]
+    fn clock_store_while_disarmed_is_noop() {
+        let clock = StreamClock::default();
+        clock.store(sample_snapshot(), 1234, 56);
+        assert_eq!(clock.load(), None);
+    }
+
+    #[test]
+    fn clock_publishes_after_arm() {
+        let clock = StreamClock::default();
+        clock.arm();
+        assert!(clock.is_armed());
+        let snap = sample_snapshot();
+        clock.store(snap, 1234, 56);
+        assert_eq!(clock.load(), Some(snap));
+        assert_eq!(clock.ring_total_at_snapshot(), 1234);
+        assert_eq!(clock.delay_frames(), 56);
+    }
+
+    #[test]
+    fn clock_disarm_then_store_is_noop() {
+        let clock = StreamClock::default();
+        clock.arm();
+        clock.disarm();
+        assert!(!clock.is_armed());
+        clock.store(sample_snapshot(), 1234, 56);
+        assert_eq!(clock.load(), None);
     }
 }

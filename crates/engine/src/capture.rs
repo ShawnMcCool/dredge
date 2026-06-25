@@ -9,6 +9,9 @@
 
 use crate::buffer::{CHANNELS, SAMPLE_RATE};
 use crate::ring::RollingRing;
+use crate::stream_clock::StreamClock;
+#[cfg(target_os = "linux")]
+use crate::stream_clock::ClockSnapshot;
 #[cfg(target_os = "linux")]
 use pipewire as pw;
 #[cfg(target_os = "linux")]
@@ -119,24 +122,34 @@ fn scan_input_sources() -> Result<Vec<CaptureNode>, pw::Error> {
 pub struct CaptureSession {
     pub ring: Arc<Mutex<RollingRing>>,
     pub node: CaptureNode,
+    clock: Arc<StreamClock>,
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
 
 impl CaptureSession {
-    /// Assemble a session from a backend's ring/stop/thread. Backend-agnostic.
+    /// Assemble a session from a backend's ring/clock/stop/thread.
+    /// Backend-agnostic.
     pub(crate) fn from_parts(
         ring: Arc<Mutex<RollingRing>>,
         node: CaptureNode,
+        clock: Arc<StreamClock>,
         stop: Arc<AtomicBool>,
         thread: JoinHandle<()>,
     ) -> Self {
         Self {
             ring,
             node,
+            clock,
             stop,
             thread: Some(thread),
         }
+    }
+
+    /// The capture stream's timing publisher. Arm it briefly around a recording
+    /// to receive `ClockSnapshot`s; it does nothing on the audio path otherwise.
+    pub fn clock(&self) -> Arc<StreamClock> {
+        self.clock.clone()
     }
 
     pub fn stop(mut self) {
@@ -162,20 +175,22 @@ impl Drop for CaptureSession {
 #[cfg(target_os = "linux")]
 pub fn start_capture(node: CaptureNode, buffer_secs: f64) -> crate::error::Result<CaptureSession> {
     let ring = Arc::new(Mutex::new(RollingRing::with_secs(buffer_secs)));
+    let clock = Arc::new(StreamClock::default());
     let stop = Arc::new(AtomicBool::new(false));
     let thread = {
         let ring = ring.clone();
+        let clock = clock.clone();
         let stop = stop.clone();
         let node = node.clone();
         std::thread::Builder::new()
             .name("dredge-pw-cap".into())
             .spawn(move || {
-                if let Err(e) = run_capture(node, ring, stop) {
+                if let Err(e) = run_capture(node, ring, clock, stop) {
                     eprintln!("dredge capture thread failed: {e}");
                 }
             })?
     };
-    Ok(CaptureSession::from_parts(ring, node, stop, thread))
+    Ok(CaptureSession::from_parts(ring, node, clock, stop, thread))
 }
 
 /// Tap an input by its opaque device id (the `AudioDevice.id` from
@@ -201,13 +216,18 @@ pub fn start_capture_by_id(id: &str, buffer_secs: f64) -> crate::error::Result<C
 #[cfg(target_os = "linux")]
 struct CapState {
     ring: Arc<Mutex<RollingRing>>,
+    clock: Arc<StreamClock>,
     scratch: Vec<f32>,
+    /// One-shot guard so the `DREDGE_DEBUG` raw-`pw_time` dump prints once per
+    /// session, not every RT cycle.
+    debug_printed: bool,
 }
 
 #[cfg(target_os = "linux")]
 fn run_capture(
     node: CaptureNode,
     ring: Arc<Mutex<RollingRing>>,
+    clock: Arc<StreamClock>,
     stop: Arc<AtomicBool>,
 ) -> Result<(), pw::Error> {
     pw::init();
@@ -231,7 +251,9 @@ fn run_capture(
 
     let state = CapState {
         ring,
+        clock,
         scratch: Vec::with_capacity(8192 * CHANNELS),
+        debug_printed: false,
     };
 
     let _listener = stream
@@ -264,8 +286,39 @@ fn run_capture(
             // buffer on the rare contention instead (the control thread only
             // holds the lock briefly at grab time, and a dropped buffer during a
             // grab is samples past the grab point anyway).
-            if let Ok(mut ring) = state.ring.try_lock() {
+            let ring_total = if let Ok(mut ring) = state.ring.try_lock() {
                 ring.push(&state.scratch);
+                Some(ring.total_frames_written() as i64)
+            } else {
+                None
+            };
+
+            // Publish a timing snapshot so the control thread can map graph time
+            // to a ring frame. `StreamClock::store` is a no-op (and allocates
+            // nothing) unless the control thread has armed it around a recording,
+            // so the steady tuner path pays only the `pw_stream_get_time_n` read.
+            if let (Some(ring_total), Ok(t)) = (ring_total, stream.time()) {
+                let raw = t.as_raw();
+                // One-shot raw dump so a human can confirm the field semantics on
+                // real hardware (frames/sec = denom/num; delay is in ticks).
+                if !state.debug_printed && std::env::var("DREDGE_DEBUG").is_ok() {
+                    eprintln!(
+                        "dredge capture pw_time: now={} rate.num={} rate.denom={} ticks={} delay={}",
+                        raw.now, raw.rate.num, raw.rate.denom, raw.ticks, raw.delay
+                    );
+                    state.debug_printed = true;
+                }
+                // rate is seconds-per-tick (num/denom), so frames/sec = denom/num.
+                // Guard a zero numerator (uninitialized/invalid) — skip this cycle.
+                if raw.rate.num != 0 {
+                    let rate_hz = i64::from(raw.rate.denom) / i64::from(raw.rate.num);
+                    let snap = ClockSnapshot {
+                        now_ns: t.now(),
+                        ticks: raw.ticks as i64,
+                        rate_hz,
+                    };
+                    state.clock.store(snap, ring_total, raw.delay);
+                }
             }
         })
         .register()?;
