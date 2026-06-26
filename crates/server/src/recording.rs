@@ -41,6 +41,29 @@ pub fn detect_click_onset(interleaved: &[f32], threshold: f32) -> Option<usize> 
         .position(|f| f.iter().any(|s| s.abs() > threshold))
 }
 
+/// Downsample the first `window_frames` of an interleaved-stereo window to
+/// `points` peak-amplitude buckets — each bucket is the max abs sample over its
+/// frames (both channels). Drives the loopback-calibration envelope the UI
+/// draws. Buckets past the end of `interleaved` read as 0.
+pub fn peak_envelope(interleaved: &[f32], window_frames: usize, points: usize) -> Vec<f32> {
+    if points == 0 {
+        return Vec::new();
+    }
+    let frames_per_bucket = (window_frames / points).max(1);
+    let total_frames = interleaved.len() / CHANNELS;
+    (0..points)
+        .map(|b| {
+            let start = b * frames_per_bucket;
+            let end = (start + frames_per_bucket).min(total_frames);
+            interleaved
+                .get(start * CHANNELS..end * CHANNELS)
+                .unwrap_or(&[])
+                .iter()
+                .fold(0.0f32, |m, s| m.max(s.abs()))
+        })
+        .collect()
+}
+
 /// Capture backend. The real implementation taps a PipeWire/cpal input; the
 /// fake returns canned audio so the dispatcher is testable.
 pub trait RecordingControl: Send {
@@ -236,5 +259,25 @@ mod tests {
     fn detect_onset_none_when_below_threshold() {
         let buf = vec![0.1f32; 100 * CHANNELS];
         assert_eq!(detect_click_onset(&buf, 0.5), None);
+    }
+
+    #[test]
+    fn peak_envelope_buckets_max_abs_and_places_the_onset() {
+        // 240 frames of silence, then a loud sample, then quiet tail.
+        let mut buf = vec![0.0f32; 240 * CHANNELS];
+        buf.extend_from_slice(&[-0.8, 0.8]);
+        buf.extend(std::iter::repeat_n(0.0f32, 100 * CHANNELS));
+        // 7200-frame window, 240 points -> 30 frames/bucket; onset at frame 240
+        // lands in bucket 8.
+        let env = peak_envelope(&buf, 7200, 240);
+        assert_eq!(env.len(), 240);
+        assert!((env[8] - 0.8).abs() < 1e-6, "onset bucket holds the peak");
+        assert_eq!(env[0], 0.0, "emit bucket is silent");
+        assert_eq!(env[239], 0.0, "buckets past the data read as 0");
+    }
+
+    #[test]
+    fn peak_envelope_zero_points_is_empty() {
+        assert!(peak_envelope(&[0.5, 0.5], 7200, 0).is_empty());
     }
 }

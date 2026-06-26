@@ -169,6 +169,19 @@ fn calibrate_phased(app: &Arc<Mutex<App>>, p: Value) -> Result<Value, String> {
         );
     }
 
+    // Envelope for the UI: a peak-amplitude trace of the ~150 ms window starting
+    // at the emit instant, so the UI can draw the click's return and mark the
+    // emit (left edge, index 0) and onset positions, labeling the gap as the
+    // latency. The window starts exactly at `f_emit`, so emit_index is 0.
+    let frames_per_bucket = CALIBRATION_ENVELOPE_WINDOW_FRAMES / CALIBRATION_ENVELOPE_POINTS as i64;
+    let envelope = crate::recording::peak_envelope(
+        &slice,
+        CALIBRATION_ENVELOPE_WINDOW_FRAMES as usize,
+        CALIBRATION_ENVELOPE_POINTS,
+    );
+    let onset_index = rtl / frames_per_bucket;
+    let window_ms = CALIBRATION_ENVELOPE_WINDOW_FRAMES as f64 / rate as f64 * 1000.0;
+
     let mut guard = app.lock().unwrap();
     guard
         .store
@@ -183,6 +196,10 @@ fn calibrate_phased(app: &Arc<Mutex<App>>, p: Value) -> Result<Value, String> {
         "latency_frames": rtl,
         "latency_ms": rtl as f64 / rate as f64 * 1000.0,
         "source": "loopback",
+        "envelope": envelope,
+        "emit_index": 0,
+        "onset_index": onset_index,
+        "window_ms": window_ms,
     }))
 }
 
@@ -444,6 +461,11 @@ const INPUT_LATENCY_KEY: &str = "input_latency_frames";
 const LATENCY_SOURCE_KEY: &str = "latency_source";
 /// Absolute-sample threshold for the latency-calibration click onset detector.
 const CALIBRATION_CLICK_THRESHOLD: f32 = 0.3;
+/// Window summarized into the calibration envelope: ~150 ms at 48 kHz, starting
+/// at the impulse emit instant — long enough to show the click's return.
+const CALIBRATION_ENVELOPE_WINDOW_FRAMES: i64 = 7_200;
+/// Envelope resolution (peak-amplitude buckets) the UI draws across that window.
+const CALIBRATION_ENVELOPE_POINTS: usize = 240;
 
 impl App {
     pub fn new(
@@ -3151,6 +3173,19 @@ mod recording_tests {
         assert!(resp.ok, "calibrate failed: {:?}", resp.error);
         assert_eq!(resp.data["latency_frames"], json!(OFFSET as i64));
         assert_eq!(resp.data["source"], json!("loopback"));
+
+        // Envelope for the UI: 240 points, emit at index 0, the onset bucket
+        // holds the click, and the window is ~150 ms. OFFSET 240 / 30 = bucket 8.
+        assert_eq!(resp.data["emit_index"], json!(0));
+        assert_eq!(resp.data["onset_index"], json!(8));
+        assert_eq!(resp.data["window_ms"], json!(150.0));
+        let env = resp.data["envelope"].as_array().unwrap();
+        assert_eq!(env.len(), 240);
+        assert!(
+            (env[8].as_f64().unwrap() - 0.8).abs() < 1e-6,
+            "onset bucket holds the loopback click"
+        );
+        assert_eq!(env[0].as_f64().unwrap(), 0.0, "emit bucket is silent");
 
         let g = app.lock().unwrap();
         assert_eq!(
