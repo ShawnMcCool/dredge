@@ -52,11 +52,28 @@ timing today; the ring has no absolute frame index.
 | AS-6 | Part 2: PipeWire-reported latency baseline | DONE (ab0a83d) — VERIFIED (rtl=3072/64ms, "tighter") |
 | AS-5d | Fix negative ring_start (from-playhead recording) | DONE — awaiting hardware test |
 | — | Logging: DREDGE_DEBUG keeps stderr; breadcrumb; `just logs` | DONE — tested via daemon |
-| AS-7 | Part 2: loopback ping calibration | DEFERRED — AS-6 auto-trim works; needs a cable to test |
-| AS-8 | Full gate + cleanup | gate GREEN; spawn-args struct refactor deferred (don't churn working audio) |
+| AS-8b | Bundle spawn slots into `RenderShared` struct | DONE (bfba05e) — −35 lines, 4 `#[allow]`s gone, gate green |
+| AS-7 | Part 2: loopback ping calibration | NOT BUILT — genuinely hardware-gated (see note) |
+| AS-8 | Full gate + cleanup | gate GREEN; spawn refactor done |
 
 **Part 1 = AS-1..5 + AS-5b: CODE-COMPLETE.** Blocking gate: user records a take
 on the Focusrite (with count-in) and confirms it lands in time. Then Part 2.
+
+## Why AS-7 (loopback calibration) is not built
+
+It is genuinely not completable autonomously, and building it blind is unwise:
+1. **Unverifiable without the cable.** The whole feature is a loopback measurement
+   (output→input patch cable, emit impulse, measure the sample delay). There is
+   nothing to develop or verify against without the hardware loop — the
+   measurement accuracy IS the feature.
+2. **Regression risk to the working auto-trim.** A successful calibration sets
+   `latency_source = "loopback"`, which makes AS-6 stop auto-applying and use the
+   loopback value instead. If that unverified value is wrong, takes get WORSE
+   than they are now with the (verified) 64ms auto-trim.
+3. **New RT code (an output impulse primitive) I can't audibly test.**
+Decision: leave it. AS-6 auto-trim + per-layer nudge already cover the need
+("seems ok" on hardware). Build AS-7 in a session where the cable is connected —
+it's a contained sub-project; the spec/plan already describe it.
 
 ## Risks / open questions
 
