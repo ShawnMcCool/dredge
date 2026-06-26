@@ -4,8 +4,10 @@
   import { asyncAction } from "../lib/async-action.svelte";
   import { defaultName } from "../lib/devices";
   import Button from "../lib/ui/Button.svelte";
+  import CalibrateModal from "./CalibrateModal.svelte";
 
   const act = asyncAction();
+  let calOpen = $state(false);
 
   function pickOutput(id: string | null) {
     return act.run(() => actions.setOutputDevice(id));
@@ -56,9 +58,12 @@
       <button class="dev" class:sel={$inputDevice === d.id} onclick={() => pickInput(d.id)}>{d.name}</button>
     {/each}
   </div>
+  <Button onclick={() => (calOpen = true)}>calibrate latency…</Button>
 </section>
 
 <Button onclick={() => resetToSystem()}>reset to system</Button>
+
+<CalibrateModal open={calOpen} onclose={() => (calOpen = false)} />
 
 <style>
   .group {

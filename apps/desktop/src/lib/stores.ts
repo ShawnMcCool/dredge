@@ -148,6 +148,16 @@ export interface Recording {
   created_at: string;
 }
 
+export interface CalibrationResult {
+  latency_frames: number;
+  latency_ms: number;
+  source: string;
+  envelope: number[];
+  emit_index: number;
+  onset_index: number;
+  window_ms: number;
+}
+
 export interface StemMix {
   levels: number[]; // 0..100 per stem
   mutes: boolean[];
@@ -1191,6 +1201,14 @@ export const actions = {
   async setRecordingNudge(id: number, nudgeFrames: number): Promise<void> {
     recordings.update((rs) => rs.map((r) => (r.id === id ? { ...r, nudge_frames: nudgeFrames } : r)));
     await cmd("recording.setNudge", { id, nudge_ms: framesToMs(nudgeFrames) });
+  },
+
+  async calibrateLatency(deviceId: string): Promise<CalibrationResult> {
+    return await cmd<CalibrationResult>("recording.calibrate", { device_id: deviceId });
+  },
+
+  async resetLatency(): Promise<void> {
+    await cmd("recording.calibrate.reset");
   },
 
   // --- prepare (analysis → stems) ---
