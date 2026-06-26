@@ -1,6 +1,9 @@
 # Campaign: Overdub auto-sync
 
-**Status:** IN PROGRESS — **Part 1 VERIFIED on hardware** (2026-06-26: "much closer now", count-in excluded, take lands close). Building Part 2 (auto RTL trim). Started 2026-06-25.
+**Status:** CORE COMPLETE — verified on hardware 2026-06-26. Transport-locked
+capture + auto RTL trim (64ms) work; count-in excluded, early-stop clamped,
+from-playhead anchored ("seems ok"). Only optional AS-7 (loopback calibration)
+remains, deferred. Started 2026-06-25.
 **Spec:** `docs/superpowers/specs/2026-06-25-overdub-autosync-design.md`
 **Plan:** `docs/superpowers/plans/2026-06-25-overdub-autosync.md`
 **Research/reference (critical — read before touching alignment):** `docs/research/recording-latency-compensation.md`
@@ -102,6 +105,15 @@ on the Focusrite (with count-in) and confirms it lands in time. Then Part 2.
 ## Progress log
 
 (Newest first.)
+
+- 2026-06-26: From-playhead anchor fix verified ("seems ok"). **Overdub
+  auto-sync core feature COMPLETE & hardware-verified** across all paths:
+  transport-locked capture, count-in exclusion, early-stop clamp, auto RTL trim
+  (64ms), from-playhead. Full `just check` green. Optional AS-7 (loopback
+  calibration) deferred — auto-trim + nudge are sufficient; build on request.
+  Spawn 8-arg struct refactor left as a future cleanup (don't churn working
+  audio). DREDGE_DEBUG diagnostic prints kept (gated, now reachable via `just
+  logs`).
 
 - 2026-06-26: **Logging side-quest (resolved + tested autonomously).** The
   "empty debug log" mystery was `redirect_if_headless` funnelling backend stderr
