@@ -36,7 +36,7 @@
     settingsOpen,
     panelLayout,
   } from "./lib/stores";
-  import { reconcile, moveTab, splitTab, setActive, type DockLayout } from "./lib/dock";
+  import { reconcile, moveTab, splitTab, setActive, setWeights, type DockLayout } from "./lib/dock";
 
   const ALL_TABS = ["structure", "loops", "routines", "export", "profile", "devices", "settings", "guide"] as const;
   type Tab = (typeof ALL_TABS)[number];
@@ -137,6 +137,50 @@
       return; // the pointer gesture was a drag, not a select
     }
     void actions.setPanelLayout(setActive(layout, panel, t));
+  }
+
+  // Vertical resize: a splitter at panel `i`'s top edge shifts the boundary
+  // between panel i-1 (above) and i (below), trading their weights. Previewed
+  // live via `resizeWeights`, persisted on release.
+  let resizeWeights = $state<number[] | null>(null);
+  let resizeIdx = 0;
+  let resizeStartY = 0;
+  let resizeH: [number, number] = [0, 0];
+  let resizeCombined = 0;
+  const MIN_PANEL_PX = 64;
+
+  function panelWeight(pi: number): number {
+    return resizeWeights ? resizeWeights[pi] : layout[pi].weight;
+  }
+  function onSplitDown(e: PointerEvent, i: number) {
+    const panels = [...document.querySelectorAll<HTMLElement>(".dock .dock-panel")];
+    const above = panels[i - 1];
+    const below = panels[i];
+    if (!above || !below) return;
+    e.preventDefault();
+    resizeIdx = i;
+    resizeStartY = e.clientY;
+    resizeH = [above.offsetHeight, below.offsetHeight];
+    resizeCombined = layout[i - 1].weight + layout[i].weight;
+    resizeWeights = layout.map((p) => p.weight);
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      /* non-fatal */
+    }
+  }
+  function onSplitMove(e: PointerEvent) {
+    if (!resizeWeights) return;
+    const total = resizeH[0] + resizeH[1];
+    const h0 = Math.max(MIN_PANEL_PX, Math.min(total - MIN_PANEL_PX, resizeH[0] + (e.clientY - resizeStartY)));
+    const w = resizeWeights.slice();
+    w[resizeIdx - 1] = resizeCombined * (h0 / total);
+    w[resizeIdx] = resizeCombined * ((total - h0) / total);
+    resizeWeights = w;
+  }
+  function onSplitUp() {
+    if (resizeWeights) void actions.setPanelLayout(setWeights(layout, resizeWeights));
+    resizeWeights = null;
   }
 
   /** Bring `key` to the front of whichever panel holds it — the open-settings /
@@ -246,8 +290,20 @@
             class:droptab={drop?.kind === "tab" && drop.panel === pi}
             class:splitabove={drop?.kind === "split" && drop.at === pi}
             class:splitbelow={drop?.kind === "split" && drop.at === pi + 1 && pi === layout.length - 1}
-            style="flex-grow: {panel.weight}"
+            style="flex-grow: {panelWeight(pi)}"
           >
+            {#if pi > 0}
+              <div
+                class="splitter"
+                onpointerdown={(e) => onSplitDown(e, pi)}
+                onpointermove={onSplitMove}
+                onpointerup={onSplitUp}
+                onpointercancel={onSplitUp}
+                title="drag to resize"
+                role="separator"
+                aria-orientation="horizontal"
+              ></div>
+            {/if}
             <nav class="tabs">
               {#each panel.tabs as t (t)}
                 <button
@@ -382,10 +438,25 @@
     min-height: 0;
   }
   .dock-panel {
+    position: relative;
     display: flex;
     flex-direction: column;
     flex-basis: 0; /* flex-grow (inline, = weight) shares height */
     min-height: 0;
+  }
+  /* draggable splitter overlaying a panel's top edge (the boundary above it) */
+  .splitter {
+    position: absolute;
+    top: -3px;
+    left: 0;
+    right: 0;
+    height: 7px;
+    z-index: 4;
+    cursor: row-resize;
+    touch-action: none;
+  }
+  .splitter:hover {
+    background: var(--accent-dim);
   }
   .dock-panel + .dock-panel {
     border-top: 1px solid var(--line);
