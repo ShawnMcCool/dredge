@@ -6,6 +6,7 @@
   import {
     actions,
     activePlay,
+    activeRoutine,
     allLoopsVisible,
     currentLoop,
     drillSpan,
@@ -193,6 +194,7 @@
     void $workingLoop;
     void $allLoopsVisible;
     void $drillSpan;
+    void $activeRoutine;
     void $gridVisible;
     void $gridLines;
     void $gridSubdivision;
@@ -245,7 +247,9 @@
     // While looping, the engine keeps the playhead inside the region; clamp the
     // interpolated value to the loop so a between-tick extrapolation (or the
     // every-loop count-in drain) can't briefly render it past the loop box.
-    if (get(position).playing) playhead = clampToLoop(playhead, get(drillSpan));
+    const ar0 = get(activeRoutine);
+    const loopSpan = get(drillSpan) ?? (ar0?.running ? ar0.block.span : null);
+    if (get(position).playing) playhead = clampToLoop(playhead, loopSpan);
     lastPlayhead = playhead;
     // lock viewport to playhead: shift the window before everything else reads
     // `view` this frame, so the wave, lane and playhead all draw against the
@@ -404,6 +408,25 @@
           ctx.strokeRect(gx0 + 0.5, LANE_H + 0.5, gx1 - gx0 - 1, WAVE_H - 1);
           ctx.setLineDash([]);
         }
+      }
+    }
+
+    // active routine block — while a routine plays there's no saved/working loop,
+    // so draw the block the runner is currently looping (bold accent, like a
+    // selected loop) so its scale on the wave is obvious.
+    const ar = get(activeRoutine);
+    if (ar?.running && ar.block) {
+      const x0 = secToX(view, ar.block.span.start);
+      const x1 = secToX(view, ar.block.span.end);
+      if (x1 >= 0 && x0 <= w) {
+        ctx.globalAlpha = 0.2;
+        ctx.fillStyle = accent;
+        ctx.fillRect(x0, LANE_H, x1 - x0, WAVE_H);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x0 + 1, LANE_H + 1, x1 - x0 - 2, WAVE_H - 2);
+        ctx.lineWidth = 1;
       }
     }
 
