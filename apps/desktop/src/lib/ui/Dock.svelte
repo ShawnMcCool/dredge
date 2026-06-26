@@ -211,6 +211,9 @@
   }
 </script>
 
+<!-- the dock's pointer handlers drive the right-drag-snap resize (a mouse
+     enhancement; the splitter handle is the discoverable affordance) -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="dock"
   class:resizing={resizeWeights !== null}
@@ -296,6 +299,8 @@
     flex-basis: 0; /* flex-grow (inline, = weight) shares height */
     min-height: 0;
   }
+  /* a clear seam between stacked panels — the line plus the next panel's raised
+     header banner make each boundary obvious */
   .dock-panel + .dock-panel {
     border-top: 1px solid var(--line);
   }
@@ -346,9 +351,15 @@
     padding: var(--space);
   }
 
-  /* a panel's tab bar — fixed at the panel top, the view scrolls below it */
+  /* a panel's tab bar — a raised header banner pinned at the panel top (the view
+     scrolls below it), so each stacked panel reads as its own header + body */
   .tabs {
     flex: 0 0 auto;
+    background: var(--bg-raised);
+    /* lift the banner off the content so each stacked panel clearly reads as
+       its own header + body */
+    box-shadow: 0 2px 5px -2px rgb(0 0 0 / 0.45);
+    z-index: 1;
     display: flex;
     flex-wrap: wrap;
     /* left-aligned tabs; completed (wrapped) rows justify to fill the width.
