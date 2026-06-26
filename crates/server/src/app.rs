@@ -142,14 +142,35 @@ fn calibrate_phased(app: &Arc<Mutex<App>>, p: Value) -> Result<Value, String> {
         return Err("calibration: impulse never emitted (no output stream?)".into());
     }
 
-    // Map the emit instant to the capture ring frame, then read ~1s from there.
+    // Map the emit instant to the capture ring frame, then read from there up to
+    // what's actually been captured (the onset is only tens of ms out, so a
+    // full second is unnecessary — and reading past the captured end was the
+    // "window unavailable" failure).
     let rate = engine::buffer::SAMPLE_RATE as i64;
+    let debug = std::env::var("DREDGE_DEBUG").is_ok();
     let measured = {
         let rec = recorder.lock().unwrap();
-        rec.capture_snapshot().and_then(|(cap_snap, ring_total)| {
-            let f_emit = engine::stream_clock::ring_frame_at_ns(&cap_snap, ring_total, emit_ns);
-            rec.extract_range(f_emit, rate).map(|slice| (f_emit, slice))
-        })
+        match rec.capture_snapshot() {
+            None => {
+                if debug {
+                    eprintln!("dredge calibrate[loopback]: no capture snapshot (clock not armed?)");
+                }
+                None
+            }
+            Some((cap_snap, ring_total)) => {
+                let f_emit =
+                    engine::stream_clock::ring_frame_at_ns(&cap_snap, ring_total, emit_ns).max(0);
+                // window = up to 1s, clamped to frames captured since f_emit.
+                let win = (ring_total - f_emit).clamp(0, rate);
+                if debug {
+                    eprintln!(
+                        "dredge calibrate[loopback]: emit_ns={emit_ns} ring_total={ring_total} \
+                         f_emit={f_emit} win={win}"
+                    );
+                }
+                rec.extract_range(f_emit, win).map(|slice| (f_emit, slice))
+            }
+        }
     };
     let _ = recorder.lock().unwrap().stop(); // tear the capture session down
 
