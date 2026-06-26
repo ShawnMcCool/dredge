@@ -68,6 +68,33 @@ cd apps/desktop && pnpm vitest run lib/waveform-math.test.ts   # one frontend te
 while leaving our own crates at `0` for fast incremental rebuilds — that one line
 is what makes `just dev` usable on real songs. Don't remove it.
 
+## Logging & debugging
+
+The backend (engine + server) logs to **stderr**. Because the desktop GUI is
+usually launched without a terminal, `server::logging::redirect_if_headless`
+funnels stdout+stderr into a single file, **`~/.local/share/dredge/dredge.log`**
+(`$XDG_DATA_HOME/dredge/dredge.log`), so crashes and traces survive. Frontend
+`trace()`/`traceErr` calls are forwarded to the same file via the `ui_log`
+command.
+
+```bash
+just logs       # tail -f the backend log (works however the app was launched)
+```
+
+Verbose diagnostics (PipeWire timing, recording anchor/RTL, tuner, dispatch
+telemetry) are gated behind the **`DREDGE_DEBUG`** env var. When it is set, the
+log is *not* redirected — output stays in your terminal or wherever you point it,
+so this works as written:
+
+```bash
+env DREDGE_DEBUG=1 ./target/release/dredge 2>/tmp/dredge.log   # fish: use `env`
+```
+
+Without `DREDGE_DEBUG`, a `2>file` redirect leaves a one-line breadcrumb pointing
+at `dredge.log` (where the output actually went). To debug backend logic without
+the GUI or audio hardware, drive the headless daemon: `DREDGE_DEBUG=1
+target/release/dredged` + `just cmd '{...}'` (its stderr is a normal terminal).
+
 ## Releasing
 
 `scripts/ship` owns the release path — run it with no args for usage:

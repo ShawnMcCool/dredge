@@ -17,13 +17,20 @@ pub fn log_path() -> PathBuf {
 /// (webkit, demucs) inherit the redirected fds, so their noise lands
 /// here too. No-op on failure — logging must never break the app.
 pub fn redirect_if_headless(label: &str) {
-    if std::io::stderr().is_terminal() {
+    // With DREDGE_DEBUG set, leave stdout/stderr where the caller put them — a
+    // debug session wants its output live in the terminal or in an explicit
+    // `2>file`, not silently funnelled into the shared log. (Without it, a GUI
+    // launched from a desktop entry still redirects so crashes are diagnosable.)
+    if std::env::var_os("DREDGE_DEBUG").is_some() || std::io::stderr().is_terminal() {
         return;
     }
     let path = log_path();
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
+    // Breadcrumb on the original stderr (e.g. a non-debug `2>file`) so it's never
+    // a mystery where the output went.
+    eprintln!("[dredge] backend log → {}", path.display());
     let truncate = std::fs::metadata(&path)
         .map(|m| m.len() > MAX_LOG_BYTES)
         .unwrap_or(false);

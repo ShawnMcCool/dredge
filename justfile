@@ -65,6 +65,13 @@ daemon:
     @test -x target/release/dredged || cargo build -p server --release
     target/release/dredged
 
+# Tail the backend log (the desktop app funnels stdout/stderr here when launched
+# without a terminal). Set DREDGE_DEBUG=1 before launching the app for the
+# verbose timing/recording lines.
+logs:
+    @path="${XDG_DATA_HOME:-$HOME/.local/share}/dredge/dredge.log"; \
+        echo "tailing $path"; touch "$path"; tail -n 100 -f "$path"
+
 # Cut a release: bump the canonical version + tag (CI builds the artifacts), e.g.:
 #   just release 0.2.0
 release version:
