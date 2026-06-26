@@ -268,6 +268,11 @@ impl Pipeline {
                     .set_region(secs_to_frames(start), secs_to_frames(end))
                 {
                     self.stretch.reset();
+                    // The playhead jumped to the region start — resync the audible
+                    // cursor (the reported position and the section-click walk)
+                    // to it, instead of leaving it stale.
+                    self.audible_frame = self.looper.pos_frames() as f64;
+                    self.reseek_click_cursor();
                 }
             }
             EngineCmd::ClearLoop => {
@@ -556,7 +561,10 @@ impl Pipeline {
 
     fn push_position(&self, events: &mut Vec<EngineEvent>) {
         events.push(EngineEvent::Position {
-            secs: self.looper.pos_frames() as f64 / SAMPLE_RATE as f64,
+            // The *audible* position — what's hitting the speakers — not the
+            // looper feed cursor, which races ahead to keep the stretcher fed
+            // (that made the playhead jump well ahead of the sound on play).
+            secs: self.audible_frame / SAMPLE_RATE as f64,
             rate: self.rate,
             playing: self.playing,
             count_in: if self.ci_active {
@@ -1007,6 +1015,30 @@ mod tests {
             max_pos <= 1.05,
             "every-loop stays within the region, max_pos = {max_pos}"
         );
+    }
+
+    #[test]
+    fn position_tracks_audible_output_not_feed_cursor() {
+        // At 1x from the top, the reported position must equal the audio actually
+        // produced — it must not leap ahead by the stretcher's feed-ahead buffer.
+        // (The bug: the playhead jumped well past the sound the moment you hit
+        // play, because the position reported the looper feed cursor.)
+        let mut p = Pipeline::new(sine_buf(10.0));
+        p.apply(EngineCmd::Play);
+        let (out, events) = render_secs(&mut p, 1.0);
+        let produced = (out.len() / CHANNELS) as f64 / SAMPLE_RATE as f64;
+        let max_pos = events
+            .iter()
+            .filter_map(|e| match e {
+                EngineEvent::Position { secs, .. } => Some(*secs),
+                _ => None,
+            })
+            .fold(0.0_f64, f64::max);
+        assert!(
+            max_pos <= produced + 0.01,
+            "position {max_pos} leapt past produced audio {produced}"
+        );
+        assert!(max_pos > 0.5, "position did not advance: {max_pos}");
     }
 
     #[test]
