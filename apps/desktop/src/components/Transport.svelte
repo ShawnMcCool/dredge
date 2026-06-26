@@ -34,7 +34,13 @@
     <!-- player: the whole cell toggles play -->
     <button
       class="seg player"
-      onclick={() => ($position.playing ? actions.pause() : actions.play())}
+      onclick={(e) => {
+        // drop focus so a following arrow-key seek doesn't paint a focus ring on
+        // the play button (the keyboard handler is global — the button needn't
+        // hold focus).
+        e.currentTarget.blur();
+        void ($position.playing ? actions.pause() : actions.play());
+      }}
       title={$position.playing ? "pause (Space)" : "play (Space)"}
       aria-label={$position.playing ? "pause" : "play"}
     >

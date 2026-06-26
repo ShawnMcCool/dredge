@@ -36,6 +36,27 @@ function isEditingTarget(target: EventTarget | null): boolean {
   return target.closest('[data-keys="capture"]') !== null;
 }
 
+/** Jump the playhead one bar (downbeat) in `dir`, falling back to a beat when
+ *  the song has no downbeats, and to a 2 s nudge when it isn't analyzed. */
+async function seekByBar(dir: 1 | -1): Promise<void> {
+  const open = get(openSong);
+  if (!open) return;
+  const now = get(position).secs;
+  const grid = open.analysis?.downbeats?.length
+    ? open.analysis.downbeats
+    : (open.analysis?.beats ?? []);
+  const eps = 1e-3;
+  let target: number | undefined;
+  if (grid.length) {
+    target =
+      dir > 0 ? grid.find((t) => t > now + eps) : [...grid].reverse().find((t) => t < now - eps);
+  }
+  if (target === undefined) {
+    target = Math.max(0, Math.min(open.song.duration_secs, now + dir * 2));
+  }
+  await actions.seek(target);
+}
+
 async function handle(e: KeyboardEvent): Promise<void> {
   // Never act on a key another handler already consumed — a modal, the tab
   // editor, anything that called preventDefault as it bubbled up to us.
@@ -69,6 +90,14 @@ async function handle(e: KeyboardEvent): Promise<void> {
       else await actions.play();
       break;
     }
+    case "ArrowRight":
+      e.preventDefault();
+      await seekByBar(1);
+      break;
+    case "ArrowLeft":
+      e.preventDefault();
+      await seekByBar(-1);
+      break;
     case "r": {
       const l = get(activeLoop);
       if (l) {
