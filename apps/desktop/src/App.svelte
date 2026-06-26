@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, type Component } from "svelte";
+  import { flip } from "svelte/animate";
   import ClickTrack from "./components/ClickTrack.svelte";
   import Devices from "./components/Devices.svelte";
   import Drill from "./components/Drill.svelte";
@@ -33,6 +34,7 @@
     panelsCollapsed,
     sectionsOpen,
     settingsOpen,
+    tabOrder,
   } from "./lib/stores";
 
   const ALL_TABS = ["structure", "loops", "routines", "export", "profile", "devices", "settings", "guide"] as const;
@@ -48,8 +50,75 @@
     settings: SettingsPanel,
     guide: Guide,
   };
-  const tabs = ALL_TABS;
   let tab = $state<Tab>("structure");
+
+  // Effective tab order: the persisted order (known tabs only) followed by any
+  // tabs added in code since — so reordering survives, and a new/removed tab
+  // stays graceful. A live drag renders from `dragOrder` instead.
+  function isTab(t: string): t is Tab {
+    return (ALL_TABS as readonly string[]).includes(t);
+  }
+  const orderedTabs = $derived.by<Tab[]>(() => {
+    const known = $tabOrder.filter(isTab);
+    const missing = ALL_TABS.filter((t) => !known.includes(t));
+    return [...known, ...missing];
+  });
+  let dragOrder = $state<Tab[] | null>(null);
+  const shownTabs = $derived(dragOrder ?? orderedTabs);
+
+  // Drag-to-reorder the tabs. A small move turns a click into a drag; on each
+  // move the dragged tab swaps into the slot of whatever tab is under the
+  // pointer (FLIP animates the rest). Persist on drop.
+  let dragKey = $state<Tab | null>(null);
+  let downKey: Tab | null = null;
+  let downX = 0;
+  let downY = 0;
+  let didDrag = false;
+  const DRAG_PX = 4;
+
+  function onTabDown(e: PointerEvent, t: Tab) {
+    if (e.button !== 0) return;
+    downKey = t;
+    downX = e.clientX;
+    downY = e.clientY;
+    didDrag = false;
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      /* non-fatal */
+    }
+  }
+  function onTabMove(e: PointerEvent) {
+    if (downKey === null) return;
+    if (dragKey === null) {
+      if (Math.abs(e.clientX - downX) < DRAG_PX && Math.abs(e.clientY - downY) < DRAG_PX) return;
+      dragKey = downKey;
+      didDrag = true;
+      dragOrder = [...orderedTabs];
+    }
+    const el = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>("[data-tab]");
+    const over = el?.dataset.tab;
+    if (!over || !dragOrder || over === dragKey) return;
+    const from = dragOrder.indexOf(dragKey);
+    const to = dragOrder.findIndex((t) => t === over);
+    if (from === -1 || to === -1 || from === to) return;
+    const next = dragOrder.slice();
+    next.splice(to, 0, next.splice(from, 1)[0]);
+    dragOrder = next;
+  }
+  function onTabUp() {
+    if (dragKey !== null && dragOrder) void actions.setTabOrder(dragOrder);
+    dragKey = null;
+    downKey = null;
+    dragOrder = null;
+  }
+  function onTabClick(t: Tab) {
+    if (didDrag) {
+      didDrag = false;
+      return; // the pointer gesture was a reorder, not a select
+    }
+    tab = t;
+  }
 
   $effect(() => {
     if ($settingsOpen) {
@@ -145,8 +214,22 @@
     {:else}
       <button class="edge right" onclick={() => actions.togglePanels()} title="hide panels (Ctrl+])" aria-label="hide panels">›</button>
       <nav class="tabs">
-        {#each tabs as t (t)}
-          <button class="tab" class:active={tab === t} onclick={() => (tab = t)}>{t}</button>
+        {#each shownTabs as t (t)}
+          <button
+            class="tab"
+            class:active={tab === t}
+            class:dragging={dragKey === t}
+            data-tab={t}
+            onpointerdown={(e) => onTabDown(e, t)}
+            onpointermove={onTabMove}
+            onpointerup={onTabUp}
+            onpointercancel={onTabUp}
+            onclick={() => onTabClick(t)}
+            animate:flip={{ duration: 180 }}
+            title="drag to reorder"
+          >
+            {t}
+          </button>
         {/each}
       </nav>
       {#key tab}
@@ -345,6 +428,7 @@
     border-radius: var(--radius);
     cursor: pointer;
     line-height: 1;
+    touch-action: none; /* pointer drag-to-reorder, not scroll */
   }
 
   .tab:hover {
@@ -354,6 +438,13 @@
 
   .tab.active {
     color: var(--accent);
+  }
+
+  .tab.dragging {
+    background: var(--bg-raised);
+    color: var(--fg);
+    opacity: 0.85;
+    cursor: grabbing;
   }
 
 

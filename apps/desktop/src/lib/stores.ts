@@ -410,6 +410,10 @@ export const gridSnap = writable(true);
  *  section header, a spot on the wave — also starts playback. Off = the click
  *  only moves the playhead. */
 export const activePlay = writable(false);
+/** Persisted panel-tab order (a list of tab keys). Empty = code default;
+ *  App.svelte reconciles it against the known tabs, so adding/removing a tab in
+ *  code stays graceful. */
+export const tabOrder = writable<string[]>([]);
 /** Grid display (persisted): show/hide the drawn grid, full lines vs bottom
  *  ticks, and the subdivision used for both the grid and snapping. */
 export const gridVisible = writable(true);
@@ -434,6 +438,7 @@ export const vram = writable<{ used: number[]; peak: number; min: number; total:
 export const UI_SCALE = "ui_scale";
 export const GRID_SNAP_DEFAULT = "grid_snap_default";
 export const ACTIVE_PLAY = "active_play";
+export const TAB_ORDER = "tab_order";
 export const PLAYBACK_VOLUME = "playback_volume";
 export const ANALYSIS_DEVICE = "analysis_device";
 export const LIBRARY_COLLAPSED = "library_collapsed";
@@ -558,6 +563,7 @@ export const actions = {
     settings.set(all);
     if (typeof all[GRID_SNAP_DEFAULT] === "boolean") gridSnap.set(all[GRID_SNAP_DEFAULT]);
     if (typeof all[ACTIVE_PLAY] === "boolean") activePlay.set(all[ACTIVE_PLAY]);
+    if (Array.isArray(all[TAB_ORDER])) tabOrder.set(all[TAB_ORDER].filter((t) => typeof t === "string"));
     if (typeof all[LIBRARY_COLLAPSED] === "boolean") libraryCollapsed.set(all[LIBRARY_COLLAPSED]);
     if (typeof all[PANELS_COLLAPSED] === "boolean") panelsCollapsed.set(all[PANELS_COLLAPSED]);
     if (typeof all[GRID_VISIBLE] === "boolean") gridVisible.set(all[GRID_VISIBLE]);
@@ -654,6 +660,10 @@ export const actions = {
   async setActivePlay(on: boolean): Promise<void> {
     activePlay.set(on);
     await this.setSetting(ACTIVE_PLAY, on);
+  },
+  async setTabOrder(order: string[]): Promise<void> {
+    tabOrder.set(order);
+    await this.setSetting(TAB_ORDER, order);
   },
   async setGridVisible(on: boolean): Promise<void> {
     gridVisible.set(on);
