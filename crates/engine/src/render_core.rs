@@ -7,8 +7,21 @@ use crate::buffer::StemSet;
 use crate::layers::Layer;
 use crate::metronome::{Metronome, MetronomeBeat};
 use crate::pipeline::{ClickMark, EngineCmd, EngineEvent, Pipeline};
+use crate::stream_clock::StreamClock;
 use arc_swap::ArcSwapOption;
 use std::sync::Arc;
+
+/// Lock-free state the control thread publishes into and the render core reads.
+/// Cheap to clone (all `Arc`s). Bundles the per-spawn shared slots so the output
+/// `spawn`/`run` and `RenderCore::new` don't each carry four separate params.
+#[derive(Clone)]
+pub struct RenderShared {
+    pub song: Arc<ArcSwapOption<StemSet>>,
+    pub clicks: Arc<ArcSwapOption<Vec<ClickMark>>>,
+    pub layers: Arc<ArcSwapOption<Vec<Layer>>>,
+    /// Publishes the audible song frame against the graph clock (PipeWire only).
+    pub playback_clock: Arc<StreamClock>,
+}
 
 pub struct RenderCore {
     cmd_rx: rtrb::Consumer<EngineCmd>,
@@ -34,16 +47,14 @@ impl RenderCore {
     pub fn new(
         cmd_rx: rtrb::Consumer<EngineCmd>,
         evt_tx: rtrb::Producer<EngineEvent>,
-        song_slot: Arc<ArcSwapOption<StemSet>>,
-        click_slot: Arc<ArcSwapOption<Vec<ClickMark>>>,
-        layer_slot: Arc<ArcSwapOption<Vec<Layer>>>,
+        shared: RenderShared,
     ) -> Self {
         Self {
             cmd_rx,
             evt_tx,
-            song_slot,
-            click_slot,
-            layer_slot,
+            song_slot: shared.song,
+            click_slot: shared.clicks,
+            layer_slot: shared.layers,
             pipeline: None,
             current_song: None,
             current_clicks: None,
@@ -188,13 +199,13 @@ mod tests {
     fn core() -> (RenderCore, rtrb::Producer<EngineCmd>) {
         let (cmd_tx, cmd_rx) = rtrb::RingBuffer::<EngineCmd>::new(64);
         let (evt_tx, _evt_rx) = rtrb::RingBuffer::<EngineEvent>::new(256);
-        let song_slot = Arc::new(ArcSwapOption::<StemSet>::empty());
-        let click_slot = Arc::new(ArcSwapOption::<Vec<crate::pipeline::ClickMark>>::empty());
-        let layer_slot = Arc::new(ArcSwapOption::<Vec<Layer>>::empty());
-        (
-            RenderCore::new(cmd_rx, evt_tx, song_slot, click_slot, layer_slot),
-            cmd_tx,
-        )
+        let shared = RenderShared {
+            song: Arc::new(ArcSwapOption::<StemSet>::empty()),
+            clicks: Arc::new(ArcSwapOption::<Vec<crate::pipeline::ClickMark>>::empty()),
+            layers: Arc::new(ArcSwapOption::<Vec<Layer>>::empty()),
+            playback_clock: Arc::new(StreamClock::default()),
+        };
+        (RenderCore::new(cmd_rx, evt_tx, shared), cmd_tx)
     }
 
     fn core_with(
@@ -203,10 +214,13 @@ mod tests {
     ) -> (RenderCore, rtrb::Producer<EngineCmd>) {
         let (cmd_tx, cmd_rx) = rtrb::RingBuffer::<EngineCmd>::new(16);
         let (evt_tx, _evt_rx) = rtrb::RingBuffer::<EngineEvent>::new(64);
-        let song_slot = Arc::new(ArcSwapOption::new(Some(Arc::new(song))));
-        let click_slot = Arc::new(ArcSwapOption::<Vec<ClickMark>>::empty());
-        let layer_slot = Arc::new(ArcSwapOption::new(layers.map(Arc::new)));
-        let core = RenderCore::new(cmd_rx, evt_tx, song_slot, click_slot, layer_slot);
+        let shared = RenderShared {
+            song: Arc::new(ArcSwapOption::new(Some(Arc::new(song)))),
+            clicks: Arc::new(ArcSwapOption::<Vec<ClickMark>>::empty()),
+            layers: Arc::new(ArcSwapOption::new(layers.map(Arc::new))),
+            playback_clock: Arc::new(StreamClock::default()),
+        };
+        let core = RenderCore::new(cmd_rx, evt_tx, shared);
         (core, cmd_tx)
     }
 

@@ -3,57 +3,39 @@
 //! callback drives the shared `RenderCore`. The thread parks to keep the
 //! stream (which is `!Send` on some hosts) alive and on one thread.
 
-use crate::buffer::{StemSet, CHANNELS, SAMPLE_RATE};
+use crate::buffer::{CHANNELS, SAMPLE_RATE};
 use crate::error::Error;
-use crate::pipeline::{ClickMark, EngineCmd, EngineEvent};
-use crate::render_core::RenderCore;
-use crate::stream_clock::StreamClock;
-use arc_swap::ArcSwapOption;
+use crate::pipeline::{EngineCmd, EngineEvent};
+use crate::render_core::{RenderCore, RenderShared};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
-#[allow(clippy::too_many_arguments)]
 pub fn spawn(
     cmd_rx: rtrb::Consumer<EngineCmd>,
     evt_tx: rtrb::Producer<EngineEvent>,
-    song_slot: Arc<ArcSwapOption<StemSet>>,
-    click_slot: Arc<ArcSwapOption<Vec<ClickMark>>>,
-    layer_slot: Arc<ArcSwapOption<Vec<crate::layers::Layer>>>,
-    playback_clock: Arc<StreamClock>,
+    shared: RenderShared,
     target: Option<String>,
     stop: Arc<AtomicBool>,
 ) -> crate::error::Result<JoinHandle<()>> {
     let handle = std::thread::Builder::new()
         .name("dredge-audio".into())
         .spawn(move || {
-            if let Err(e) = run(
-                cmd_rx,
-                evt_tx,
-                song_slot,
-                click_slot,
-                layer_slot,
-                playback_clock,
-                target,
-                stop,
-            ) {
+            if let Err(e) = run(cmd_rx, evt_tx, shared, target, stop) {
                 eprintln!("dredge audio thread failed: {e}");
             }
         })?;
     Ok(handle)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn run(
     cmd_rx: rtrb::Consumer<EngineCmd>,
     evt_tx: rtrb::Producer<EngineEvent>,
-    song_slot: Arc<ArcSwapOption<StemSet>>,
-    click_slot: Arc<ArcSwapOption<Vec<ClickMark>>>,
-    layer_slot: Arc<ArcSwapOption<Vec<crate::layers::Layer>>>,
-    // cpal exposes no graph-clock `pw_time`, so the playback clock is not
-    // published on this backend; accepted to keep one `spawn` signature.
-    _playback_clock: Arc<StreamClock>,
+    // cpal exposes no graph-clock `pw_time`, so the playback clock carried on
+    // `shared` is not published on this backend; accepted to keep one `spawn`
+    // signature with the PipeWire backend.
+    shared: RenderShared,
     target: Option<String>,
     stop: Arc<AtomicBool>,
 ) -> crate::error::Result<()> {
@@ -85,7 +67,7 @@ fn run(
         buffer_size: cpal::BufferSize::Default,
     };
 
-    let mut core = RenderCore::new(cmd_rx, evt_tx, song_slot, click_slot, layer_slot);
+    let mut core = RenderCore::new(cmd_rx, evt_tx, shared);
 
     let stream = device
         .build_output_stream(

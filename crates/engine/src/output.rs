@@ -5,10 +5,10 @@
 //! F32LE samples into the mapped device buffer. It never allocates or locks
 //! on the steady path.
 
-use crate::buffer::{StemSet, CHANNELS, SAMPLE_RATE};
-use crate::pipeline::{ClickMark, EngineCmd, EngineEvent};
+use crate::buffer::{CHANNELS, SAMPLE_RATE};
+use crate::pipeline::{EngineCmd, EngineEvent};
+use crate::render_core::RenderShared;
 use crate::stream_clock::{ClockSnapshot, StreamClock};
-use arc_swap::ArcSwapOption;
 use pipewire as pw;
 use pw::{properties::properties, spa};
 use spa::pod::Pod;
@@ -34,44 +34,27 @@ struct State {
     debug_printed: bool,
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn spawn(
     cmd_rx: rtrb::Consumer<EngineCmd>,
     evt_tx: rtrb::Producer<EngineEvent>,
-    song_slot: Arc<ArcSwapOption<StemSet>>,
-    click_slot: Arc<ArcSwapOption<Vec<ClickMark>>>,
-    layer_slot: Arc<ArcSwapOption<Vec<crate::layers::Layer>>>,
-    playback_clock: Arc<StreamClock>,
+    shared: RenderShared,
     target: Option<String>,
     stop: Arc<AtomicBool>,
 ) -> crate::error::Result<JoinHandle<()>> {
     let handle = std::thread::Builder::new()
         .name("dredge-pw".into())
         .spawn(move || {
-            if let Err(e) = run(
-                cmd_rx,
-                evt_tx,
-                song_slot,
-                click_slot,
-                layer_slot,
-                playback_clock,
-                target,
-                stop,
-            ) {
+            if let Err(e) = run(cmd_rx, evt_tx, shared, target, stop) {
                 eprintln!("dredge pipewire thread failed: {e}");
             }
         })?;
     Ok(handle)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn run(
     cmd_rx: rtrb::Consumer<EngineCmd>,
     evt_tx: rtrb::Producer<EngineEvent>,
-    song_slot: Arc<ArcSwapOption<StemSet>>,
-    click_slot: Arc<ArcSwapOption<Vec<ClickMark>>>,
-    layer_slot: Arc<ArcSwapOption<Vec<crate::layers::Layer>>>,
-    playback_clock: Arc<StreamClock>,
+    shared: RenderShared,
     target: Option<String>,
     stop: Arc<AtomicBool>,
 ) -> Result<(), pw::Error> {
@@ -97,10 +80,9 @@ fn run(
 
     let stream = pw::stream::StreamBox::new(&core, "dredge", props)?;
 
+    let playback_clock = shared.playback_clock.clone();
     let state = State {
-        core: crate::render_core::RenderCore::new(
-            cmd_rx, evt_tx, song_slot, click_slot, layer_slot,
-        ),
+        core: crate::render_core::RenderCore::new(cmd_rx, evt_tx, shared),
         render_buf: vec![0.0; MAX_QUANTUM_FRAMES * CHANNELS],
         playback_clock,
         debug_printed: false,

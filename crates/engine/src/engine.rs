@@ -1,6 +1,7 @@
 use crate::buffer::StemSet;
 use crate::engine_state::EngineState;
 use crate::pipeline::{ClickMark, EngineCmd, EngineEvent};
+use crate::render_core::RenderShared;
 use crate::stream_clock::StreamClock;
 use arc_swap::ArcSwapOption;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -10,12 +11,10 @@ use std::thread::JoinHandle;
 pub struct Engine {
     cmd_tx: rtrb::Producer<EngineCmd>,
     evt_rx: rtrb::Consumer<EngineEvent>,
-    song_slot: Arc<ArcSwapOption<StemSet>>,
-    click_slot: Arc<ArcSwapOption<Vec<ClickMark>>>,
-    layer_slot: Arc<ArcSwapOption<Vec<crate::layers::Layer>>>,
-    /// Publishes the audible song frame + output latency against the graph
-    /// clock. Survives output retargets so the control thread keeps one handle.
-    playback_clock: Arc<StreamClock>,
+    /// Lock-free slots the control thread publishes into; cloned into each
+    /// output-thread spawn (initial + retarget). `playback_clock` survives
+    /// retargets so the control thread keeps one handle.
+    shared: RenderShared,
     /// Signals the current output thread to quit; replaced on each retarget.
     stop: Arc<AtomicBool>,
     /// Live snapshot of engine state, replayed onto a fresh pipeline when the
@@ -29,28 +28,19 @@ impl Engine {
     pub fn start() -> crate::error::Result<Self> {
         let (cmd_tx, cmd_rx) = rtrb::RingBuffer::<EngineCmd>::new(256);
         let (evt_tx, evt_rx) = rtrb::RingBuffer::<EngineEvent>::new(1024);
-        let song_slot = Arc::new(ArcSwapOption::<StemSet>::empty());
-        let click_slot = Arc::new(ArcSwapOption::<Vec<ClickMark>>::empty());
-        let layer_slot = Arc::new(ArcSwapOption::<Vec<crate::layers::Layer>>::empty());
-        let playback_clock = Arc::new(StreamClock::default());
+        let shared = RenderShared {
+            song: Arc::new(ArcSwapOption::<StemSet>::empty()),
+            clicks: Arc::new(ArcSwapOption::<Vec<ClickMark>>::empty()),
+            layers: Arc::new(ArcSwapOption::<Vec<crate::layers::Layer>>::empty()),
+            playback_clock: Arc::new(StreamClock::default()),
+        };
         let stop = Arc::new(AtomicBool::new(false));
-        let audio_thread = crate::output::spawn(
-            cmd_rx,
-            evt_tx,
-            song_slot.clone(),
-            click_slot.clone(),
-            layer_slot.clone(),
-            playback_clock.clone(),
-            None,
-            stop.clone(),
-        )?;
+        let audio_thread =
+            crate::output::spawn(cmd_rx, evt_tx, shared.clone(), None, stop.clone())?;
         Ok(Self {
             cmd_tx,
             evt_rx,
-            song_slot,
-            click_slot,
-            layer_slot,
-            playback_clock,
+            shared,
             stop,
             state: EngineState::default(),
             _audio_thread: Some(audio_thread),
@@ -61,29 +51,29 @@ impl Engine {
     /// read `load()` to map graph time to the audible song frame; it does
     /// nothing on the steady playback path otherwise.
     pub fn playback_clock(&self) -> Arc<StreamClock> {
-        self.playback_clock.clone()
+        self.shared.playback_clock.clone()
     }
 
     /// Output-stream latency (frames) reported by the last published snapshot;
     /// `0` until the clock has been armed and a snapshot stored.
     pub fn output_delay_frames(&self) -> i64 {
-        self.playback_clock.delay_frames()
+        self.shared.playback_clock.delay_frames()
     }
 
     /// Swap in a new song; audio thread picks it up at the next block.
     pub fn load(&self, set: StemSet) {
-        self.song_slot.store(Some(Arc::new(set)));
+        self.shared.song.store(Some(Arc::new(set)));
     }
 
     /// Replace the active overdub layer set (atomic pointer swap; the audio
     /// thread picks it up on its next block).
     pub fn set_layers(&self, layers: Vec<crate::layers::Layer>) {
-        self.layer_slot.store(Some(Arc::new(layers)));
+        self.shared.layers.store(Some(Arc::new(layers)));
     }
 
     /// Replace the section-click schedule; the audio thread picks it up next block.
     pub fn set_click_schedule(&self, marks: Vec<ClickMark>) {
-        self.click_slot.store(Some(Arc::new(marks)));
+        self.shared.clicks.store(Some(Arc::new(marks)));
     }
 
     pub fn send(&mut self, cmd: EngineCmd) {
@@ -117,10 +107,7 @@ impl Engine {
         let h = crate::output::spawn(
             cmd_rx,
             evt_tx,
-            self.song_slot.clone(),
-            self.click_slot.clone(),
-            self.layer_slot.clone(),
-            self.playback_clock.clone(),
+            self.shared.clone(),
             target,
             self.stop.clone(),
         )?;
