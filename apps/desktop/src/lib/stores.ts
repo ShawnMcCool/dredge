@@ -3,7 +3,7 @@
 
 import { derived, get, writable } from "svelte/store";
 import { cmd, initialSong, onEvent } from "./ipc";
-import { trace } from "./trace";
+import { trace, traceErr } from "./trace";
 import { subdivisionTimes, type GridSubdivision } from "./waveform-math";
 import { bisect, nudgeEdge, rateForRep, runUp, type Span } from "./drill";
 import { deriveLoopName } from "./loop-name";
@@ -347,6 +347,15 @@ export const stemsError = writable<string | null>(null);
 export const recordings = writable<Recording[]>([]);
 /** True while a recording.start has been sent and recording.stop has not yet resolved. */
 export const recordingActive = writable<boolean>(false);
+/** Record-arming (DAW-style): the recordings box configures the take and arms;
+ *  the transport's record button triggers it. */
+export type RecordSpan = "song" | "selection" | "loop" | "playhead";
+export const recordArmed = writable<boolean>(false);
+/** The armed span; "playhead" (the default) records from the playhead to the
+ *  song end (mapped to a selection span for the backend). */
+export const recordSpan = writable<RecordSpan>("playhead");
+/** Armed input: an `AudioDevice.id`, or "default" = follow the devices panel. */
+export const recordInput = writable<string>("default");
 /** Recording-latency status for the devices readout (both measurements + which is active). */
 export const latencyStatus = writable<LatencyStatus | null>(null);
 export const analysisError = writable<string | null>(null);
@@ -1166,6 +1175,30 @@ export const actions = {
   },
 
   // --- recordings ---
+
+  /** Trigger an armed take from the transport: resolve the configured span +
+   *  input and start recording. Range logic lives here so the transport button
+   *  stays dumb (the recordings box only arms). */
+  async triggerRecord(): Promise<void> {
+    await this.refreshInputs();
+    const span = get(recordSpan);
+    const resolved = resolveInputDevice(get(recordInput), get(inputDevice), get(inputDevices));
+    if (!resolved) {
+      traceErr("record", "no input device");
+      return;
+    }
+    const backendSpan: "song" | "selection" | "loop" = span === "playhead" ? "selection" : span;
+    const sel = get(selection);
+    const lp = get(currentLoop);
+    const pos = get(position);
+    const open = get(openSong);
+    const range =
+      span === "playhead" ? { start: pos.secs, end: open?.song.duration_secs ?? 0 }
+      : span === "selection" && sel ? { start: sel.start, end: sel.end }
+      : span === "loop" && lp ? { start: lp.start, end: lp.end }
+      : undefined;
+    await this.startRecording(backendSpan, resolved, range);
+  },
 
   async startRecording(span: "song" | "selection" | "loop", deviceId: string, range?: { start: number; end: number }): Promise<void> {
     // optimistic: flip active before the round-trip so the record button can't

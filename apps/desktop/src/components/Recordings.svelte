@@ -1,19 +1,20 @@
 <script lang="ts">
   // Recordings box: capture your own input over the track as additive layers.
-  // One row per take — name, level, mute, nudge, delete. Recording always
-  // covers one pass over the chosen span, after the count-in.
+  // DAW-style flow — this box ARMS a take (span + input); the transport's record
+  // button triggers it and becomes stop. One row per take below: name, level,
+  // mute, nudge, delete. Recording covers one pass over the span, after count-in.
   import {
     actions,
     openSong,
     recordingActive,
+    recordArmed,
+    recordSpan,
+    recordInput,
     recordings,
     selection,
     currentLoop,
-    position,
-    inputDevice,
     type AudioDevice,
   } from "../lib/stores";
-  import { resolveInputDevice } from "../lib/devices";
   import { framesToMs, msToFrames } from "../lib/recording-math";
   import { cmd } from "../lib/ipc";
   import { traceErr } from "../lib/trace";
@@ -21,11 +22,7 @@
   import Button from "../lib/ui/Button.svelte";
   import Fader from "../lib/ui/Fader.svelte";
 
-  type Span = "song" | "selection" | "loop" | "playhead";
-  let span = $state<Span>("song");
   let devices = $state<AudioDevice[]>([]);
-  // "default" follows the input device set in the devices panel, like the tuner.
-  let selectedInput = $state<string>("default");
 
   $effect(() => {
     void cmd<AudioDevice[]>("device.inputs")
@@ -34,56 +31,33 @@
       })
       .catch((e) => traceErr("recordings", `device.inputs failed: ${e}`));
   });
-
-  // Resolve the "default" sentinel to the devices-panel input (or the system
-  // default / first device), exactly as the tuner does.
-  let resolvedInput = $derived(resolveInputDevice(selectedInput, $inputDevice, devices));
-
-  async function record() {
-    if ($recordingActive) {
-      await actions.stopRecording();
-      return;
-    }
-    if (!resolvedInput) {
-      traceErr("recordings", "no input device available");
-      return;
-    }
-    const sel = $selection;
-    const lp = $currentLoop;
-    // "from playhead" records from the current playhead to the song end; it maps
-    // to a selection span so the backend needs no new span kind.
-    const backendSpan: "song" | "selection" | "loop" = span === "playhead" ? "selection" : span;
-    const range =
-      span === "playhead" ? { start: $position.secs, end: $openSong?.song.duration_secs ?? 0 }
-      : span === "selection" && sel ? { start: sel.start, end: sel.end }
-      : span === "loop" && lp ? { start: lp.start, end: lp.end }
-      : undefined;
-    await actions.startRecording(backendSpan, resolvedInput, range);
-  }
 </script>
 
 {#if $openSong}
   <Box label="recordings" wide>
     <div class="bar">
-      <select bind:value={span} disabled={$recordingActive} aria-label="recording span">
+      <select bind:value={$recordSpan} disabled={$recordingActive} aria-label="recording span">
         <option value="song">full song</option>
         <option value="playhead">from playhead</option>
         <option value="selection" disabled={!$selection}>selection</option>
         <option value="loop" disabled={!$currentLoop}>loop</option>
       </select>
-      <select bind:value={selectedInput} disabled={$recordingActive} aria-label="input device">
+      <select bind:value={$recordInput} disabled={$recordingActive} aria-label="input device">
         <option value="default">default (follow devices)</option>
         {#each devices as d (d.id)}<option value={d.id}>{d.name}</option>{/each}
       </select>
       <Button
         variant="toggle"
-        active={$recordingActive}
-        disabled={!$recordingActive && !resolvedInput}
-        onclick={() => void record()}
+        active={$recordArmed}
+        disabled={$recordingActive}
+        onclick={() => recordArmed.set(!$recordArmed)}
       >
-        {$recordingActive ? "stop" : "record"}
+        {$recordArmed ? "armed ✓" : "arm"}
       </Button>
     </div>
+    {#if $recordArmed && !$recordingActive}
+      <p class="hint">record from the transport</p>
+    {/if}
 
     {#each $recordings as r (r.id)}
       <div class="row">
@@ -154,6 +128,12 @@
   select:disabled {
     color: var(--muted);
     cursor: default;
+  }
+
+  .hint {
+    margin: 6px 0 0;
+    font-size: 11px;
+    color: var(--muted);
   }
 
   .row {

@@ -1,6 +1,15 @@
 <script lang="ts">
   import { fmtClock } from "../lib/format";
-  import { actions, muted, openSong, pitch, playbackVolume, position } from "../lib/stores";
+  import {
+    actions,
+    muted,
+    openSong,
+    pitch,
+    playbackVolume,
+    position,
+    recordArmed,
+    recordingActive,
+  } from "../lib/stores";
   import Fader from "../lib/ui/Fader.svelte";
 
   // pitch stepper: ± a semitone; scroll over it for ±5 cents
@@ -46,6 +55,35 @@
         <span class="total mono">/ {fmtClock($openSong?.song.duration_secs ?? 0, 0)}</span>
       </span>
     </button>
+
+    <!-- record / stop: appears once armed; a dedicated control, not the player -->
+    {#if $recordingActive}
+      <button
+        class="recbtn"
+        onclick={() => void actions.stopRecording()}
+        title="stop recording"
+        aria-label="stop recording"
+      >
+        <span class="rec">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <rect x="6.5" y="6.5" width="11" height="11" rx="1.5" />
+          </svg>
+        </span>
+      </button>
+    {:else if $recordArmed}
+      <button
+        class="recbtn"
+        onclick={() => void actions.triggerRecord()}
+        title="record"
+        aria-label="record"
+      >
+        <span class="rec">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <circle cx="12" cy="12" r="6" />
+          </svg>
+        </span>
+      </button>
+    {/if}
 
     <span class="vsep"></span>
 
@@ -196,6 +234,35 @@
     filter: brightness(1.1);
   }
   .play svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  /* record / stop: a red disc matching the play disc's shape */
+  .recbtn {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+  }
+  .rec {
+    width: 36px;
+    height: 36px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: var(--miss);
+    color: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .recbtn:hover .rec {
+    filter: brightness(1.1);
+  }
+  .rec svg {
     width: 18px;
     height: 18px;
   }
