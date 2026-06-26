@@ -34,8 +34,9 @@
     panelsCollapsed,
     sectionsOpen,
     settingsOpen,
-    tabOrder,
+    panelLayout,
   } from "./lib/stores";
+  import { reconcile, moveTab, setActive, type DockLayout } from "./lib/dock";
 
   const ALL_TABS = ["structure", "loops", "routines", "export", "profile", "devices", "settings", "guide"] as const;
   type Tab = (typeof ALL_TABS)[number];
@@ -50,35 +51,28 @@
     settings: SettingsPanel,
     guide: Guide,
   };
-  let tab = $state<Tab>("structure");
+  // The dock: the right aside is a vertical stack of panels, each a set of tabs.
+  // The layout is reconciled against the known tabs (adding/removing one in code
+  // stays graceful); a live drag renders from `dragLayout`.
+  const layout = $derived(reconcile($panelLayout, [...ALL_TABS]));
+  let dragLayout = $state<DockLayout | null>(null);
+  const shown = $derived(dragLayout ?? layout);
 
-  // Effective tab order: the persisted order (known tabs only) followed by any
-  // tabs added in code since — so reordering survives, and a new/removed tab
-  // stays graceful. A live drag renders from `dragOrder` instead.
-  function isTab(t: string): t is Tab {
-    return (ALL_TABS as readonly string[]).includes(t);
-  }
-  const orderedTabs = $derived.by<Tab[]>(() => {
-    const known = $tabOrder.filter(isTab);
-    const missing = ALL_TABS.filter((t) => !known.includes(t));
-    return [...known, ...missing];
-  });
-  let dragOrder = $state<Tab[] | null>(null);
-  const shownTabs = $derived(dragOrder ?? orderedTabs);
-
-  // Drag-to-reorder the tabs. A small move turns a click into a drag; on each
-  // move the dragged tab swaps into the slot of whatever tab is under the
-  // pointer (FLIP animates the rest). Persist on drop.
-  let dragKey = $state<Tab | null>(null);
-  let downKey: Tab | null = null;
+  // Drag a tab to reorder it within its panel (FLIP animates the rest). A small
+  // move turns a click into a drag; a plain click selects the tab in its panel.
+  let dragTab = $state<string | null>(null);
+  let downTab: string | null = null;
   let downX = 0;
   let downY = 0;
   let didDrag = false;
   const DRAG_PX = 4;
 
-  function onTabDown(e: PointerEvent, t: Tab) {
+  function panelOf(l: DockLayout, t: string): number {
+    return l.findIndex((p) => p.tabs.includes(t));
+  }
+  function onTabDown(e: PointerEvent, t: string) {
     if (e.button !== 0) return;
-    downKey = t;
+    downTab = t;
     downX = e.clientX;
     downY = e.clientY;
     didDrag = false;
@@ -89,54 +83,61 @@
     }
   }
   function onTabMove(e: PointerEvent) {
-    if (downKey === null) return;
-    if (dragKey === null) {
+    if (downTab === null) return;
+    if (dragTab === null) {
       if (Math.abs(e.clientX - downX) < DRAG_PX && Math.abs(e.clientY - downY) < DRAG_PX) return;
-      dragKey = downKey;
+      dragTab = downTab;
       didDrag = true;
-      dragOrder = [...orderedTabs];
+      dragLayout = layout;
     }
+    if (!dragLayout) return;
     const el = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>("[data-tab]");
     const over = el?.dataset.tab;
-    if (!over || !dragOrder || over === dragKey) return;
-    const from = dragOrder.indexOf(dragKey);
-    const to = dragOrder.findIndex((t) => t === over);
-    if (from === -1 || to === -1 || from === to) return;
-    const next = dragOrder.slice();
-    next.splice(to, 0, next.splice(from, 1)[0]);
-    dragOrder = next;
+    if (!over || over === dragTab) return;
+    const overPanel = Number(el?.dataset.panel);
+    // phase 2: reorder within the same panel only (join/split land in later phases)
+    if (!Number.isInteger(overPanel) || overPanel !== panelOf(dragLayout, dragTab)) return;
+    const toIndex = dragLayout[overPanel].tabs.indexOf(over);
+    dragLayout = moveTab(dragLayout, dragTab, overPanel, toIndex);
   }
   function onTabUp() {
-    if (dragKey !== null && dragOrder) void actions.setTabOrder(dragOrder);
-    dragKey = null;
-    downKey = null;
-    dragOrder = null;
+    if (dragTab !== null && dragLayout) void actions.setPanelLayout(dragLayout);
+    dragTab = null;
+    downTab = null;
+    dragLayout = null;
   }
-  function onTabClick(t: Tab) {
+  function selectTab(panel: number, t: string) {
     if (didDrag) {
       didDrag = false;
       return; // the pointer gesture was a reorder, not a select
     }
-    tab = t;
+    void actions.setPanelLayout(setActive(layout, panel, t));
+  }
+
+  /** Bring `key` to the front of whichever panel holds it — the open-settings /
+   *  open-structure / open-loops shortcuts. */
+  function revealTab(key: Tab) {
+    const pi = panelOf(layout, key);
+    if (pi >= 0) void actions.setPanelLayout(setActive(layout, pi, key));
   }
 
   $effect(() => {
     if ($settingsOpen) {
-      tab = "settings";
+      revealTab("settings");
       settingsOpen.set(false);
     }
   });
 
   $effect(() => {
     if ($sectionsOpen) {
-      tab = "structure";
+      revealTab("structure");
       sectionsOpen.set(false);
     }
   });
 
   $effect(() => {
     if ($loopsOpen) {
-      tab = "loops";
+      revealTab("loops");
       loopsOpen.set(false);
     }
   });
@@ -213,32 +214,39 @@
   </main>
   <aside class="panels" class:collapsed={$panelsCollapsed}>
     {#if !$panelsCollapsed}
-      <div class="pane">
-        <nav class="tabs">
-          {#each shownTabs as t (t)}
-            <button
-              class="tab"
-              class:active={tab === t}
-              class:dragging={dragKey === t}
-              data-tab={t}
-              onpointerdown={(e) => onTabDown(e, t)}
-              onpointermove={onTabMove}
-              onpointerup={onTabUp}
-              onpointercancel={onTabUp}
-              onclick={() => onTabClick(t)}
-              animate:flip={{ duration: 180 }}
-              title="drag to reorder"
-            >
-              {t}
-            </button>
-          {/each}
-        </nav>
-        {#key tab}
-          {@const View = TAB_VIEWS[tab]}
-          <div class="fade-in">
-            <View />
-          </div>
-        {/key}
+      <div class="dock">
+        {#each shown as panel, pi (pi)}
+          <section class="dock-panel" style="flex-grow: {panel.weight}">
+            <nav class="tabs">
+              {#each panel.tabs as t (t)}
+                <button
+                  class="tab"
+                  class:active={panel.active === t}
+                  class:dragging={dragTab === t}
+                  data-tab={t}
+                  data-panel={pi}
+                  onpointerdown={(e) => onTabDown(e, t)}
+                  onpointermove={onTabMove}
+                  onpointerup={onTabUp}
+                  onpointercancel={onTabUp}
+                  onclick={() => selectTab(pi, t)}
+                  animate:flip={{ duration: 180 }}
+                  title="drag to reorder"
+                >
+                  {t}
+                </button>
+              {/each}
+            </nav>
+            <div class="panel-view">
+              {#key panel.active}
+                {@const View = TAB_VIEWS[panel.active as Tab]}
+                <div class="fade-in">
+                  <View />
+                </div>
+              {/key}
+            </div>
+          </section>
+        {/each}
       </div>
     {/if}
     <button
@@ -334,6 +342,33 @@
     padding: var(--space);
   }
 
+  /* the dock: a vertical stack of panels filling the aside inboard of the rail */
+  .dock {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+  }
+  .dock-panel {
+    display: flex;
+    flex-direction: column;
+    flex-basis: 0; /* flex-grow (inline, = weight) shares height */
+    min-height: 0;
+  }
+  .dock-panel + .dock-panel {
+    border-top: 1px solid var(--line);
+  }
+  /* each panel's active view scrolls on its own */
+  .panel-view {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: var(--space);
+  }
+
   .stage {
     display: flex;
     flex-direction: column;
@@ -357,13 +392,14 @@
 
 
 
+  /* a panel's tab bar — fixed at the panel top, the view scrolls below it */
   .tabs {
+    flex: 0 0 auto;
     display: flex;
     flex-wrap: wrap;
     gap: calc(var(--space) / 2);
-    margin-bottom: var(--space);
+    padding: calc(var(--space) / 2) var(--space);
     border-bottom: 1px solid var(--line);
-    padding-bottom: var(--space);
     min-width: 0;
   }
 

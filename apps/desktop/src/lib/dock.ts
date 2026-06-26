@@ -57,12 +57,14 @@ export function reconcile(layout: DockLayout, allTabs: string[]): DockLayout {
   const known = new Set(allTabs);
   const seen = new Set<string>();
   const next: DockLayout = [];
-  for (const p of layout) {
-    const tabs = p.tabs.filter((t) => known.has(t) && !seen.has(t));
+  for (const p of Array.isArray(layout) ? layout : []) {
+    const src = Array.isArray(p?.tabs) ? p.tabs : [];
+    const tabs = src.filter((t) => known.has(t) && !seen.has(t));
     for (const t of tabs) seen.add(t);
     if (tabs.length === 0) continue;
     const active = tabs.includes(p.active) ? p.active : tabs[0];
-    next.push({ tabs, active, weight: p.weight });
+    const weight = Number.isFinite(p?.weight) && p.weight > 0 ? p.weight : 1;
+    next.push({ tabs, active, weight });
   }
   const missing = allTabs.filter((t) => !seen.has(t));
   if (missing.length) {
