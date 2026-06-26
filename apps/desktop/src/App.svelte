@@ -64,6 +64,8 @@
   type Drop = { kind: "tab"; panel: number; index: number } | { kind: "split"; at: number };
   let dragTab = $state<string | null>(null);
   let drop = $state<Drop | null>(null);
+  // insertion caret (viewport coords) shown while hovering a tab bar
+  let caret = $state<{ x: number; y: number; h: number } | null>(null);
   let downTab: string | null = null;
   let downX = 0;
   let downY = 0;
@@ -72,14 +74,6 @@
 
   function panelOf(l: DockLayout, t: string): number {
     return l.findIndex((p) => p.tabs.includes(t));
-  }
-  /** Insertion index in a panel (excluding the dragged tab) for a drop landing
-   *  before/after `overTab`. */
-  function dropIndex(tabs: string[], overTab: string, after: boolean, dragged: string): number {
-    const without = tabs.filter((t) => t !== dragged);
-    const i = without.indexOf(overTab);
-    if (i === -1) return without.length;
-    return after ? i + 1 : i;
   }
   function onTabDown(e: PointerEvent, t: string) {
     if (e.button !== 0) return;
@@ -101,23 +95,53 @@
       didDrag = true;
     }
     const el = document.elementFromPoint(e.clientX, e.clientY);
-    const tabEl = el?.closest<HTMLElement>("[data-tab]");
-    if (tabEl && tabEl.dataset.tab !== dragTab) {
-      const panel = Number(tabEl.dataset.panel);
-      const r = tabEl.getBoundingClientRect();
-      const after = e.clientX > r.left + r.width / 2;
-      drop = { kind: "tab", panel, index: dropIndex(layout[panel].tabs, tabEl.dataset.tab!, after, dragTab) };
+    const barEl = el?.closest<HTMLElement>(".tabs");
+    if (barEl) {
+      // anywhere over a tab bar — a tab OR the gap between tabs — joins that
+      // panel. The slot is the pointer's reading-order position among the bar's
+      // tabs (wrap-aware), so there's no dead gap that falls through to a split.
+      const panelEl = barEl.closest<HTMLElement>(".dock-panel");
+      const panels = [...document.querySelectorAll<HTMLElement>(".dock .dock-panel")];
+      const pi = panels.indexOf(panelEl as HTMLElement);
+      const els = [...barEl.querySelectorAll<HTMLElement>(".tab")].filter((b) => b.dataset.tab !== dragTab);
+      let index = els.length;
+      for (let i = 0; i < els.length; i++) {
+        const r = els[i].getBoundingClientRect();
+        if (e.clientY < r.top || (e.clientY <= r.bottom && e.clientX < r.left + r.width / 2)) {
+          index = i;
+          break;
+        }
+      }
+      drop = { kind: "tab", panel: pi, index };
+      caret = caretAt(barEl, els, index);
       return;
     }
     const panelEl = el?.closest<HTMLElement>(".dock-panel");
     if (panelEl) {
-      const panels = [...document.querySelectorAll(".dock .dock-panel")];
+      // over a panel body → split into a new panel above/below
+      const panels = [...document.querySelectorAll<HTMLElement>(".dock .dock-panel")];
       const pi = panels.indexOf(panelEl);
       const r = panelEl.getBoundingClientRect();
       drop = { kind: "split", at: e.clientY < r.top + r.height / 2 ? pi : pi + 1 };
+      caret = null;
       return;
     }
-    drop = null; // over the dragged tab itself or outside → no-op on release
+    drop = null;
+    caret = null;
+  }
+  /** Insertion-caret rect (viewport coords) for slot `index` among a bar's
+   *  non-dragged tabs `els`. */
+  function caretAt(bar: HTMLElement, els: HTMLElement[], index: number): { x: number; y: number; h: number } {
+    if (els.length === 0) {
+      const r = bar.getBoundingClientRect();
+      return { x: r.left + 6, y: r.top + 5, h: 16 };
+    }
+    if (index < els.length) {
+      const r = els[index].getBoundingClientRect();
+      return { x: r.left - 3, y: r.top, h: r.height };
+    }
+    const r = els[els.length - 1].getBoundingClientRect();
+    return { x: r.right + 1, y: r.top, h: r.height };
   }
   function onTabUp() {
     if (dragTab !== null && drop) {
@@ -130,6 +154,7 @@
     dragTab = null;
     downTab = null;
     drop = null;
+    caret = null;
   }
   function selectTab(panel: number, t: string) {
     if (didDrag) {
@@ -344,6 +369,9 @@
       aria-label={$panelsCollapsed ? "show panels" : "hide panels"}
     >{$panelsCollapsed ? "‹" : "›"}</button>
   </aside>
+  {#if dragTab && drop?.kind === "tab" && caret}
+    <div class="drop-caret" style="left: {caret.x}px; top: {caret.y}px; height: {caret.h}px"></div>
+  {/if}
 </div>
 
 <style>
@@ -471,6 +499,19 @@
   }
   .dock-panel.splitbelow {
     box-shadow: inset 0 -2px 0 0 var(--accent); /* new panel below */
+  }
+  /* insertion caret — the slot a dragged tab will join; glides between slots */
+  .drop-caret {
+    position: fixed;
+    width: 2px;
+    background: var(--accent);
+    border-radius: 1px;
+    z-index: 50;
+    pointer-events: none;
+    transition:
+      left 90ms ease,
+      top 90ms ease,
+      height 90ms ease;
   }
   /* each panel's active view scrolls on its own */
   .panel-view {
