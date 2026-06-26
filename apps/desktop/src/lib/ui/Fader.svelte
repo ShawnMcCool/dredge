@@ -79,17 +79,10 @@
 
   function onkeydown(e: KeyboardEvent) {
     if (disabled) return;
-    const nudge = (dir: number) =>
-      set(posToValue(valueToPos01(value + dir * step, min, max), min, max, step));
+    // Arrow keys are reserved for global waveform navigation — a focused fader
+    // must not swallow them (it used to nudge its value and preventDefault,
+    // which killed bar-nav after you touched a slider). Home/End still jump.
     switch (e.key) {
-      case "ArrowUp":
-      case "ArrowRight":
-        nudge(1);
-        break;
-      case "ArrowDown":
-      case "ArrowLeft":
-        nudge(-1);
-        break;
       case "Home":
         set(min);
         break;
