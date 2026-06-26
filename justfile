@@ -13,6 +13,10 @@ build:
     cargo build -p server --release
     cd apps/desktop && pnpm tauri build
 
+# Build everything fresh, then launch the release desktop app
+go: build
+    target/release/dredge
+
 # Stage the release .deb into dist/ for distribution
 package: build
     #!/usr/bin/env bash
