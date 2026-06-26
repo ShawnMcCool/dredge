@@ -101,6 +101,22 @@ on the Focusrite (with count-in) and confirms it lands in time. Then Part 2.
 
 (Newest first.)
 
+- 2026-06-26: **Logging side-quest (resolved + tested autonomously).** The
+  "empty debug log" mystery was `redirect_if_headless` funnelling backend stderr
+  into `~/.local/share/dredge/dredge.log` whenever stderr isn't a terminal — the
+  user's `2>file` got overridden. Fix: `DREDGE_DEBUG` now skips the redirect (so
+  `env DREDGE_DEBUG=1 ./dredge 2>file` works), a non-debug `2>file` gets a
+  breadcrumb, `just logs` tails it; documented in DEVELOPMENT.md. Verified via
+  the headless daemon (both redirect + no-redirect paths).
+  **Bonus from reading the existing log — real values:** `rate.num=1
+  rate.denom=48000` (frames/sec = denom/num CONFIRMED); `rtl[auto]:
+  output_delay=1536 input_delay=1536 rtl=3072` (64 ms, sign correct — why it
+  sounded "tighter"); count-in anchor correct (`ring_start≈count-in-end`).
+  **Found bug:** recording **from a mid-song playhead** yields a NEGATIVE
+  `ring_start` (capture starts after playback is already at the anchor) →
+  falls back to `snapshot_last`. Needs a fix (clamp negative → 0, or start
+  capture before seeking). AS-6 (auto RTL) VERIFIED working.
+
 - 2026-06-25: Field testing → two changes. (1) Recordings UI: "default (follow
   devices)" input + "from playhead" span (35067c2). (2) Count-in delay fix
   (3c7dcff) — pin the take anchor at the first real-playback tick instead of
