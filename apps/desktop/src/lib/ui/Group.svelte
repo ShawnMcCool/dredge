@@ -20,7 +20,9 @@
     display: inline-flex;
     align-items: center;
     flex: 0 0 auto;
-    flex-wrap: nowrap;
+    /* Wrap rather than overflow: a group wider than its box reflows its controls
+       to the next line instead of bleeding past the border. */
+    flex-wrap: wrap;
     gap: calc(var(--space) / 2);
     min-width: 0;
   }

@@ -96,5 +96,10 @@
     flex-direction: column;
     padding: 10px;
     min-width: 0;
+    /* Hard backstop: a control row can never visually bleed past the box border.
+       Combined with wrapping rows (Group/Toolbar wrap), content reflows within
+       the box rather than overflowing. No control box uses absolute popovers, so
+       clipping is safe here. */
+    overflow: hidden;
   }
 </style>

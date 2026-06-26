@@ -77,7 +77,11 @@
 </script>
 
 <Modal {open} title="recording latency" closable {onclose}>
-  <p class="copy">Patch an output to an input. dredge plays a click and measures how long it takes to come back.</p>
+  <p class="copy">
+    Patch a line output to a line input (input set to <strong>LINE</strong>, not INST; gain
+    moderate). Select that input below. <strong>Measure</strong> emits a 3&nbsp;ms impulse and
+    times its return through the loop — the round-trip delay becomes the applied record latency.
+  </p>
 
   <div class="row">
     <select bind:value={selectedInput} disabled={measuring} aria-label="input device">

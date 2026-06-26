@@ -129,6 +129,7 @@
 <style>
   .bar {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     align-items: center;
   }
@@ -143,6 +144,11 @@
     font: inherit;
     font-size: 12px;
     cursor: pointer;
+    /* Share the row and shrink with a native ellipsis instead of pushing the
+       record button off the edge. The device list is the greedy one. */
+    flex: 1 1 8em;
+    min-width: 0;
+    max-width: 100%;
   }
 
   select:disabled {
@@ -152,6 +158,7 @@
 
   .row {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     align-items: center;
     margin-top: 6px;
