@@ -323,6 +323,7 @@
                   {t}
                 </button>
               {/each}
+              <span class="tab-spacer" aria-hidden="true"></span>
             </nav>
             <div class="panel-view">
               {#key panel.active}
@@ -509,9 +510,18 @@
     flex: 0 0 auto;
     display: flex;
     flex-wrap: wrap;
+    /* left-aligned tabs; completed (wrapped) rows justify to fill the width.
+       space-between justifies every full row, and the trailing `.tab-spacer`
+       (flex-grow) only ever lands on the last row — it eats that row's free
+       space so the last row stays left-aligned. */
+    justify-content: space-between;
     gap: calc(var(--space) / 2);
     padding: calc(var(--space) / 2) var(--space);
     border-bottom: 1px solid var(--line);
+    min-width: 0;
+  }
+  .tab-spacer {
+    flex: 1 1 auto;
     min-width: 0;
   }
 
@@ -519,10 +529,8 @@
      glyphs. Small targets got unreliable when the panel wrapped to more rows at
      narrow (tiled) widths under fractional webview zoom. */
   .tab {
-    /* grow to fill the row so every pixel of each wrapped line is a button —
-       a sparse last row (e.g. settings/guide) left wide dead strips of bare
-       container where the finger cursor flickered off. */
-    flex: 1 1 auto;
+    /* natural width, left-aligned; the row-justify lives on `.tabs` */
+    flex: 0 0 auto;
     text-align: center;
     background: none;
     border: none;
