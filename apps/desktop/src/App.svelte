@@ -571,6 +571,7 @@
      narrow (tiled) widths under fractional webview zoom. */
   .tab {
     /* natural width, left-aligned; the row-justify lives on `.tabs` */
+    position: relative;
     flex: 0 0 auto;
     text-align: center;
     background: none;
@@ -579,26 +580,44 @@
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--muted);
-    padding: 6px 10px;
-    border-radius: var(--radius);
+    padding: 5px 8px 7px;
     cursor: pointer;
     line-height: 1;
     touch-action: none; /* pointer drag-to-reorder, not scroll */
   }
+  /* selected/hover anchor: an underline under the tab — the classic tab metaphor,
+     so the strip reads as tabs and the active page is obvious */
+  .tab::after {
+    content: "";
+    position: absolute;
+    left: 4px;
+    right: 4px;
+    bottom: 0;
+    height: 2px;
+    border-radius: 1px;
+    background: transparent;
+    transition:
+      background-color 100ms ease,
+      opacity 100ms ease;
+  }
 
   .tab:hover {
     color: var(--fg);
-    background: var(--bg-raised);
+  }
+  .tab:hover::after {
+    background: var(--accent-dim);
   }
 
   .tab.active {
     color: var(--accent);
   }
+  .tab.active::after {
+    background: var(--accent);
+  }
 
   .tab.dragging {
-    background: var(--bg-raised);
     color: var(--fg);
-    opacity: 0.85;
+    opacity: 0.4;
     cursor: grabbing;
   }
 
