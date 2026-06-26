@@ -872,6 +872,19 @@
   // action clusters for the selection and the selected loop.
   let hoverPt = $state<{ x: number; y: number } | null>(null);
 
+  // When the cursor is over the selection, the selection owns the hover — the
+  // loop's controls must NOT reveal where the two overlap. The loop clusters use
+  // this gated pointer (null over the selection) instead of the raw hoverPt.
+  let loopPointer = $derived.by(() => {
+    const sel = $selection;
+    if (sel && hoverPt) {
+      const a = secToX(view, sel.start);
+      const b = secToX(view, sel.end);
+      if (hoverPt.x >= Math.min(a, b) && hoverPt.x <= Math.max(a, b)) return null;
+    }
+    return hoverPt;
+  });
+
   let dur = $derived($openSong?.song.duration_secs ?? 0);
   const MIN_WIN = 1; // seconds — min visible window
 
@@ -1092,7 +1105,7 @@
       bandTop={LANE_H}
       bandHeight={WAVE_H}
       viewWidth={view.width}
-      pointer={hoverPt}
+      pointer={loopPointer}
       count={3}
     >
       <button class="sa-btn" onclick={saveWorkingLoop} title="save loop" aria-label="save working loop">
@@ -1111,7 +1124,7 @@
       bandTop={LANE_H}
       bandHeight={WAVE_H}
       viewWidth={view.width}
-      pointer={hoverPt}
+      pointer={loopPointer}
       count={2}
     >
       <button class="sa-btn" onclick={playCurrentLoop} title="play loop" aria-label="play loop">⟳</button>
