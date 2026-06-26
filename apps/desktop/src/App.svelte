@@ -36,7 +36,7 @@
     settingsOpen,
     panelLayout,
   } from "./lib/stores";
-  import { reconcile, moveTab, setActive, type DockLayout } from "./lib/dock";
+  import { reconcile, moveTab, splitTab, setActive, type DockLayout } from "./lib/dock";
 
   const ALL_TABS = ["structure", "loops", "routines", "export", "profile", "devices", "settings", "guide"] as const;
   type Tab = (typeof ALL_TABS)[number];
@@ -53,14 +53,17 @@
   };
   // The dock: the right aside is a vertical stack of panels, each a set of tabs.
   // The layout is reconciled against the known tabs (adding/removing one in code
-  // stays graceful); a live drag renders from `dragLayout`.
+  // stays graceful).
   const layout = $derived(reconcile($panelLayout, [...ALL_TABS]));
-  let dragLayout = $state<DockLayout | null>(null);
-  const shown = $derived(dragLayout ?? layout);
 
-  // Drag a tab to reorder it within its panel (FLIP animates the rest). A small
-  // move turns a click into a drag; a plain click selects the tab in its panel.
+  // Drag a tab to reorder it (drop on a tab bar), join it into another panel
+  // (drop on that bar), or split it into a new panel (drop on a panel's body —
+  // top half = above, bottom half = below). A drop indicator previews where it
+  // lands; the move commits on release (FLIP animates the result). A small move
+  // turns a click into a drag; a plain click selects the tab in its panel.
+  type Drop = { kind: "tab"; panel: number; index: number } | { kind: "split"; at: number };
   let dragTab = $state<string | null>(null);
+  let drop = $state<Drop | null>(null);
   let downTab: string | null = null;
   let downX = 0;
   let downY = 0;
@@ -69,6 +72,14 @@
 
   function panelOf(l: DockLayout, t: string): number {
     return l.findIndex((p) => p.tabs.includes(t));
+  }
+  /** Insertion index in a panel (excluding the dragged tab) for a drop landing
+   *  before/after `overTab`. */
+  function dropIndex(tabs: string[], overTab: string, after: boolean, dragged: string): number {
+    const without = tabs.filter((t) => t !== dragged);
+    const i = without.indexOf(overTab);
+    if (i === -1) return without.length;
+    return after ? i + 1 : i;
   }
   function onTabDown(e: PointerEvent, t: string) {
     if (e.button !== 0) return;
@@ -88,28 +99,42 @@
       if (Math.abs(e.clientX - downX) < DRAG_PX && Math.abs(e.clientY - downY) < DRAG_PX) return;
       dragTab = downTab;
       didDrag = true;
-      dragLayout = layout;
     }
-    if (!dragLayout) return;
-    const el = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>("[data-tab]");
-    const over = el?.dataset.tab;
-    if (!over || over === dragTab) return;
-    const overPanel = Number(el?.dataset.panel);
-    // phase 2: reorder within the same panel only (join/split land in later phases)
-    if (!Number.isInteger(overPanel) || overPanel !== panelOf(dragLayout, dragTab)) return;
-    const toIndex = dragLayout[overPanel].tabs.indexOf(over);
-    dragLayout = moveTab(dragLayout, dragTab, overPanel, toIndex);
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const tabEl = el?.closest<HTMLElement>("[data-tab]");
+    if (tabEl && tabEl.dataset.tab !== dragTab) {
+      const panel = Number(tabEl.dataset.panel);
+      const r = tabEl.getBoundingClientRect();
+      const after = e.clientX > r.left + r.width / 2;
+      drop = { kind: "tab", panel, index: dropIndex(layout[panel].tabs, tabEl.dataset.tab!, after, dragTab) };
+      return;
+    }
+    const panelEl = el?.closest<HTMLElement>(".dock-panel");
+    if (panelEl) {
+      const panels = [...document.querySelectorAll(".dock .dock-panel")];
+      const pi = panels.indexOf(panelEl);
+      const r = panelEl.getBoundingClientRect();
+      drop = { kind: "split", at: e.clientY < r.top + r.height / 2 ? pi : pi + 1 };
+      return;
+    }
+    drop = null; // over the dragged tab itself or outside → no-op on release
   }
   function onTabUp() {
-    if (dragTab !== null && dragLayout) void actions.setPanelLayout(dragLayout);
+    if (dragTab !== null && drop) {
+      const next =
+        drop.kind === "tab"
+          ? moveTab(layout, dragTab, drop.panel, drop.index)
+          : splitTab(layout, dragTab, drop.at);
+      void actions.setPanelLayout(next);
+    }
     dragTab = null;
     downTab = null;
-    dragLayout = null;
+    drop = null;
   }
   function selectTab(panel: number, t: string) {
     if (didDrag) {
       didDrag = false;
-      return; // the pointer gesture was a reorder, not a select
+      return; // the pointer gesture was a drag, not a select
     }
     void actions.setPanelLayout(setActive(layout, panel, t));
   }
@@ -215,8 +240,14 @@
   <aside class="panels" class:collapsed={$panelsCollapsed}>
     {#if !$panelsCollapsed}
       <div class="dock">
-        {#each shown as panel, pi (pi)}
-          <section class="dock-panel" style="flex-grow: {panel.weight}">
+        {#each layout as panel, pi (pi)}
+          <section
+            class="dock-panel"
+            class:droptab={drop?.kind === "tab" && drop.panel === pi}
+            class:splitabove={drop?.kind === "split" && drop.at === pi}
+            class:splitbelow={drop?.kind === "split" && drop.at === pi + 1 && pi === layout.length - 1}
+            style="flex-grow: {panel.weight}"
+          >
             <nav class="tabs">
               {#each panel.tabs as t (t)}
                 <button
@@ -358,6 +389,16 @@
   }
   .dock-panel + .dock-panel {
     border-top: 1px solid var(--line);
+  }
+  /* drop indicators while dragging a tab */
+  .dock-panel.droptab {
+    box-shadow: inset 0 0 0 1px var(--accent-dim); /* join into this panel */
+  }
+  .dock-panel.splitabove {
+    box-shadow: inset 0 2px 0 0 var(--accent); /* new panel above */
+  }
+  .dock-panel.splitbelow {
+    box-shadow: inset 0 -2px 0 0 var(--accent); /* new panel below */
   }
   /* each panel's active view scrolls on its own */
   .panel-view {
