@@ -1267,22 +1267,14 @@ export const actions = {
     openSong.update((o) => (o ? { ...o, routines } : o));
   },
 
-  /** Upsert a routine (id 0 = new) and refresh the list. */
-  async saveRoutine(routine: Routine): Promise<void> {
+  /** Upsert a routine (id 0 = new) and refresh the list; returns the stored
+   *  routine (with its real id), or null when no song is open. */
+  async saveRoutine(routine: Routine): Promise<Routine | null> {
     const open = get(openSong);
-    if (!open) return;
-    await cmd("routine.save", { song_id: open.song.id, routine });
+    if (!open) return null;
+    const saved = await cmd<Routine>("routine.save", { song_id: open.song.id, routine });
     await this.refreshRoutines();
-  },
-
-  /** New routine seeded with one block captured from the current state, so it's
-   *  immediately launchable. */
-  async newRoutine(): Promise<void> {
-    await this.saveRoutine({ id: 0, name: "routine", blocks: [this.captureBlock()] });
-  },
-
-  async addBlock(routine: Routine): Promise<void> {
-    await this.saveRoutine({ ...routine, blocks: [...routine.blocks, this.captureBlock()] });
+    return saved;
   },
 
   async deleteRoutine(id: number): Promise<void> {
