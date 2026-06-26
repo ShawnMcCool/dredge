@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { actions, inputDevice, inputDevices, outputDevice, outputDevices } from "../lib/stores";
+  import { actions, inputDevice, inputDevices, latencyStatus, outputDevice, outputDevices } from "../lib/stores";
   import { asyncAction } from "../lib/async-action.svelte";
   import { defaultName } from "../lib/devices";
   import Button from "../lib/ui/Button.svelte";
@@ -24,9 +24,15 @@
     });
   }
 
+  // frames → ms at the engine's fixed 48 kHz, or "—" when not yet measured.
+  function latencyMs(frames: number | null): string {
+    return frames == null ? "—" : `${(frames / 48000 * 1000).toFixed(1)} ms`;
+  }
+
   onMount(() => {
     void act.run(() => actions.refreshOutputs());
     void act.run(() => actions.refreshInputs());
+    void actions.refreshLatency();
   });
 </script>
 
@@ -59,6 +65,21 @@
     {/each}
   </div>
   <Button onclick={() => (calOpen = true)}>calibrate latency…</Button>
+  {#if $latencyStatus}
+    <dl class="latency">
+      <dt>recording latency</dt>
+      <dd>
+        <span class="lat-row" class:active={$latencyStatus.source !== "loopback"}>
+          auto-detected: {latencyMs($latencyStatus.auto_frames)}
+          {#if $latencyStatus.source !== "loopback"}<span class="tag">in use</span>{/if}
+        </span>
+        <span class="lat-row" class:active={$latencyStatus.source === "loopback"}>
+          calibrated: {latencyMs($latencyStatus.loopback_frames)}
+          {#if $latencyStatus.source === "loopback"}<span class="tag">in use</span>{/if}
+        </span>
+      </dd>
+    </dl>
+  {/if}
 </section>
 
 <Button onclick={() => resetToSystem()}>reset to system</Button>
@@ -110,6 +131,43 @@
 
   .dev.sel {
     border-color: var(--accent);
+  }
+
+  .latency {
+    margin: calc(var(--space) / 2) 0 0;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .latency dt {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 10px;
+    margin-bottom: 2px;
+  }
+
+  .latency dd {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .lat-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+
+  .lat-row.active {
+    color: var(--accent);
+  }
+
+  .tag {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--accent);
   }
 
   .error {

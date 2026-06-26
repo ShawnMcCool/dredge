@@ -206,7 +206,7 @@ fn calibrate_phased(app: &Arc<Mutex<App>>, p: Value) -> Result<Value, String> {
     let mut guard = app.lock().unwrap();
     guard
         .store
-        .set_setting(INPUT_LATENCY_KEY, &json!(rtl))
+        .set_setting(INPUT_LATENCY_LOOPBACK_KEY, &json!(rtl))
         .err_str()?;
     guard
         .store
@@ -475,10 +475,15 @@ struct PendingRecording {
     ring_start: Option<i64>,
 }
 
-const INPUT_LATENCY_KEY: &str = "input_latency_frames";
-/// How `INPUT_LATENCY_KEY` was last set: `"auto"` (default — re-measured from
-/// PipeWire delays on every take) or `"loopback"` (pinned by AS-7 calibration,
-/// which auto must not clobber).
+/// Auto-detected RTL baseline in frames: output+input PipeWire delays,
+/// re-measured on every take (kept current even while loopback is active).
+const INPUT_LATENCY_AUTO_KEY: &str = "input_latency_auto";
+/// Loopback-calibrated RTL in frames, pinned by AS-7 calibration. Persisted but
+/// inactive while `latency_source` is `"auto"`.
+const INPUT_LATENCY_LOOPBACK_KEY: &str = "input_latency_loopback";
+/// Which measurement is active: `"auto"` (default — auto baseline) or
+/// `"loopback"` (the calibrated value). The active value is DERIVED from this by
+/// `input_latency_frames`; there is no single stored "current" value.
 const LATENCY_SOURCE_KEY: &str = "latency_source";
 /// Absolute-sample threshold for the latency-calibration click onset detector.
 const CALIBRATION_CLICK_THRESHOLD: f32 = 0.3;
@@ -705,6 +710,7 @@ impl App {
             "recording.setMute" => self.recording_set_mute(p),
             "recording.setNudge" => self.recording_set_nudge(p),
             "recording.calibrate.reset" => self.calibrate_reset(),
+            "recording.latency" => self.recording_latency(),
             _ => Err(format!("unknown command: {cmd}")),
         }
     }
@@ -1619,28 +1625,56 @@ impl App {
 
     // --- recording ---------------------------------------------------------
 
-    /// Persisted round-trip input latency in frames (0 until calibrated).
-    fn input_latency_frames(&self) -> i64 {
+    /// Read a stored frame count, or `None` when the setting is unset.
+    fn latency_setting(&self, key: &str) -> Option<i64> {
         self.store
-            .get_setting(INPUT_LATENCY_KEY)
+            .get_setting(key)
             .ok()
             .flatten()
             .and_then(|v| v.as_i64())
-            .unwrap_or(0)
     }
 
-    /// Drop a loopback calibration: reset `latency_source` to `"auto"` and clear
-    /// the manual value so per-take auto-trim (output+input PipeWire delays)
-    /// resumes setting `input_latency_frames` again.
+    /// The current latency source: `"loopback"` if a calibration is active, else
+    /// `"auto"` (the default).
+    fn latency_source(&self) -> String {
+        self.store
+            .get_setting(LATENCY_SOURCE_KEY)
+            .ok()
+            .flatten()
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .unwrap_or_else(|| "auto".to_string())
+    }
+
+    /// Active round-trip input latency in frames, DERIVED from the source: the
+    /// loopback value when calibrated, else the auto baseline (0 when unset).
+    fn input_latency_frames(&self) -> i64 {
+        let key = if self.latency_source() == "loopback" {
+            INPUT_LATENCY_LOOPBACK_KEY
+        } else {
+            INPUT_LATENCY_AUTO_KEY
+        };
+        self.latency_setting(key).unwrap_or(0)
+    }
+
+    /// Latency status for the devices readout: both stored measurements (null
+    /// when unset) and which one is in use.
+    fn recording_latency(&self) -> Result<Value, String> {
+        Ok(json!({
+            "auto_frames": self.latency_setting(INPUT_LATENCY_AUTO_KEY),
+            "loopback_frames": self.latency_setting(INPUT_LATENCY_LOOPBACK_KEY),
+            "source": self.latency_source(),
+        }))
+    }
+
+    /// Drop a loopback calibration: reset `latency_source` to `"auto"` so the
+    /// auto baseline becomes active again. The calibrated value stays stored
+    /// (inactive) so the devices readout still shows it.
     fn calibrate_reset(&mut self) -> Result<Value, String> {
         self.store
             .set_setting(LATENCY_SOURCE_KEY, &json!("auto"))
             .err_str()?;
-        self.store
-            .set_setting(INPUT_LATENCY_KEY, &json!(0))
-            .err_str()?;
         self.refresh_layers();
-        Ok(json!({ "source": "auto", "latency_frames": 0 }))
+        Ok(json!({ "source": "auto" }))
     }
 
     /// Rebuild the engine's layer set from the open song's recordings. A take
@@ -1818,27 +1852,20 @@ impl App {
         };
         self.audio.disarm_playback_clock();
         self.audio.send(EngineCmd::Pause);
-        // Auto RTL baseline: shift every take earlier by the round-trip latency
-        // PipeWire reports (output buffering + input buffering). Skip when a
-        // loopback calibration (AS-7) has pinned the value.
-        let source = self
-            .store
-            .get_setting(LATENCY_SOURCE_KEY)
-            .ok()
-            .flatten()
-            .and_then(|v| v.as_str().map(str::to_owned));
-        if source.as_deref() != Some("loopback") {
-            let output_delay = self.audio.output_delay_frames();
-            let rtl = (output_delay + input_delay).max(0);
-            if std::env::var("DREDGE_DEBUG").is_ok() {
-                eprintln!(
-                    "dredge rtl[auto]: output_delay={output_delay} input_delay={input_delay} rtl={rtl}"
-                );
-            }
-            self.store
-                .set_setting(INPUT_LATENCY_KEY, &json!(rtl))
-                .err_str()?;
+        // Auto RTL baseline: the round-trip latency PipeWire reports (output
+        // buffering + input buffering). Always recorded so the estimate stays
+        // current — even while a loopback calibration is the active source; which
+        // value `refresh_layers` actually applies is decided by `latency_source`.
+        let output_delay = self.audio.output_delay_frames();
+        let rtl = (output_delay + input_delay).max(0);
+        if std::env::var("DREDGE_DEBUG").is_ok() {
+            eprintln!(
+                "dredge rtl[auto]: output_delay={output_delay} input_delay={input_delay} rtl={rtl}"
+            );
         }
+        self.store
+            .set_setting(INPUT_LATENCY_AUTO_KEY, &json!(rtl))
+            .err_str()?;
         let dir = self
             .library
             .bundle_dir(pending.song_id)
@@ -2958,10 +2985,95 @@ mod recording_tests {
         assert!(finished.ok, "stop failed: {:?}", finished.error);
 
         assert_eq!(
-            app.store.get_setting(INPUT_LATENCY_KEY).unwrap(),
+            app.store.get_setting(INPUT_LATENCY_AUTO_KEY).unwrap(),
             Some(json!(200)),
             "auto RTL baseline = output_delay(80) + input_delay(120)"
         );
+    }
+
+    /// The auto baseline is recorded even when a loopback calibration is the
+    /// active source, so the estimate stays current and the devices readout can
+    /// show both. The active value still derives from the loopback calibration.
+    #[test]
+    fn finalize_refreshes_auto_baseline_even_under_loopback() {
+        let (mock, mut app, _song_id, _lib) =
+            make_shared_mock_with_recorder(Box::new(FakeRecorder {
+                canned: vec![0.3f32; SAMPLE_RATE as usize * CHANNELS],
+                input_delay: 120,
+                ..Default::default()
+            }));
+        mock.lock().unwrap().output_delay = 80;
+        app.store
+            .set_setting(LATENCY_SOURCE_KEY, &json!("loopback"))
+            .unwrap();
+        app.store
+            .set_setting(INPUT_LATENCY_LOOPBACK_KEY, &json!(512))
+            .unwrap();
+
+        app.dispatch(Request {
+            id: 1,
+            cmd: "recording.start".into(),
+            params: json!({ "span": "song", "device_id": "0" }),
+        });
+        let finished = app.dispatch(Request {
+            id: 2,
+            cmd: "recording.stop".into(),
+            params: json!(null),
+        });
+        assert!(finished.ok, "stop failed: {:?}", finished.error);
+
+        assert_eq!(
+            app.store.get_setting(INPUT_LATENCY_AUTO_KEY).unwrap(),
+            Some(json!(200)),
+            "auto baseline kept current even under loopback"
+        );
+        assert_eq!(
+            app.store.get_setting(INPUT_LATENCY_LOOPBACK_KEY).unwrap(),
+            Some(json!(512)),
+            "loopback value untouched by finalize"
+        );
+        assert_eq!(
+            app.input_latency_frames(),
+            512,
+            "active value still derives from the loopback calibration"
+        );
+    }
+
+    /// `recording.latency` reports both stored measurements and the active
+    /// source.
+    #[test]
+    fn recording_latency_reports_both_values_and_source() {
+        let (_mock, mut app, _song_id, _lib) =
+            make_shared_mock_with_recorder(Box::new(FakeRecorder::default()));
+
+        // Fresh: neither measurement taken yet, default source.
+        let fresh = app.dispatch(Request {
+            id: 1,
+            cmd: "recording.latency".into(),
+            params: json!(null),
+        });
+        assert!(fresh.ok, "latency failed: {:?}", fresh.error);
+        assert_eq!(fresh.data["auto_frames"], json!(null));
+        assert_eq!(fresh.data["loopback_frames"], json!(null));
+        assert_eq!(fresh.data["source"], json!("auto"));
+
+        app.store
+            .set_setting(INPUT_LATENCY_AUTO_KEY, &json!(200))
+            .unwrap();
+        app.store
+            .set_setting(INPUT_LATENCY_LOOPBACK_KEY, &json!(512))
+            .unwrap();
+        app.store
+            .set_setting(LATENCY_SOURCE_KEY, &json!("loopback"))
+            .unwrap();
+        let resp = app.dispatch(Request {
+            id: 2,
+            cmd: "recording.latency".into(),
+            params: json!(null),
+        });
+        assert_eq!(resp.data["auto_frames"], json!(200));
+        assert_eq!(resp.data["loopback_frames"], json!(512));
+        assert_eq!(resp.data["source"], json!("loopback"));
     }
 
     /// Locks the anchor wiring used by `finalize_recording`: a song frame is
@@ -3210,7 +3322,7 @@ mod recording_tests {
 
         let g = app.lock().unwrap();
         assert_eq!(
-            g.store.get_setting(INPUT_LATENCY_KEY).unwrap(),
+            g.store.get_setting(INPUT_LATENCY_LOOPBACK_KEY).unwrap(),
             Some(json!(OFFSET as i64))
         );
         assert_eq!(
@@ -3219,8 +3331,9 @@ mod recording_tests {
         );
     }
 
-    /// `recording.calibrate.reset` returns to auto latency: source `"auto"` and
-    /// the manual value cleared, so per-take auto-trim resumes.
+    /// `recording.calibrate.reset` returns to auto latency: source flips to
+    /// `"auto"` so the auto baseline becomes active, while the calibrated value
+    /// stays stored (inactive) for the devices readout.
     #[test]
     fn calibrate_reset_returns_to_auto() {
         let (_mock, mut app, _song_id, _lib) =
@@ -3229,7 +3342,10 @@ mod recording_tests {
             .set_setting(LATENCY_SOURCE_KEY, &json!("loopback"))
             .unwrap();
         app.store
-            .set_setting(INPUT_LATENCY_KEY, &json!(512))
+            .set_setting(INPUT_LATENCY_LOOPBACK_KEY, &json!(512))
+            .unwrap();
+        app.store
+            .set_setting(INPUT_LATENCY_AUTO_KEY, &json!(200))
             .unwrap();
 
         let resp = app.dispatch(Request {
@@ -3243,8 +3359,14 @@ mod recording_tests {
             Some(json!("auto"))
         );
         assert_eq!(
-            app.store.get_setting(INPUT_LATENCY_KEY).unwrap(),
-            Some(json!(0))
+            app.store.get_setting(INPUT_LATENCY_LOOPBACK_KEY).unwrap(),
+            Some(json!(512)),
+            "the calibrated value persists, just inactive"
+        );
+        assert_eq!(
+            app.input_latency_frames(),
+            200,
+            "active value now derives from the auto baseline"
         );
     }
 

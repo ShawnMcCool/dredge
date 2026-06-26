@@ -158,6 +158,12 @@ export interface CalibrationResult {
   window_ms: number;
 }
 
+export interface LatencyStatus {
+  auto_frames: number | null;
+  loopback_frames: number | null;
+  source: string;
+}
+
 export interface StemMix {
   levels: number[]; // 0..100 per stem
   mutes: boolean[];
@@ -341,6 +347,8 @@ export const stemsError = writable<string | null>(null);
 export const recordings = writable<Recording[]>([]);
 /** True while a recording.start has been sent and recording.stop has not yet resolved. */
 export const recordingActive = writable<boolean>(false);
+/** Recording-latency status for the devices readout (both measurements + which is active). */
+export const latencyStatus = writable<LatencyStatus | null>(null);
 export const analysisError = writable<string | null>(null);
 /** Loop edges snap to downbeats while on (only meaningful with analysis). */
 export const gridSnap = writable(true);
@@ -1203,12 +1211,20 @@ export const actions = {
     await cmd("recording.setNudge", { id, nudge_ms: framesToMs(nudgeFrames) });
   },
 
+  /** Pull the latency status (both measurements + active source) into the store. */
+  async refreshLatency(): Promise<void> {
+    latencyStatus.set(await cmd<LatencyStatus>("recording.latency"));
+  },
+
   async calibrateLatency(deviceId: string): Promise<CalibrationResult> {
-    return await cmd<CalibrationResult>("recording.calibrate", { device_id: deviceId });
+    const result = await cmd<CalibrationResult>("recording.calibrate", { device_id: deviceId });
+    await this.refreshLatency();
+    return result;
   },
 
   async resetLatency(): Promise<void> {
     await cmd("recording.calibrate.reset");
+    await this.refreshLatency();
   },
 
   // --- prepare (analysis → stems) ---
