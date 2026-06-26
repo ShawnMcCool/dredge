@@ -97,6 +97,9 @@ impl Library {
             for lp in &e.manifest.loops {
                 s.insert(lp.id.0);
             }
+            for r in &e.manifest.routines {
+                s.insert(r.id.0);
+            }
         }
         s
     }
@@ -177,6 +180,7 @@ impl Library {
             notes: vec![],
             analysis: None,
             recordings: vec![],
+            routines: vec![],
         };
         bundle::write_manifest(&dir, &manifest)?;
         self.entries.insert(song.id.0, Entry { dir, manifest });
@@ -345,6 +349,45 @@ impl Library {
         for r in renames {
             self.update_loop(r.id, &r.name, None, r.start, r.end)?;
         }
+        Ok(())
+    }
+
+    // ── routines ─────────────────────────────────────────────────────────────────
+
+    pub fn list_routines(&self, song_id: SongId) -> Vec<Routine> {
+        self.entries
+            .get(&song_id.0)
+            .map(|e| e.manifest.routines.clone())
+            .unwrap_or_default()
+    }
+
+    /// Upsert a routine. `id == RoutineId(0)` mints a fresh id and appends;
+    /// otherwise the routine with that id is replaced in place (error if no such
+    /// routine exists). Returns the stored routine, with its real id.
+    pub fn save_routine(&mut self, song_id: SongId, mut routine: Routine) -> Result<Routine> {
+        if routine.id.0 == 0 {
+            routine.id = RoutineId(Self::fresh_id(&mut self.used_ids()));
+            let entry = self.entry_mut(song_id)?;
+            entry.manifest.routines.push(routine.clone());
+            Self::persist(entry)?;
+            return Ok(routine);
+        }
+        let entry = self.entry_mut(song_id)?;
+        let slot = entry
+            .manifest
+            .routines
+            .iter_mut()
+            .find(|r| r.id == routine.id)
+            .ok_or(crate::error::Error::NotFound)?;
+        *slot = routine.clone();
+        Self::persist(entry)?;
+        Ok(routine)
+    }
+
+    pub fn delete_routine(&mut self, song_id: SongId, id: RoutineId) -> Result<()> {
+        let entry = self.entry_mut(song_id)?;
+        entry.manifest.routines.retain(|r| r.id != id);
+        Self::persist(entry)?;
         Ok(())
     }
 
@@ -528,6 +571,7 @@ mod tests {
                 notes: vec![],
                 analysis: None,
                 recordings: vec![],
+                routines: vec![],
             };
             bundle::write_manifest(&bundle_dir, &manifest).unwrap();
         }
@@ -605,6 +649,7 @@ mod tests {
             notes: vec![],
             analysis: None,
             recordings: vec![],
+            routines: vec![],
         };
         bundle::write_manifest(&bundle_dir, &manifest).unwrap();
 
@@ -684,6 +729,88 @@ mod tests {
         assert_eq!(lib2.list_section_notes(song.id).len(), 1);
         let a2 = lib2.get_analysis(song.id).unwrap();
         assert_eq!(a2.bpm, Some(120.0));
+    }
+
+    #[test]
+    fn routines_upsert_persist_and_reload() {
+        let lib_dir = tempfile::tempdir().unwrap();
+        let src_dir = tempfile::tempdir().unwrap();
+        let audio_src = src_dir.path().join("track.flac");
+        std::fs::write(&audio_src, b"AUDIO").unwrap();
+
+        let mut lib = Library::load(lib_dir.path().to_path_buf()).unwrap();
+        let song = lib
+            .create_song(&audio_src, "Test Song", None, "hash123", 60.0)
+            .unwrap();
+
+        // Save a new (id 0) routine with two blocks; a fresh id is minted.
+        let routine = Routine {
+            id: RoutineId(0),
+            name: "verse drill".into(),
+            blocks: vec![
+                Block {
+                    span: Span {
+                        start: 0.0,
+                        end: 8.0,
+                    },
+                    mix: Mix {
+                        bass_focus: false,
+                        stems: [0.0, 0.0, 1.0, 0.0],
+                    },
+                    speed: 1.0,
+                    passes: 1,
+                    lead_in_beats: 0,
+                    count_in: CountIn::default(),
+                    name: Some("bass".into()),
+                },
+                Block {
+                    span: Span {
+                        start: 0.0,
+                        end: 8.0,
+                    },
+                    mix: Mix::default(),
+                    speed: 0.85,
+                    passes: 2,
+                    lead_in_beats: 4,
+                    count_in: CountIn {
+                        beats: 4,
+                        loop_mode: CountInMode::Every,
+                    },
+                    name: None,
+                },
+            ],
+        };
+        let saved = lib.save_routine(song.id, routine).unwrap();
+        assert_ne!(saved.id, RoutineId(0), "a fresh id must be minted");
+        assert_eq!(saved.blocks.len(), 2);
+
+        // Update in place (same id): rename + drop a block.
+        let mut edited = saved.clone();
+        edited.name = "verse drill v2".into();
+        edited.blocks.truncate(1);
+        lib.save_routine(song.id, edited).unwrap();
+        assert_eq!(lib.list_routines(song.id).len(), 1, "upsert, not append");
+
+        // Reload from disk: the surviving routine round-trips field-for-field.
+        let lib2 = Library::load(lib_dir.path().to_path_buf()).unwrap();
+        let routines = lib2.list_routines(song.id);
+        assert_eq!(routines.len(), 1);
+        let r = &routines[0];
+        assert_eq!(r.id, saved.id);
+        assert_eq!(r.name, "verse drill v2");
+        assert_eq!(r.blocks.len(), 1);
+        assert_eq!(r.blocks[0].mix.stems, [0.0, 0.0, 1.0, 0.0]);
+
+        // Delete it.
+        lib2_delete_check(lib_dir.path(), song.id, saved.id);
+    }
+
+    fn lib2_delete_check(lib_dir: &Path, song_id: SongId, id: RoutineId) {
+        let mut lib = Library::load(lib_dir.to_path_buf()).unwrap();
+        lib.delete_routine(song_id, id).unwrap();
+        assert!(lib.list_routines(song_id).is_empty());
+        let reloaded = Library::load(lib_dir.to_path_buf()).unwrap();
+        assert!(reloaded.list_routines(song_id).is_empty());
     }
 
     #[test]

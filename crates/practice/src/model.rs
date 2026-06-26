@@ -170,6 +170,79 @@ pub struct ProfileRun {
     pub stages: Vec<ProfileStage>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct RoutineId(pub i64);
+
+/// A span of the song, beat-snapped at author time. `{start, end}` matches the
+/// frontend `Span` wire shape.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Span {
+    pub start: f64,
+    pub end: f64,
+}
+
+/// When a block's count-in fires: only on block entry (`First`) or before every
+/// pass of the block (`Every`). Mirrors the existing count-in `loop_mode` wire
+/// values ("first" / "every").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum CountInMode {
+    #[default]
+    First,
+    Every,
+}
+
+/// Per-block count-in: `beats` clicks before the block (0 = none), firing per
+/// `loop_mode`. Reuses the shipped count-in engine; a block carries its own
+/// instance rather than the global setting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct CountIn {
+    pub beats: u32,
+    #[serde(default)]
+    pub loop_mode: CountInMode,
+}
+
+/// One practice block: a snapshot of *how to practice a span* — where, what you
+/// hear, how fast, how long, and how you come in. The routine scheduler applies
+/// these on each loop pass.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Block {
+    pub span: Span,
+    pub mix: Mix,
+    /// Playback rate (0.25..=2.0), 1.0 = original tempo.
+    #[serde(default = "one")]
+    pub speed: f64,
+    /// Loop passes to hold this block before advancing (>= 1).
+    #[serde(default = "one_pass")]
+    pub passes: u32,
+    /// Audio pre-roll: beats added before the span start, beat-snapped. The
+    /// persisted form of the Drill box's run-up. 0 = none.
+    #[serde(default)]
+    pub lead_in_beats: u32,
+    #[serde(default)]
+    pub count_in: CountIn,
+    /// Optional label; the UI falls back to a mix-derived name when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+fn one() -> f64 {
+    1.0
+}
+fn one_pass() -> u32 {
+    1
+}
+
+/// A named, ordered list of blocks, looped through on playback. Saved in the
+/// song bundle.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Routine {
+    pub id: RoutineId,
+    pub name: String,
+    #[serde(default)]
+    pub blocks: Vec<Block>,
+}
+
 #[cfg(test)]
 mod click_guide_tests {
     use super::*;

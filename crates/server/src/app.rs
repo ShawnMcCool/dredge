@@ -8,8 +8,8 @@ use engine::metronome::{Cadence, Kit};
 use engine::pipeline::{EngineCmd, EngineEvent};
 use practice::library::{LoopRename, NewLoop, NewSection};
 use practice::model::{
-    Analysis, AnalysisSection, LoopId, LoopKind, Mix, ProfileRun, Recording, RecordingId, Section,
-    SectionId, Song, SongId,
+    Analysis, AnalysisSection, LoopId, LoopKind, Mix, ProfileRun, Recording, RecordingId, Routine,
+    RoutineId, Section, SectionId, Song, SongId,
 };
 use practice::notes::NotesDoc;
 use practice::store::Store;
@@ -653,6 +653,9 @@ impl App {
             "loop.delete" => self.loop_delete(p),
             "loop.fit" => self.loop_fit(p),
             "loop.list" => self.loop_list(p),
+            "routine.list" => self.routine_list(p),
+            "routine.save" => self.routine_save(p),
+            "routine.delete" => self.routine_delete(p),
             "play" => self.send_ok(EngineCmd::Play),
             "pause" => self.send_ok(EngineCmd::Pause),
             "seek" => self.seek(p),
@@ -2194,6 +2197,7 @@ impl App {
             "song": song,
             "sections": sections,
             "loops": self.library.list_loops(song_id),
+            "routines": self.library.list_routines(song_id),
             "peaks": decoded.peaks,
             "stems": decoded.stems,
             "analysis": self.library.get_analysis(song_id),
@@ -2572,6 +2576,40 @@ impl App {
         }
         let p: P = from_params(p)?;
         serde_json::to_value(self.library.list_loops(p.song_id)).err_str()
+    }
+
+    // --- routines ---------------------------------------------------------
+
+    fn routine_list(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            song_id: SongId,
+        }
+        let p: P = from_params(p)?;
+        serde_json::to_value(self.library.list_routines(p.song_id)).err_str()
+    }
+
+    /// Upsert a routine (id 0 = new). Returns the stored routine with its id.
+    fn routine_save(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            song_id: SongId,
+            routine: Routine,
+        }
+        let p: P = from_params(p)?;
+        let saved = self.library.save_routine(p.song_id, p.routine).err_str()?;
+        serde_json::to_value(saved).err_str()
+    }
+
+    fn routine_delete(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            song_id: SongId,
+            id: RoutineId,
+        }
+        let p: P = from_params(p)?;
+        self.library.delete_routine(p.song_id, p.id).err_str()?;
+        Ok(Value::Null)
     }
 
     // --- shared helpers ---------------------------------------------------
@@ -3549,5 +3587,129 @@ mod mix_tests {
                 .any(|c| matches!(c, EngineCmd::SetStemGain { .. })),
             "stem gains must be skipped when no stems are loaded"
         );
+    }
+}
+
+#[cfg(test)]
+mod routine_tests {
+    use super::*;
+    use crate::control::MockEngine;
+    use crate::stems::FakeSeparator;
+    use practice::model::{Block, CountIn, Span};
+    use practice::store::Store;
+
+    fn app_with_song() -> (App, SongId) {
+        let lib_dir = tempfile::tempdir().unwrap();
+        let src = tempfile::tempdir().unwrap();
+        let audio = src.path().join("a.flac");
+        std::fs::write(&audio, b"AUDIO").unwrap();
+        // Keep the temp dirs alive for the test by leaking them — fine in tests.
+        std::mem::forget(src);
+        let mut app = App::new(
+            Store::open_in_memory().unwrap(),
+            Box::new(MockEngine::default()),
+            Arc::new(FakeSeparator),
+        );
+        app.set_library_root(lib_dir.path().to_path_buf());
+        std::mem::forget(lib_dir);
+        let song = app
+            .library
+            .create_song(&audio, "Title", Some("Band"), "hash", 1.0)
+            .unwrap();
+        (app, song.id)
+    }
+
+    fn sample_routine() -> Routine {
+        Routine {
+            id: RoutineId(0),
+            name: "verse drill".into(),
+            blocks: vec![
+                Block {
+                    span: Span {
+                        start: 0.0,
+                        end: 8.0,
+                    },
+                    mix: Mix {
+                        bass_focus: false,
+                        stems: [0.0, 0.0, 1.0, 0.0],
+                    },
+                    speed: 1.0,
+                    passes: 1,
+                    lead_in_beats: 0,
+                    count_in: CountIn::default(),
+                    name: Some("bass".into()),
+                },
+                Block {
+                    span: Span {
+                        start: 0.0,
+                        end: 8.0,
+                    },
+                    mix: Mix::default(),
+                    speed: 0.85,
+                    passes: 2,
+                    lead_in_beats: 4,
+                    count_in: CountIn::default(),
+                    name: None,
+                },
+            ],
+        }
+    }
+
+    fn req(cmd: &str, params: Value) -> Request {
+        Request {
+            id: 1,
+            cmd: cmd.into(),
+            params,
+        }
+    }
+
+    #[test]
+    fn save_list_delete_round_trip() {
+        let (mut app, song_id) = app_with_song();
+
+        let save = app.dispatch(req(
+            "routine.save",
+            json!({ "song_id": song_id, "routine": sample_routine() }),
+        ));
+        assert!(save.ok, "got: {:?}", save.error);
+        let saved: Routine = serde_json::from_value(save.data).unwrap();
+        assert_ne!(saved.id, RoutineId(0), "a fresh id is minted");
+        assert_eq!(saved.blocks.len(), 2);
+
+        let list = app.dispatch(req("routine.list", json!({ "song_id": song_id })));
+        let routines: Vec<Routine> = serde_json::from_value(list.data).unwrap();
+        assert_eq!(routines.len(), 1);
+        assert_eq!(routines[0].name, "verse drill");
+
+        let del = app.dispatch(req(
+            "routine.delete",
+            json!({ "song_id": song_id, "id": saved.id }),
+        ));
+        assert!(del.ok, "got: {:?}", del.error);
+        let list2 = app.dispatch(req("routine.list", json!({ "song_id": song_id })));
+        let routines2: Vec<Routine> = serde_json::from_value(list2.data).unwrap();
+        assert!(routines2.is_empty());
+    }
+
+    #[test]
+    fn save_with_id_updates_in_place() {
+        let (mut app, song_id) = app_with_song();
+        let save = app.dispatch(req(
+            "routine.save",
+            json!({ "song_id": song_id, "routine": sample_routine() }),
+        ));
+        let mut saved: Routine = serde_json::from_value(save.data).unwrap();
+        saved.name = "renamed".into();
+        saved.blocks.truncate(1);
+        let again = app.dispatch(req(
+            "routine.save",
+            json!({ "song_id": song_id, "routine": saved }),
+        ));
+        assert!(again.ok, "got: {:?}", again.error);
+        let list = app.dispatch(req("routine.list", json!({ "song_id": song_id })));
+        let routines: Vec<Routine> = serde_json::from_value(list.data).unwrap();
+        assert_eq!(routines.len(), 1, "upsert, not append");
+        assert_eq!(routines[0].name, "renamed");
+        assert_eq!(routines[0].blocks.len(), 1);
     }
 }
