@@ -2,6 +2,7 @@
   import { fmtClock } from "../lib/format";
   import {
     actions,
+    activePlay,
     muted,
     openSong,
     pitch,
@@ -60,6 +61,26 @@
         <span class="now mono">{fmtClock($position.secs)}</span>
         <span class="total mono">/ {fmtClock($openSong?.song.duration_secs ?? 0, 0)}</span>
       </span>
+    </button>
+
+    <!-- active-play: when on, clicking a section / the wave also starts playback -->
+    <button
+      class="apbtn"
+      class:on={$activePlay}
+      onclick={(e) => {
+        e.currentTarget.blur();
+        void actions.setActivePlay(!$activePlay);
+      }}
+      title={$activePlay
+        ? "active play: on — clicking a section or the wave starts playback"
+        : "active play: off — clicking only moves the playhead"}
+      aria-label="active play"
+      aria-pressed={$activePlay}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <line x1="5" y1="4" x2="5" y2="20" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+        <path d="M10 5.5 20 12 10 18.5z" fill="currentColor" />
+      </svg>
     </button>
 
     <!-- record / stop: appears once armed; a dedicated control, not the player -->
@@ -338,6 +359,31 @@
     color: var(--accent);
   }
   .iconbtn svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  /* active-play toggle: muted when off, accent (with a hairline) when on */
+  .apbtn {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    color: var(--muted);
+    cursor: pointer;
+    padding: 4px;
+    margin-left: 6px;
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+  }
+  .apbtn:hover {
+    color: var(--fg);
+  }
+  .apbtn.on {
+    color: var(--accent);
+    border-color: var(--accent-dim);
+  }
+  .apbtn svg {
     width: 18px;
     height: 18px;
   }

@@ -5,6 +5,7 @@
   import { canvasSize } from "../lib/actions/canvasSize";
   import {
     actions,
+    activePlay,
     allLoopsVisible,
     currentLoop,
     drillSpan,
@@ -758,8 +759,9 @@
           activeSpan = null; // multi-section: the selection box shows the range
         }
       } else if (!d.moved) {
-        // single click → move the playhead to the section start (no auto-play)
-        void actions.seek(d.anchor.start);
+        // single click → place the playhead at the section start; active-play
+        // also starts playback from there.
+        void placePlayhead(d.anchor.start);
       }
       // single-click drag (!double && moved): selection was set during the drag;
       // leave it for the user to loop/save by hand — no auto-loop.
@@ -794,8 +796,15 @@
         workingLoop.set(null);
         currentLoop.set(loop);
       }
-      void actions.seek(Math.min(Math.max(xToSec(view, cx), 0), duration()));
+      void placePlayhead(Math.min(Math.max(xToSec(view, cx), 0), duration()));
     }
+  }
+
+  /** Move the playhead to `secs`; in active-play mode also start playback there
+   *  (a click then plays, rather than only repositioning). */
+  async function placePlayhead(secs: number): Promise<void> {
+    await actions.seek(secs);
+    if (get(activePlay) && !get(position).playing) await actions.play();
   }
 
   function onWheel(e: WheelEvent) {

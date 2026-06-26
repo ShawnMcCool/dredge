@@ -406,6 +406,10 @@ export const latencyStatus = writable<LatencyStatus | null>(null);
 export const analysisError = writable<string | null>(null);
 /** Loop edges snap to downbeats while on (only meaningful with analysis). */
 export const gridSnap = writable(true);
+/** Active-play (persisted): when on, a click that places the playhead — a
+ *  section header, a spot on the wave — also starts playback. Off = the click
+ *  only moves the playhead. */
+export const activePlay = writable(false);
 /** Grid display (persisted): show/hide the drawn grid, full lines vs bottom
  *  ticks, and the subdivision used for both the grid and snapping. */
 export const gridVisible = writable(true);
@@ -429,6 +433,7 @@ export const vram = writable<{ used: number[]; peak: number; min: number; total:
 /** Known keys in the server-side `settings` table. */
 export const UI_SCALE = "ui_scale";
 export const GRID_SNAP_DEFAULT = "grid_snap_default";
+export const ACTIVE_PLAY = "active_play";
 export const PLAYBACK_VOLUME = "playback_volume";
 export const ANALYSIS_DEVICE = "analysis_device";
 export const LIBRARY_COLLAPSED = "library_collapsed";
@@ -552,6 +557,7 @@ export const actions = {
     const all = await cmd<Record<string, unknown>>("settings.get_all");
     settings.set(all);
     if (typeof all[GRID_SNAP_DEFAULT] === "boolean") gridSnap.set(all[GRID_SNAP_DEFAULT]);
+    if (typeof all[ACTIVE_PLAY] === "boolean") activePlay.set(all[ACTIVE_PLAY]);
     if (typeof all[LIBRARY_COLLAPSED] === "boolean") libraryCollapsed.set(all[LIBRARY_COLLAPSED]);
     if (typeof all[PANELS_COLLAPSED] === "boolean") panelsCollapsed.set(all[PANELS_COLLAPSED]);
     if (typeof all[GRID_VISIBLE] === "boolean") gridVisible.set(all[GRID_VISIBLE]);
@@ -644,6 +650,10 @@ export const actions = {
   async setGridSnap(on: boolean): Promise<void> {
     gridSnap.set(on);
     await this.setSetting(GRID_SNAP_DEFAULT, on);
+  },
+  async setActivePlay(on: boolean): Promise<void> {
+    activePlay.set(on);
+    await this.setSetting(ACTIVE_PLAY, on);
   },
   async setGridVisible(on: boolean): Promise<void> {
     gridVisible.set(on);
