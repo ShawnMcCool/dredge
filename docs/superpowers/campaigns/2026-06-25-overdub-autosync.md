@@ -53,7 +53,8 @@ timing today; the ring has no absolute frame index.
 | AS-5d | Fix negative ring_start (from-playhead recording) | DONE — awaiting hardware test |
 | — | Logging: DREDGE_DEBUG keeps stderr; breadcrumb; `just logs` | DONE — tested via daemon |
 | AS-8b | Bundle spawn slots into `RenderShared` struct | DONE (bfba05e) — −35 lines, 4 `#[allow]`s gone, gate green |
-| AS-7 | Part 2: loopback ping calibration | NOT BUILT — genuinely hardware-gated (see note) |
+| AS-7 | Part 2: loopback ping calibration | BUILT (3a73cc4 backend + f174926 UI) — cable available; awaiting hardware test |
+| AS-7-UI | Calibration modal (visualizes the round trip) | DONE (f174926) — vite+chrome smoke test passed (renders, no effect loop) |
 | AS-8 | Full gate + cleanup | gate GREEN; spawn refactor done |
 
 **Part 1 = AS-1..5 + AS-5b: CODE-COMPLETE.** Blocking gate: user records a take
