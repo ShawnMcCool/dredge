@@ -133,11 +133,19 @@ term maps to one thing. The three columns are **panes**:
   a song has sections; the **tuner control box** (`Tuner.svelte`, always present); and
   the **drill control box** (`Drill.svelte`) last, only while a drill span is active.
   Call them *control boxes*, never "containers", "panels", or bare "boxes".
-- **Panel** (right, `aside.panels`) — its switchable views are **tabs**
-  (structure, loops, capture, export, profile, settings, guide), wired
-  through the `TAB_VIEWS` registry in `App.svelte`. The **structure tab**
-  (`Sections.svelte`) owns song structure; there is no longer a center
-  "structure box".
+- **Dock** (right, `aside.panels`) — a vertical stack of resizable **panels**,
+  each holding multiple **tabs** (structure, loops, routines, export, profile,
+  devices, settings, guide), wired through the `TAB_VIEWS` registry in
+  `App.svelte`. A tab can be dragged to reorder within its panel, joined into
+  another panel (drop on its tab bar), or split into a new panel (drop on a panel
+  body, top/bottom half); splitters between panels resize them. The whole
+  arrangement is the **dock layout** — a `DockLayout` (`Panel[]`, each
+  `{tabs, active, weight}`) whose pure transforms live in `lib/dock.ts`; the
+  component only renders it and reads drag gestures. It persists as the
+  `panel_layout` setting (which superseded the old flat `tab_order`) and is
+  reconciled against the known tabs on load. The default is one panel holding
+  every tab. The **structure tab** (`Sections.svelte`) owns song structure;
+  there is no longer a center "structure box".
 
 Some stage state is purely client-side and mirrored by no store — the
 waveform's zoom (`view`) and clicked active span live as local `$state` in
