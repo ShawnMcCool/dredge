@@ -1650,36 +1650,43 @@ impl App {
         // alive (before `rec.stop()` tears it down) and carry it out of the
         // block; it pairs with the output delay below to form the auto RTL
         // baseline.
-        let (samples, input_delay) = {
+        let (samples, input_delay, effective_anchor) = {
             let mut rec = self.recorder.lock().unwrap();
             let input_delay = rec.input_delay_frames();
             // `ring_start` was pinned at the first real-playback tick (see `tick`).
-            // Extract the take from there. `None` means the clocks never published
-            // (non-PipeWire backend) or playback never started — fall back to the
-            // tail of the ring.
+            // Ring-frame-0 maps to song frame (anchor − ring_start). A NEGATIVE
+            // `ring_start` means capture began AFTER the anchor — recording from a
+            // mid-song playhead, where playback is already at the anchor when
+            // recording starts. In that case extract from the earliest captured
+            // frame (0) and shift the take's anchor later by the missing amount so
+            // it stays aligned, instead of failing the read and re-including the
+            // pre-anchor tail via snapshot_last. `None` means the clocks never
+            // published — fall back to snapshot_last.
+            let mut effective_anchor = pending.anchor_frame;
             let extracted = pending.ring_start.and_then(|ring_start| {
-                // Clamp the take to what was actually captured. A user who stops
-                // early — or picks "full song" but cuts it short — has fewer than
-                // `len_frames` frames in the ring; extracting the full span would
-                // overrun what's written, fail, and fall back to snapshot_last,
-                // which re-includes the count-in. Clamping keeps the take anchored
-                // at `ring_start` (count-in already excluded), just shorter.
+                let extract_start = ring_start.max(0);
+                effective_anchor = pending.anchor_frame + (extract_start - ring_start);
+                // Clamp to what was actually captured: an early stop (or a
+                // "full song" span cut short) has fewer than `len_frames` frames;
+                // overrunning fails the read and falls back to snapshot_last
+                // (which re-includes the count-in).
                 let available = rec
                     .capture_snapshot()
-                    .map(|(_, total)| (total - ring_start).max(0))
+                    .map(|(_, total)| (total - extract_start).max(0))
                     .unwrap_or(pending.len_frames);
                 let take_len = pending.len_frames.min(available);
                 if std::env::var("DREDGE_DEBUG").is_ok() {
                     eprintln!(
                         "dredge finalize[count-in-fix]: ring_start={ring_start} \
+                         extract_start={extract_start} effective_anchor={effective_anchor} \
                          len_frames={} available={available} take_len={take_len}",
                         pending.len_frames
                     );
                 }
-                let got = rec.extract_range(ring_start, take_len);
+                let got = rec.extract_range(extract_start, take_len);
                 if got.is_none() {
                     eprintln!(
-                        "dredge: recording range evicted (ring_start={ring_start}, \
+                        "dredge: recording range evicted (extract_start={extract_start}, \
                          take_len={take_len}); falling back to snapshot_last"
                     );
                 }
@@ -1696,7 +1703,7 @@ impl App {
                 }
                 None => rec.stop()?,
             };
-            (samples, input_delay)
+            (samples, input_delay, effective_anchor)
         };
         self.audio.disarm_playback_clock();
         self.audio.send(EngineCmd::Pause);
@@ -1738,7 +1745,7 @@ impl App {
             id: RecordingId(next_id),
             name: format!("take {next_id}"),
             file,
-            anchor_frame: pending.anchor_frame,
+            anchor_frame: effective_anchor,
             len_frames,
             nudge_frames: 0,
             gain: 1.0,
