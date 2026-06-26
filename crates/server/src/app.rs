@@ -2641,6 +2641,9 @@ impl App {
         struct P {
             song_id: SongId,
             id: RoutineId,
+            /// Block to start from (default 0) — lets a click jump into a block.
+            #[serde(default)]
+            block_index: usize,
         }
         let p: P = from_params(p)?;
         let routine = self
@@ -2649,7 +2652,7 @@ impl App {
             .into_iter()
             .find(|r| r.id == p.id)
             .ok_or("routine not found")?;
-        let runner = crate::routine::RoutineRunner::new(p.song_id, routine)
+        let runner = crate::routine::RoutineRunner::new_from(p.song_id, routine, p.block_index)
             .ok_or("routine has no blocks")?;
         let block = runner.current_block().clone();
         self.active_routine = Some(runner);
@@ -3931,6 +3934,23 @@ mod routine_tests {
                 .any(|c| matches!(c, EngineCmd::SetRate(r) if (*r - 0.85).abs() < 1e-9)),
             "block 1 rate applied"
         );
+    }
+
+    #[test]
+    fn start_from_block_index_jumps_into_that_block() {
+        let (mock, mut app, song_id) = app_with_song_shared();
+        let saved = save_sample(&mut app, song_id);
+        let start = app.dispatch(req(
+            "routine.start",
+            json!({ "song_id": song_id, "id": saved.id, "block_index": 1 }),
+        ));
+        assert!(start.ok, "got: {:?}", start.error);
+        assert_eq!(start.data["block_index"], json!(1));
+        // Block 1 runs at 0.85×.
+        let sent = &mock.lock().unwrap().sent;
+        assert!(sent
+            .iter()
+            .any(|c| matches!(c, EngineCmd::SetRate(r) if (*r - 0.85).abs() < 1e-9)));
     }
 
     #[test]

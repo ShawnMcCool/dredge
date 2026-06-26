@@ -20,14 +20,21 @@ pub struct RoutineRunner {
 impl RoutineRunner {
     /// Start a routine at its first block. `None` if the routine has no blocks.
     pub fn new(song_id: SongId, routine: Routine) -> Option<Self> {
+        Self::new_from(song_id, routine, 0)
+    }
+
+    /// Start a routine at block `start_idx` (clamped to the last block). `None`
+    /// if the routine has no blocks. Used to jump straight into a chosen block.
+    pub fn new_from(song_id: SongId, routine: Routine, start_idx: usize) -> Option<Self> {
         if routine.blocks.is_empty() {
             return None;
         }
-        let passes_remaining = routine.blocks[0].passes.max(1);
+        let block_idx = start_idx.min(routine.blocks.len() - 1);
+        let passes_remaining = routine.blocks[block_idx].passes.max(1);
         Some(Self {
             song_id,
             routine,
-            block_idx: 0,
+            block_idx,
             passes_remaining,
         })
     }
@@ -131,6 +138,18 @@ mod tests {
         assert!(r.on_wrap(), "pass 3 of 3 — advance");
         assert_eq!(r.status().block_index, 1);
         assert_eq!(r.status().passes_remaining, 1);
+    }
+
+    #[test]
+    fn new_from_starts_at_chosen_block_and_clamps() {
+        let r = RoutineRunner::new_from(SongId(1), routine(vec![block(1, "a"), block(2, "b")]), 1)
+            .unwrap();
+        assert_eq!(r.status().block_index, 1);
+        assert_eq!(r.status().passes_remaining, 2);
+        // Out-of-range start clamps to the last block.
+        let r2 =
+            RoutineRunner::new_from(SongId(1), routine(vec![block(1, "a")]), 9).expect("clamped");
+        assert_eq!(r2.status().block_index, 0);
     }
 
     #[test]

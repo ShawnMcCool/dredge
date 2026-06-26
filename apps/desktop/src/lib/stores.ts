@@ -1283,10 +1283,15 @@ export const actions = {
     await this.refreshRoutines();
   },
 
-  async startRoutine(id: number): Promise<void> {
+  /** Launch a routine, optionally jumping straight into `blockIndex`. */
+  async startRoutine(id: number, blockIndex = 0): Promise<void> {
     const open = get(openSong);
     if (!open) return;
-    const status = await cmd<RoutineStatus>("routine.start", { song_id: open.song.id, id });
+    const status = await cmd<RoutineStatus>("routine.start", {
+      song_id: open.song.id,
+      id,
+      block_index: blockIndex,
+    });
     activeRoutine.set(status);
     applyRoutineMix(status.block.mix);
   },
