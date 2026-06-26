@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount, type Component } from "svelte";
-  import { flip } from "svelte/animate";
   import ClickTrack from "./components/ClickTrack.svelte";
   import Devices from "./components/Devices.svelte";
   import Drill from "./components/Drill.svelte";
@@ -19,6 +18,7 @@
   import Transport from "./components/Transport.svelte";
   import Tuner from "./components/Tuner.svelte";
   import Waveform from "./components/Waveform.svelte";
+  import Dock from "./lib/ui/Dock.svelte";
   import { installKeys } from "./lib/keys";
   import { initTheme } from "./lib/theme";
   import { initTrace } from "./lib/trace";
@@ -36,7 +36,6 @@
     settingsOpen,
     panelLayout,
   } from "./lib/stores";
-  import { reconcile, moveTab, splitTab, setActive, setWeights, type DockLayout } from "./lib/dock";
 
   const ALL_TABS = ["structure", "loops", "routines", "export", "profile", "devices", "settings", "guide"] as const;
   type Tab = (typeof ALL_TABS)[number];
@@ -51,187 +50,28 @@
     settings: SettingsPanel,
     guide: Guide,
   };
-  // The dock: the right aside is a vertical stack of panels, each a set of tabs.
-  // The layout is reconciled against the known tabs (adding/removing one in code
-  // stays graceful).
-  const layout = $derived(reconcile($panelLayout, [...ALL_TABS]));
-
-  // Drag a tab to reorder it (drop on a tab bar), join it into another panel
-  // (drop on that bar), or split it into a new panel (drop on a panel's body —
-  // top half = above, bottom half = below). A drop indicator previews where it
-  // lands; the move commits on release (FLIP animates the result). A small move
-  // turns a click into a drag; a plain click selects the tab in its panel.
-  type Drop = { kind: "tab"; panel: number; index: number } | { kind: "split"; at: number };
-  let dragTab = $state<string | null>(null);
-  let drop = $state<Drop | null>(null);
-  // insertion caret (viewport coords) shown while hovering a tab bar
-  let caret = $state<{ x: number; y: number; h: number } | null>(null);
-  let downTab: string | null = null;
-  let downX = 0;
-  let downY = 0;
-  let didDrag = false;
-  const DRAG_PX = 4;
-
-  function panelOf(l: DockLayout, t: string): number {
-    return l.findIndex((p) => p.tabs.includes(t));
-  }
-  function onTabDown(e: PointerEvent, t: string) {
-    if (e.button !== 0) return;
-    downTab = t;
-    downX = e.clientX;
-    downY = e.clientY;
-    didDrag = false;
-    try {
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    } catch {
-      /* non-fatal */
-    }
-  }
-  function onTabMove(e: PointerEvent) {
-    if (downTab === null) return;
-    if (dragTab === null) {
-      if (Math.abs(e.clientX - downX) < DRAG_PX && Math.abs(e.clientY - downY) < DRAG_PX) return;
-      dragTab = downTab;
-      didDrag = true;
-    }
-    const el = document.elementFromPoint(e.clientX, e.clientY);
-    const barEl = el?.closest<HTMLElement>(".tabs");
-    if (barEl) {
-      // anywhere over a tab bar — a tab OR the gap between tabs — joins that
-      // panel. The slot is the pointer's reading-order position among the bar's
-      // tabs (wrap-aware), so there's no dead gap that falls through to a split.
-      const panelEl = barEl.closest<HTMLElement>(".dock-panel");
-      const panels = [...document.querySelectorAll<HTMLElement>(".dock .dock-panel")];
-      const pi = panels.indexOf(panelEl as HTMLElement);
-      const els = [...barEl.querySelectorAll<HTMLElement>(".tab")].filter((b) => b.dataset.tab !== dragTab);
-      let index = els.length;
-      for (let i = 0; i < els.length; i++) {
-        const r = els[i].getBoundingClientRect();
-        if (e.clientY < r.top || (e.clientY <= r.bottom && e.clientX < r.left + r.width / 2)) {
-          index = i;
-          break;
-        }
-      }
-      drop = { kind: "tab", panel: pi, index };
-      caret = caretAt(barEl, els, index);
-      return;
-    }
-    const panelEl = el?.closest<HTMLElement>(".dock-panel");
-    if (panelEl) {
-      // over a panel body → split into a new panel above/below
-      const panels = [...document.querySelectorAll<HTMLElement>(".dock .dock-panel")];
-      const pi = panels.indexOf(panelEl);
-      const r = panelEl.getBoundingClientRect();
-      drop = { kind: "split", at: e.clientY < r.top + r.height / 2 ? pi : pi + 1 };
-      caret = null;
-      return;
-    }
-    drop = null;
-    caret = null;
-  }
-  /** Insertion-caret rect (viewport coords) for slot `index` among a bar's
-   *  non-dragged tabs `els`. */
-  function caretAt(bar: HTMLElement, els: HTMLElement[], index: number): { x: number; y: number; h: number } {
-    if (els.length === 0) {
-      const r = bar.getBoundingClientRect();
-      return { x: r.left + 6, y: r.top + 5, h: 16 };
-    }
-    if (index < els.length) {
-      const r = els[index].getBoundingClientRect();
-      return { x: r.left - 3, y: r.top, h: r.height };
-    }
-    const r = els[els.length - 1].getBoundingClientRect();
-    return { x: r.right + 1, y: r.top, h: r.height };
-  }
-  function onTabUp() {
-    if (dragTab !== null && drop) {
-      const next =
-        drop.kind === "tab"
-          ? moveTab(layout, dragTab, drop.panel, drop.index)
-          : splitTab(layout, dragTab, drop.at);
-      void actions.setPanelLayout(next);
-    }
-    dragTab = null;
-    downTab = null;
-    drop = null;
-    caret = null;
-  }
-  function selectTab(panel: number, t: string) {
-    if (didDrag) {
-      didDrag = false;
-      return; // the pointer gesture was a drag, not a select
-    }
-    void actions.setPanelLayout(setActive(layout, panel, t));
-  }
-
-  // Vertical resize: a splitter at panel `i`'s top edge shifts the boundary
-  // between panel i-1 (above) and i (below), trading their weights. Previewed
-  // live via `resizeWeights`, persisted on release.
-  let resizeWeights = $state<number[] | null>(null);
-  let resizeIdx = 0;
-  let resizeStartY = 0;
-  let resizeH: [number, number] = [0, 0];
-  let resizeCombined = 0;
-  const MIN_PANEL_PX = 64;
-
-  function panelWeight(pi: number): number {
-    return resizeWeights ? resizeWeights[pi] : layout[pi].weight;
-  }
-  function onSplitDown(e: PointerEvent, i: number) {
-    const panels = [...document.querySelectorAll<HTMLElement>(".dock .dock-panel")];
-    const above = panels[i - 1];
-    const below = panels[i];
-    if (!above || !below) return;
-    e.preventDefault();
-    resizeIdx = i;
-    resizeStartY = e.clientY;
-    resizeH = [above.offsetHeight, below.offsetHeight];
-    resizeCombined = layout[i - 1].weight + layout[i].weight;
-    resizeWeights = layout.map((p) => p.weight);
-    try {
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    } catch {
-      /* non-fatal */
-    }
-  }
-  function onSplitMove(e: PointerEvent) {
-    if (!resizeWeights) return;
-    const total = resizeH[0] + resizeH[1];
-    const h0 = Math.max(MIN_PANEL_PX, Math.min(total - MIN_PANEL_PX, resizeH[0] + (e.clientY - resizeStartY)));
-    const w = resizeWeights.slice();
-    w[resizeIdx - 1] = resizeCombined * (h0 / total);
-    w[resizeIdx] = resizeCombined * ((total - h0) / total);
-    resizeWeights = w;
-  }
-  function onSplitUp() {
-    if (resizeWeights) void actions.setPanelLayout(setWeights(layout, resizeWeights));
-    resizeWeights = null;
-  }
-
-  /** Bring `key` to the front of whichever panel holds it — the open-settings /
-   *  open-structure / open-loops shortcuts. */
-  function revealTab(key: Tab) {
-    const pi = panelOf(layout, key);
-    if (pi >= 0) void actions.setPanelLayout(setActive(layout, pi, key));
-  }
+  // The right aside is a reusable Dock (lib/ui/Dock.svelte) over these tabs; its
+  // layout persists in `panelLayout`. `dock.reveal(tab)` activates a tab for the
+  // open-settings / open-structure / open-loops shortcuts below.
+  let dock: { reveal: (key: string) => void } | undefined = $state();
 
   $effect(() => {
     if ($settingsOpen) {
-      revealTab("settings");
+      dock?.reveal("settings");
       settingsOpen.set(false);
     }
   });
 
   $effect(() => {
     if ($sectionsOpen) {
-      revealTab("structure");
+      dock?.reveal("structure");
       sectionsOpen.set(false);
     }
   });
 
   $effect(() => {
     if ($loopsOpen) {
-      revealTab("loops");
+      dock?.reveal("loops");
       loopsOpen.set(false);
     }
   });
@@ -308,59 +148,13 @@
   </main>
   <aside class="panels" class:collapsed={$panelsCollapsed}>
     {#if !$panelsCollapsed}
-      <div class="dock">
-        {#each layout as panel, pi (pi)}
-          <section
-            class="dock-panel"
-            class:droptab={drop?.kind === "tab" && drop.panel === pi}
-            class:splitabove={drop?.kind === "split" && drop.at === pi}
-            class:splitbelow={drop?.kind === "split" && drop.at === pi + 1 && pi === layout.length - 1}
-            style="flex-grow: {panelWeight(pi)}"
-          >
-            {#if pi > 0}
-              <div
-                class="splitter"
-                onpointerdown={(e) => onSplitDown(e, pi)}
-                onpointermove={onSplitMove}
-                onpointerup={onSplitUp}
-                onpointercancel={onSplitUp}
-                title="drag to resize"
-                role="separator"
-                aria-orientation="horizontal"
-              ></div>
-            {/if}
-            <nav class="tabs">
-              {#each panel.tabs as t (t)}
-                <button
-                  class="tab"
-                  class:active={panel.active === t}
-                  class:dragging={dragTab === t}
-                  data-tab={t}
-                  data-panel={pi}
-                  onpointerdown={(e) => onTabDown(e, t)}
-                  onpointermove={onTabMove}
-                  onpointerup={onTabUp}
-                  onpointercancel={onTabUp}
-                  onclick={() => selectTab(pi, t)}
-                  animate:flip={{ duration: 180 }}
-                  title="drag to reorder"
-                >
-                  {t}
-                </button>
-              {/each}
-              <span class="tab-spacer" aria-hidden="true"></span>
-            </nav>
-            <div class="panel-view">
-              {#key panel.active}
-                {@const View = TAB_VIEWS[panel.active as Tab]}
-                <div class="fade-in">
-                  <View />
-                </div>
-              {/key}
-            </div>
-          </section>
-        {/each}
-      </div>
+      <Dock
+        bind:this={dock}
+        layout={$panelLayout}
+        tabs={ALL_TABS}
+        views={TAB_VIEWS}
+        onchange={(l) => void actions.setPanelLayout(l)}
+      />
     {/if}
     <button
       class="rail"
@@ -369,9 +163,6 @@
       aria-label={$panelsCollapsed ? "show panels" : "hide panels"}
     >{$panelsCollapsed ? "‹" : "›"}</button>
   </aside>
-  {#if dragTab && drop?.kind === "tab" && caret}
-    <div class="drop-caret" style="left: {caret.x}px; top: {caret.y}px; height: {caret.h}px"></div>
-  {/if}
 </div>
 
 <style>
@@ -458,71 +249,6 @@
     padding: var(--space);
   }
 
-  /* the dock: a vertical stack of panels filling the aside inboard of the rail */
-  .dock {
-    display: flex;
-    flex-direction: column;
-    flex: 1 1 auto;
-    min-width: 0;
-    min-height: 0;
-  }
-  .dock-panel {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    flex-basis: 0; /* flex-grow (inline, = weight) shares height */
-    min-height: 0;
-  }
-  /* draggable splitter overlaying a panel's top edge (the boundary above it) */
-  .splitter {
-    position: absolute;
-    top: -3px;
-    left: 0;
-    right: 0;
-    height: 7px;
-    z-index: 4;
-    cursor: row-resize;
-    touch-action: none;
-  }
-  .splitter:hover {
-    background: var(--accent-dim);
-  }
-  .dock-panel + .dock-panel {
-    border-top: 1px solid var(--line);
-  }
-  /* drop indicators while dragging a tab */
-  .dock-panel.droptab {
-    box-shadow: inset 0 0 0 1px var(--accent-dim); /* join into this panel */
-  }
-  .dock-panel.splitabove {
-    box-shadow: inset 0 2px 0 0 var(--accent); /* new panel above */
-  }
-  .dock-panel.splitbelow {
-    box-shadow: inset 0 -2px 0 0 var(--accent); /* new panel below */
-  }
-  /* insertion caret — the slot a dragged tab will join; glides between slots */
-  .drop-caret {
-    position: fixed;
-    width: 2px;
-    background: var(--accent);
-    border-radius: 1px;
-    z-index: 50;
-    pointer-events: none;
-    transition:
-      left 90ms ease,
-      top 90ms ease,
-      height 90ms ease;
-  }
-  /* each panel's active view scrolls on its own */
-  .panel-view {
-    flex: 1 1 auto;
-    min-width: 0;
-    min-height: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
-    padding: var(--space);
-  }
-
   .stage {
     display: flex;
     flex-direction: column;
@@ -544,82 +270,6 @@
   }
 
 
-
-
-  /* a panel's tab bar — fixed at the panel top, the view scrolls below it */
-  .tabs {
-    flex: 0 0 auto;
-    display: flex;
-    flex-wrap: wrap;
-    /* left-aligned tabs; completed (wrapped) rows justify to fill the width.
-       space-between justifies every full row, and the trailing `.tab-spacer`
-       (flex-grow) only ever lands on the last row — it eats that row's free
-       space so the last row stays left-aligned. */
-    justify-content: space-between;
-    gap: calc(var(--space) / 2);
-    padding: calc(var(--space) / 2) var(--space);
-    border-bottom: 1px solid var(--line);
-    min-width: 0;
-  }
-  .tab-spacer {
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-
-  /* generous, solid hit area — the whole padded chip is clickable, not just the
-     glyphs. Small targets got unreliable when the panel wrapped to more rows at
-     narrow (tiled) widths under fractional webview zoom. */
-  .tab {
-    /* natural width, left-aligned; the row-justify lives on `.tabs` */
-    position: relative;
-    flex: 0 0 auto;
-    text-align: center;
-    background: none;
-    border: none;
-    font-size: 11px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--muted);
-    padding: 5px 8px 7px;
-    cursor: pointer;
-    line-height: 1;
-    touch-action: none; /* pointer drag-to-reorder, not scroll */
-  }
-  /* selected/hover anchor: an underline under the tab — the classic tab metaphor,
-     so the strip reads as tabs and the active page is obvious */
-  .tab::after {
-    content: "";
-    position: absolute;
-    left: 4px;
-    right: 4px;
-    bottom: 0;
-    height: 2px;
-    border-radius: 1px;
-    background: transparent;
-    transition:
-      background-color 100ms ease,
-      opacity 100ms ease;
-  }
-
-  .tab:hover {
-    color: var(--fg);
-  }
-  .tab:hover::after {
-    background: var(--accent-dim);
-  }
-
-  .tab.active {
-    color: var(--accent);
-  }
-  .tab.active::after {
-    background: var(--accent);
-  }
-
-  .tab.dragging {
-    color: var(--fg);
-    opacity: 0.4;
-    cursor: grabbing;
-  }
 
 
 </style>
