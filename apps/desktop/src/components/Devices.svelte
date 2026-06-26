@@ -4,6 +4,7 @@
   import { asyncAction } from "../lib/async-action.svelte";
   import { defaultName } from "../lib/devices";
   import Button from "../lib/ui/Button.svelte";
+  import SectionHead from "../lib/ui/SectionHead.svelte";
   import CalibrateModal from "./CalibrateModal.svelte";
 
   const act = asyncAction();
@@ -36,14 +37,12 @@
   });
 </script>
 
-<h2>devices</h2>
-
 {#if act.error}
   <div class="error">{act.error}</div>
 {/if}
 
 <section class="group">
-  <h3 class="group-head">output</h3>
+  <SectionHead>output</SectionHead>
   <div class="picker">
     <button class="dev" class:sel={$outputDevice === null} onclick={() => pickOutput(null)}>
       System default{defaultName($outputDevices) ? ` (${defaultName($outputDevices)})` : ""}
@@ -55,7 +54,7 @@
 </section>
 
 <section class="group">
-  <h3 class="group-head">input</h3>
+  <SectionHead>input</SectionHead>
   <div class="picker">
     <button class="dev" class:sel={$inputDevice === null} onclick={() => pickInput(null)}>
       System default{defaultName($inputDevices) ? ` (${defaultName($inputDevices)})` : ""}
@@ -94,17 +93,6 @@
     margin-bottom: 0;
   }
 
-  .group-head {
-    margin: 0 0 calc(var(--space) / 2);
-    padding-bottom: 6px;
-    border-bottom: 1px solid var(--line);
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--muted);
-  }
-
   .picker {
     display: flex;
     flex-direction: column;
@@ -119,10 +107,11 @@
     background: none;
     border: 1px solid transparent;
     color: var(--fg);
-    border-radius: 4px;
-    padding: 4px 8px;
+    border-radius: var(--radius);
+    padding: 5px 8px;
     cursor: pointer;
-    font-size: 0.85rem;
+    font-size: 12px;
+    line-height: 1.35;
   }
 
   .dev:hover {
@@ -130,7 +119,8 @@
   }
 
   .dev.sel {
-    border-color: var(--accent);
+    border-color: var(--accent-dim);
+    color: var(--accent);
   }
 
   .latency {
