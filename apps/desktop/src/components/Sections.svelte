@@ -14,6 +14,7 @@
   import Button from "../lib/ui/Button.svelte";
   import EmptyState from "../lib/ui/EmptyState.svelte";
   import Modal from "../lib/ui/Modal.svelte";
+  import SectionHead from "../lib/ui/SectionHead.svelte";
 
   interface Row {
     name: string;
@@ -169,19 +170,19 @@
   }
 </script>
 
-<div class="head">
-  <h2>sections{#if editing}<span class="sub"> · editing</span>{/if}</h2>
-  {#if $openSong}
-    <div class="head-actions">
+<SectionHead>
+  sections
+  {#snippet actions()}
+    {#if $openSong}
       <button class="txt-btn" class:active={editing} onclick={() => (editing = !editing)}>
         {editing ? "done" : "edit"}
       </button>
       {#if hasAnalysis || rows.length > 0}
         <button class="txt-btn" onclick={() => (confirmReanalyze = true)}>re-analyze</button>
       {/if}
-    </div>
-  {/if}
-</div>
+    {/if}
+  {/snippet}
+</SectionHead>
 
 {#if !$openSong}
   <EmptyState>open a song first</EmptyState>
@@ -283,25 +284,6 @@
 {/if}
 
 <style>
-  .head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space);
-    min-height: 22px;
-    margin-bottom: var(--space);
-  }
-  .head h2 {
-    margin: 0;
-  }
-  .head h2 .sub {
-    color: var(--accent-dim);
-  }
-  .head-actions {
-    display: flex;
-    gap: var(--space);
-  }
-
   .txt-btn {
     background: none;
     border: none;

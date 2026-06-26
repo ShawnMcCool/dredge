@@ -23,6 +23,7 @@
     STEM_LABELS,
   } from "../lib/stores";
   import Button from "../lib/ui/Button.svelte";
+  import SectionHead from "../lib/ui/SectionHead.svelte";
 
   type Scope = "all" | "loop" | "selection";
   type Phase = "idle" | "rendering" | "done" | "failed" | "cancelled";
@@ -229,8 +230,6 @@
   }
 </script>
 
-<h2>export</h2>
-
 {#if !$openSong}
   <p class="empty mono">open a song to export it</p>
 {:else if phase === "rendering"}
@@ -273,7 +272,7 @@
   </div>
 
   <section class="group">
-    <div class="group-head">scope</div>
+    <SectionHead>scope</SectionHead>
     <button class="radio" class:sel={effScope === "all"} onclick={() => (scope = "all")}>
       <span class="dot"></span>
       <span class="lbl">whole song</span>
@@ -302,7 +301,7 @@
   </section>
 
   <section class="group">
-    <div class="group-head">format</div>
+    <SectionHead>format</SectionHead>
     <div class="chips">
       <Button variant="chip" active={format === "wav"} onclick={() => setFormat("wav")}>WAV</Button>
       <Button variant="chip" active={format === "mp3"} disabled={!caps.mp3} onclick={() => setFormat("mp3")}>
@@ -315,7 +314,7 @@
   </section>
 
   <section class="group">
-    <div class="group-head">destination</div>
+    <SectionHead>destination</SectionHead>
     <div class="field">
       <label for="ex-name">file name</label>
       <div class="namerow">
@@ -387,17 +386,6 @@
   .group {
     margin-bottom: calc(var(--space) * 2);
   }
-  .group-head {
-    margin: 0 0 calc(var(--space) / 2);
-    padding-bottom: 6px;
-    border-bottom: 1px solid var(--line);
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--muted);
-  }
-
   /* radios — reuse the .setting rhythm */
   .radio {
     display: flex;

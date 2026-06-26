@@ -2,6 +2,7 @@
   import { actions, allLoopsVisible, currentLoop, openSong } from "../lib/stores";
   import Button from "../lib/ui/Button.svelte";
   import EmptyState from "../lib/ui/EmptyState.svelte";
+  import SectionHead from "../lib/ui/SectionHead.svelte";
 
   let renamingId = $state<number | null>(null);
   let renameValue = $state("");
@@ -31,20 +32,22 @@
   }
 </script>
 
-<div class="hdr">
-  <h2>loops</h2>
-  {#if $openSong}
-    <button
-      class="show-all"
-      class:on={$allLoopsVisible}
-      onclick={() => void actions.setAllLoopsVisible(!$allLoopsVisible)}
-      title="show every loop on the waveform (otherwise only the active one)"
-      aria-pressed={$allLoopsVisible}
-    >
-      show on wave
-    </button>
-  {/if}
-</div>
+<SectionHead>
+  saved loops
+  {#snippet actions()}
+    {#if $openSong}
+      <button
+        class="show-all"
+        class:on={$allLoopsVisible}
+        onclick={() => void actions.setAllLoopsVisible(!$allLoopsVisible)}
+        title="show every loop on the waveform (otherwise only the active one)"
+        aria-pressed={$allLoopsVisible}
+      >
+        show on wave
+      </button>
+    {/if}
+  {/snippet}
+</SectionHead>
 {#if !$openSong}
   <EmptyState>open a song first</EmptyState>
 {:else}
@@ -99,12 +102,6 @@
 {/if}
 
 <style>
-  .hdr {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--space);
-  }
   .show-all {
     background: none;
     border: 1px solid transparent;

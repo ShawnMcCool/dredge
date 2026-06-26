@@ -12,7 +12,6 @@
   }
 </script>
 
-<h2>profiling</h2>
 {#if $profiles.length === 0}
   <EmptyState>no runs yet</EmptyState>
 {:else}

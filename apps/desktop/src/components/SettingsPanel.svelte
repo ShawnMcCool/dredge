@@ -16,6 +16,7 @@
   import { ACCENTS, applyTheme } from "../lib/theme";
   import Button from "../lib/ui/Button.svelte";
   import Fader from "../lib/ui/Fader.svelte";
+  import SectionHead from "../lib/ui/SectionHead.svelte";
   import { cmd } from "../lib/ipc";
   import { applyDecorations } from "../lib/window";
   import { getZoom, setZoom } from "../lib/zoom";
@@ -91,10 +92,8 @@
   }
 </script>
 
-<h2>settings</h2>
-
 <section class="group">
-  <h3 class="group-head">appearance</h3>
+  <SectionHead>appearance</SectionHead>
 
   <div class="setting stacked">
     <div class="text"><span class="name">ui scale</span></div>
@@ -147,7 +146,7 @@
 </section>
 
 <section class="group">
-  <h3 class="group-head">editing</h3>
+  <SectionHead>editing</SectionHead>
 
   <div class="setting">
     <div class="text">
@@ -161,7 +160,7 @@
 </section>
 
 <section class="group">
-  <h3 class="group-head">library</h3>
+  <SectionHead>library</SectionHead>
 
   <div class="setting stacked">
     <div class="text">
@@ -179,7 +178,7 @@
 </section>
 
 <section class="group">
-  <h3 class="group-head">notes</h3>
+  <SectionHead>notes</SectionHead>
 
   <div class="setting">
     <div class="text">
@@ -213,7 +212,7 @@
 </section>
 
 <section class="group">
-  <h3 class="group-head">analysis</h3>
+  <SectionHead>analysis</SectionHead>
 
   <div class="setting stacked">
     <div class="text">
@@ -240,7 +239,7 @@
 </section>
 
 <section class="group">
-  <h3 class="group-head">capabilities</h3>
+  <SectionHead>capabilities</SectionHead>
 
   <div class="cap-summary" class:full={ready === FEATURES.length}>
     <span class="cap-dot" class:on={ready === FEATURES.length}></span>
@@ -266,17 +265,6 @@
   }
   .group:last-child {
     margin-bottom: 0;
-  }
-
-  .group-head {
-    margin: 0 0 calc(var(--space) / 2);
-    padding-bottom: 6px;
-    border-bottom: 1px solid var(--line);
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--muted);
   }
 
   /* one setting: label/desc text block + its control, inline by default */

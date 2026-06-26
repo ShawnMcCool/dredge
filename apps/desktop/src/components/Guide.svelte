@@ -1,6 +1,8 @@
 <script lang="ts">
   // Static reference: keyboard shortcuts + what the concepts mean. Replaces
   // the old one-line KEY_HELP footer. Keep in sync with lib/keys.ts.
+  import SectionHead from "../lib/ui/SectionHead.svelte";
+
   const GROUPS: { title: string; keys: [string, string][] }[] = [
     {
       title: "playback",
@@ -106,10 +108,8 @@
   ];
 </script>
 
-<h2>guide</h2>
-
 {#each GROUPS as g (g.title)}
-  <h3 class="grp mono">{g.title}</h3>
+  <SectionHead>{g.title}</SectionHead>
   <ul class="keys">
     {#each g.keys as [k, desc] (k)}
       <li><kbd class="mono">{k}</kbd><span class="desc">{desc}</span></li>
@@ -117,7 +117,7 @@
   </ul>
 {/each}
 
-<h3 class="grp mono">concepts</h3>
+<SectionHead>concepts</SectionHead>
 <dl class="concepts">
   {#each CONCEPTS as [term, desc] (term)}
     <dt>{term}</dt>
@@ -125,7 +125,7 @@
   {/each}
 </dl>
 
-<h3 class="grp mono">colophon</h3>
+<SectionHead>colophon</SectionHead>
 <dl class="concepts">
   {#each STACK as [area, desc] (area)}
     <dt>{area}</dt>
@@ -139,14 +139,6 @@
 </p>
 
 <style>
-  .grp {
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin: var(--space) 0 calc(var(--space) / 2);
-  }
-
   .keys {
     display: flex;
     flex-direction: column;

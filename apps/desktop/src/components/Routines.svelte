@@ -135,14 +135,13 @@
   }
 </script>
 
-<div class="hdr">
-  <h2>routines</h2>
-  {#if $openSong}
+{#if $openSong}
+  <div class="hdr">
     <Button variant="chip" onclick={() => void createAndEdit()} title="capture the current span + mix as a new routine">
-      ＋ new
+      ＋ new routine
     </Button>
-  {/if}
-</div>
+  </div>
+{/if}
 
 {#if !$openSong}
   <EmptyState>open a song first</EmptyState>
@@ -262,9 +261,8 @@
 <style>
   .hdr {
     display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--space);
+    justify-content: flex-end;
+    margin-bottom: var(--space);
   }
 
   .routines {
