@@ -38,11 +38,15 @@ impl Looper {
         self.pos = frame.min(self.set.frames());
     }
 
-    /// Per-stem gain (clamped to 0.0..=1.5); out-of-range stems are ignored.
+    /// Set a stem's target gain (clamped to 0.0..=1.5); out-of-range stems are
+    /// ignored. The applied gain slews toward it, so changes are click-free.
     pub fn set_gain(&mut self, idx: usize, gain: f32) {
-        if let Some(g) = self.set.gains.get_mut(idx) {
-            *g = gain.clamp(0.0, 1.5);
-        }
+        self.set.set_gain(idx, gain);
+    }
+
+    /// Snap applied gains to their targets — for static-mix callers (export).
+    pub fn settle_gains(&mut self) {
+        self.set.settle();
     }
 
     /// Set loop [start, end) in frames; jumps into the region if the playhead
@@ -135,7 +139,9 @@ impl Looper {
                         // sides are correlated material from the same song,
                         // so sum-to-one gains avoid a mid-fade level bulge
                         // and keep the seam continuous). One frame at a time —
-                        // the blend reads two source positions.
+                        // the blend reads two source positions, so step the gain
+                        // slew once for this output frame before reading both.
+                        self.set.step_gains();
                         let k = self.pos - fade_start;
                         let t = (k as f32 + 0.5) / xfade.max(1) as f32;
                         let (g_out, g_in) = (1.0 - t, t);
@@ -260,17 +266,28 @@ mod tests {
     }
 
     #[test]
-    fn setting_stem_gain_zero_mid_read_silences_its_contribution() {
+    fn setting_stem_gain_zero_slews_its_contribution_out() {
+        use crate::buffer::GAIN_RAMP_FRAMES;
         let constant = |v: f32| SongBuffer {
-            data: vec![v; 1000 * CHANNELS],
+            data: vec![v; 4000 * CHANNELS],
         };
         let mut l = Looper::new(StemSet::new(vec![constant(0.25), constant(0.5)]));
         let mut out = vec![0.0f32; 10 * CHANNELS];
         l.read(&mut out);
         assert!((out[0] - 0.75).abs() < 1e-6, "mix = {}", out[0]);
+
+        // Mute stem 1: the contribution must slew out, not snap. The frame right
+        // after the command is still essentially the full mix.
         l.set_gain(1, 0.0);
         l.read(&mut out);
-        assert!((out[0] - 0.25).abs() < 1e-6, "mix = {}", out[0]);
+        assert!(out[0] > 0.74, "gain snapped instead of slewing: {}", out[0]);
+
+        // After the ramp window the stem is gone and the mix rests at 0.25.
+        let mut tail = vec![0.0f32; GAIN_RAMP_FRAMES * CHANNELS];
+        l.read(&mut tail);
+        let last = tail[(GAIN_RAMP_FRAMES - 1) * CHANNELS];
+        assert!((last - 0.25).abs() < 1e-6, "did not settle: {last}");
+
         // out-of-range index is ignored, not a panic
         l.set_gain(7, 0.0);
     }

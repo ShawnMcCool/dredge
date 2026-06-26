@@ -16,11 +16,20 @@ impl SongBuffer {
     }
 }
 
-/// One or more equal-length stems mixed with per-stem gains.
+/// Frames over which a stem gain slews to a new target — 10 ms at 48 kHz. Short
+/// enough to feel instant, long enough to kill the zipper noise of a step change
+/// (e.g. a routine block muting a stem between loop passes).
+pub const GAIN_RAMP_FRAMES: usize = 480;
+
+/// One or more equal-length stems mixed with per-stem gains. Gains are *slewed*:
+/// `set_gain` moves a stem's target, and the applied `gains` chase it one frame
+/// at a time (see `step_gains`), so changes are click-free. `settle` snaps the
+/// applied gains to target for callers that bake a static mix (export).
 #[derive(Debug, Clone)]
 pub struct StemSet {
     pub stems: Vec<std::sync::Arc<SongBuffer>>, // len >= 1; equal frames (pad on construction)
-    pub gains: Vec<f32>,                        // same len, 0.0..=1.5
+    pub gains: Vec<f32>,                        // applied (current), same len, 0.0..=1.5
+    pub target_gains: Vec<f32>,                 // commanded; `gains` slews toward this
 }
 
 impl StemSet {
@@ -28,6 +37,7 @@ impl StemSet {
         Self {
             stems: vec![std::sync::Arc::new(buf)],
             gains: vec![1.0],
+            target_gains: vec![1.0],
         }
     }
 
@@ -41,15 +51,55 @@ impl StemSet {
                 std::sync::Arc::new(s)
             })
             .collect();
-        let gains = vec![1.0; stems.len()];
-        Self { stems, gains }
+        let n = stems.len();
+        Self {
+            stems,
+            gains: vec![1.0; n],
+            target_gains: vec![1.0; n],
+        }
     }
 
     pub fn frames(&self) -> usize {
         self.stems.first().map(|s| s.frames()).unwrap_or(0)
     }
 
-    /// Mixed (left, right) at frame `pos`: sum of stems[i][pos] * gains[i].
+    /// Set a stem's target gain (clamped to 0.0..=1.5); out-of-range stems are
+    /// ignored. The applied gain slews toward it over `GAIN_RAMP_FRAMES`.
+    pub fn set_gain(&mut self, idx: usize, gain: f32) {
+        if let Some(t) = self.target_gains.get_mut(idx) {
+            *t = gain.clamp(0.0, 1.5);
+        }
+    }
+
+    /// Snap applied gains to their targets — for static-mix callers (export)
+    /// that must not hear the slew.
+    pub fn settle(&mut self) {
+        self.gains.copy_from_slice(&self.target_gains);
+    }
+
+    /// True when every applied gain already equals its target (steady state).
+    #[inline]
+    pub fn gains_settled(&self) -> bool {
+        self.gains == self.target_gains
+    }
+
+    /// Advance the applied gains one frame toward their targets.
+    #[inline]
+    pub fn step_gains(&mut self) {
+        const STEP: f32 = 1.0 / GAIN_RAMP_FRAMES as f32;
+        for (g, &t) in self.gains.iter_mut().zip(&self.target_gains) {
+            let d = t - *g;
+            if d.abs() <= STEP {
+                *g = t;
+            } else {
+                *g += STEP * d.signum();
+            }
+        }
+    }
+
+    /// Mixed (left, right) at frame `pos` with the currently-applied gains. Does
+    /// not advance the slew — callers reading two source positions per output
+    /// frame (the crossfade) `step_gains` once per output frame themselves.
     #[inline]
     pub fn frame(&self, pos: usize) -> (f32, f32) {
         let i = pos * CHANNELS;
@@ -62,18 +112,33 @@ impl StemSet {
     }
 
     /// Mix `out.len() / CHANNELS` contiguous frames starting at source frame
-    /// `start` into `out` (overwrites). Accumulates per stem over a contiguous
-    /// slice — autovectorizes, unlike the per-frame `frame()` inner loop — so
-    /// it's the fast path for the common no-crossfade portion of playback.
-    /// `start` and the run length must stay within `frames()`.
-    pub fn mix_into(&self, start: usize, out: &mut [f32]) {
+    /// `start` into `out` (overwrites), advancing the gain slew per frame. In
+    /// steady state (gains settled) this is the autovectorized constant-gain
+    /// fast path; only while a gain is slewing does it fall to the per-frame
+    /// loop. `start` and the run length must stay within `frames()`.
+    pub fn mix_into(&mut self, start: usize, out: &mut [f32]) {
         out.fill(0.0);
-        let base = start * CHANNELS;
-        for (stem, &gain) in self.stems.iter().zip(&self.gains) {
-            let src = &stem.data[base..base + out.len()];
-            for (o, s) in out.iter_mut().zip(src) {
-                *o += s * gain;
+        if self.gains_settled() {
+            let base = start * CHANNELS;
+            for (stem, &gain) in self.stems.iter().zip(&self.gains) {
+                let src = &stem.data[base..base + out.len()];
+                for (o, s) in out.iter_mut().zip(src) {
+                    *o += s * gain;
+                }
             }
+            return;
+        }
+        let frames = out.len() / CHANNELS;
+        for f in 0..frames {
+            self.step_gains();
+            let i = (start + f) * CHANNELS;
+            let (mut l, mut r) = (0.0, 0.0);
+            for (stem, &g) in self.stems.iter().zip(&self.gains) {
+                l += stem.data[i] * g;
+                r += stem.data[i + 1] * g;
+            }
+            out[f * CHANNELS] = l;
+            out[f * CHANNELS + 1] = r;
         }
     }
 }
@@ -104,7 +169,8 @@ mod tests {
     #[test]
     fn frame_sums_stems_with_gains() {
         let mut set = StemSet::new(vec![constant(10, 0.25), constant(10, 0.5)]);
-        set.gains = vec![1.0, 0.5];
+        set.set_gain(1, 0.5);
+        set.settle();
         let (l, r) = set.frame(3);
         assert!((l - 0.5).abs() < 1e-6, "l = {l}");
         assert!((r - 0.5).abs() < 1e-6, "r = {r}");
@@ -120,7 +186,8 @@ mod tests {
                 data: (0..20).map(|i| (i * 2) as f32).collect(),
             },
         ]);
-        set.gains = vec![1.0, 0.5];
+        set.set_gain(1, 0.5);
+        set.settle();
         let mut out = vec![0.0f32; 6 * CHANNELS];
         set.mix_into(2, &mut out); // frames 2..8
         for (f, frame) in out.chunks_exact(CHANNELS).enumerate() {
@@ -136,5 +203,38 @@ mod tests {
         assert_eq!(set.gains, vec![1.0]);
         assert_eq!(set.frames(), 8);
         assert_eq!(set.frame(0), (0.3, 0.3));
+    }
+
+    #[test]
+    fn gain_slews_to_target_without_instant_jump() {
+        // Drop a unity stem to silence: the applied gain must ramp, not snap.
+        let mut set = StemSet::single(constant(GAIN_RAMP_FRAMES + 100, 1.0));
+        set.set_gain(0, 0.0);
+        assert!(!set.gains_settled(), "target set, not yet reached");
+
+        let mut out = vec![0.0f32; (GAIN_RAMP_FRAMES + 50) * CHANNELS];
+        set.mix_into(0, &mut out);
+
+        // First frame stepped once → still essentially full, NOT zero.
+        assert!(out[0] > 0.99, "first frame jumped to {}", out[0]);
+        // Monotonically non-increasing across the ramp (no zipper / overshoot).
+        for w in out.chunks_exact(CHANNELS).collect::<Vec<_>>().windows(2) {
+            assert!(w[1][0] <= w[0][0] + 1e-6, "gain not monotonic down");
+        }
+        // Reaches and rests at the target by the end of the window.
+        assert!(set.gains_settled());
+        assert!(set.gains[0].abs() < 1e-6);
+        let last = out[(GAIN_RAMP_FRAMES + 49) * CHANNELS];
+        assert!(last.abs() < 1e-6, "did not reach silence: {last}");
+    }
+
+    #[test]
+    fn settle_snaps_gains_for_static_mix() {
+        // Export-style: gains apply immediately, no audible slew at frame 0.
+        let mut set = StemSet::single(constant(10, 1.0));
+        set.set_gain(0, 0.0);
+        set.settle();
+        assert!(set.gains_settled());
+        assert_eq!(set.frame(0), (0.0, 0.0));
     }
 }

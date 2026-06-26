@@ -66,6 +66,8 @@ pub fn render_with_progress(
     for (idx, &gain) in cfg.gains.iter().enumerate() {
         pipeline.apply(EngineCmd::SetStemGain { idx, gain });
     }
+    // A baked mix must be exact from frame 0 — snap past the live gain slew.
+    pipeline.settle_gains();
     pipeline.apply(EngineCmd::SetRate(rate));
     pipeline.apply(EngineCmd::SetPitchScale(cfg.pitch_scale));
     pipeline.apply(EngineCmd::BassFocus(cfg.bass_focus));

@@ -232,6 +232,12 @@ impl Pipeline {
             .partition_point(|m| m.secs * SAMPLE_RATE as f64 <= pos);
     }
 
+    /// Snap stem gains to their targets — for static-mix callers (export) that
+    /// must not hear the live slew.
+    pub fn settle_gains(&mut self) {
+        self.looper.settle_gains();
+    }
+
     pub fn apply(&mut self, cmd: EngineCmd) {
         match cmd {
             EngineCmd::Play => {
