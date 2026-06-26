@@ -8,8 +8,8 @@ use engine::metronome::{Cadence, Kit};
 use engine::pipeline::{EngineCmd, EngineEvent};
 use practice::library::{LoopRename, NewLoop, NewSection};
 use practice::model::{
-    Analysis, AnalysisSection, LoopId, LoopKind, Mix, ProfileRun, Recording, RecordingId, Routine,
-    RoutineId, Section, SectionId, Song, SongId,
+    Analysis, AnalysisSection, Block, CountIn, CountInMode, LoopId, LoopKind, Mix, ProfileRun,
+    Recording, RecordingId, Routine, RoutineId, Section, SectionId, Song, SongId,
 };
 use practice::notes::NotesDoc;
 use practice::store::Store;
@@ -419,6 +419,9 @@ pub struct App {
     /// bass-focus). Every isolation control mutates this; the routine scheduler
     /// applies whole snapshots of it. Reset to `Mix::default()` on song open.
     current_mix: Mix,
+    /// The running practice routine, if any. Advances on engine loop-wrap events
+    /// (`tick`), driving the loop region / mix / rate / count-in per block.
+    active_routine: Option<crate::routine::RoutineRunner>,
     last_position: Option<PositionSnapshot>,
     /// Background-job events (stem separation); drained by `tick()`.
     job_tx: mpsc::Sender<Event>,
@@ -528,6 +531,7 @@ impl App {
             separator,
             open_song: None,
             current_mix: Mix::default(),
+            active_routine: None,
             last_position: None,
             job_tx,
             job_rx,
@@ -656,6 +660,8 @@ impl App {
             "routine.list" => self.routine_list(p),
             "routine.save" => self.routine_save(p),
             "routine.delete" => self.routine_delete(p),
+            "routine.start" => self.routine_start(p),
+            "routine.stop" => self.routine_stop(),
             "play" => self.send_ok(EngineCmd::Play),
             "pause" => self.send_ok(EngineCmd::Pause),
             "seek" => self.seek(p),
@@ -1178,6 +1184,12 @@ impl App {
                         event: "loop_wrapped".into(),
                         data: Value::Null,
                     });
+                    // A running routine advances one pass per wrap; when the
+                    // block changes it's applied here and broadcast so clients
+                    // animate the new mix/rate/indicator.
+                    if let Some(routine_ev) = self.advance_routine_on_wrap() {
+                        events.push(routine_ev);
+                    }
                 }
                 EngineEvent::Finished => events.push(Event {
                     event: "song_finished".into(),
@@ -2210,8 +2222,9 @@ impl App {
         });
         // A freshly opened song starts at full band, no listening aid — the
         // engine loads stems at unity and the UI resets its isolation stores to
-        // match, so the canonical mix tracks that.
+        // match, so the canonical mix tracks that. Any prior routine run ends.
         self.current_mix = Mix::default();
+        self.active_routine = None;
         // The layer cache only ever holds the open song's takes, and recording
         // ids are assigned per-song (each song's takes start at 1). Clearing on
         // every open makes cross-song id collisions impossible — a take from the
@@ -2609,7 +2622,117 @@ impl App {
         }
         let p: P = from_params(p)?;
         self.library.delete_routine(p.song_id, p.id).err_str()?;
+        // Stop a run of the routine being deleted.
+        if self
+            .active_routine
+            .as_ref()
+            .is_some_and(|r| r.routine_id() == p.id)
+        {
+            self.active_routine = None;
+        }
         Ok(Value::Null)
+    }
+
+    /// Launch a routine: load it, apply its first block, and start playback. The
+    /// running routine then owns the transport until stopped — `tick` advances
+    /// it on each loop wrap.
+    fn routine_start(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            song_id: SongId,
+            id: RoutineId,
+        }
+        let p: P = from_params(p)?;
+        let routine = self
+            .library
+            .list_routines(p.song_id)
+            .into_iter()
+            .find(|r| r.id == p.id)
+            .ok_or("routine not found")?;
+        let runner = crate::routine::RoutineRunner::new(p.song_id, routine)
+            .ok_or("routine has no blocks")?;
+        let block = runner.current_block().clone();
+        self.active_routine = Some(runner);
+        self.apply_block(p.song_id, &block);
+        self.audio.send(EngineCmd::Play);
+        serde_json::to_value(self.active_routine.as_ref().unwrap().status()).err_str()
+    }
+
+    /// Stop advancing. The current block's loop / mix / rate / count-in stay in
+    /// place — you keep practicing where it landed; only the auto-advance ends.
+    fn routine_stop(&mut self) -> Result<Value, String> {
+        self.active_routine = None;
+        Ok(json!({ "running": false }))
+    }
+
+    /// Drive the loop region, rate, mix, and count-in for a block. The block is
+    /// passed by value (cloned out of the runner) to keep the borrow clean.
+    fn apply_block(&mut self, song_id: SongId, block: &Block) {
+        let start = self.lead_in_start(song_id, block);
+        self.audio.send(EngineCmd::SetLoopSecs {
+            start,
+            end: block.span.end,
+        });
+        self.audio.send(EngineCmd::SetRate(block.speed));
+        self.apply_mix(block.mix);
+        self.push_block_count_in(song_id, &block.count_in);
+    }
+
+    /// The block's loop start, pushed back by `lead_in_beats` and snapped to the
+    /// analyzed beat grid (the persisted run-up). Falls back to BPM spacing, then
+    /// to the bare span start when no analysis exists.
+    fn lead_in_start(&self, song_id: SongId, block: &Block) -> f64 {
+        if block.lead_in_beats == 0 {
+            return block.span.start;
+        }
+        let Some(a) = self.library.get_analysis(song_id) else {
+            return block.span.start;
+        };
+        if !a.beats.is_empty() {
+            let i = a.beats.partition_point(|&b| b < block.span.start);
+            let target = i.saturating_sub(block.lead_in_beats as usize);
+            return a.beats[target.min(a.beats.len() - 1)];
+        }
+        match a.bpm {
+            Some(bpm) if bpm > 0.0 => {
+                (block.span.start - block.lead_in_beats as f64 * 60.0 / bpm).max(0.0)
+            }
+            _ => block.span.start,
+        }
+    }
+
+    /// Push a block's count-in to the engine, rate-tracking via the analyzed BPM
+    /// (mirrors `push_count_in`, but sourced from the block rather than the
+    /// global setting). Forced off with no BPM or zero beats.
+    fn push_block_count_in(&mut self, song_id: SongId, ci: &CountIn) {
+        let bpm = self.library.get_analysis(song_id).and_then(|a| a.bpm);
+        let (beats, beat_secs) = match bpm {
+            Some(b) if b > 0.0 && ci.beats > 0 => (ci.beats, beat_secs_from_bpm(b)),
+            _ => (0, 0.5),
+        };
+        self.audio.send(EngineCmd::SetCountIn {
+            beats,
+            beat_secs,
+            every_loop: matches!(ci.loop_mode, CountInMode::Every),
+        });
+    }
+
+    /// On an engine loop wrap, advance the active routine. Returns a `routine`
+    /// event when the block changed (the new block has been applied), so `tick`
+    /// can broadcast it. `None` when no routine runs or the block is held.
+    fn advance_routine_on_wrap(&mut self) -> Option<Event> {
+        let runner = self.active_routine.as_mut()?;
+        if !runner.on_wrap() {
+            return None;
+        }
+        let song_id = runner.song_id;
+        let block = runner.current_block().clone();
+        self.apply_block(song_id, &block);
+        let status = self.active_routine.as_ref().unwrap().status();
+        Some(Event {
+            event: "routine".into(),
+            data: serde_json::to_value(status).ok()?,
+        })
     }
 
     // --- shared helpers ---------------------------------------------------
@@ -3711,5 +3834,124 @@ mod routine_tests {
         assert_eq!(routines.len(), 1, "upsert, not append");
         assert_eq!(routines[0].name, "renamed");
         assert_eq!(routines[0].blocks.len(), 1);
+    }
+
+    fn app_with_song_shared() -> (Arc<Mutex<MockEngine>>, App, SongId) {
+        let lib_dir = tempfile::tempdir().unwrap();
+        let src = tempfile::tempdir().unwrap();
+        let audio = src.path().join("a.flac");
+        std::fs::write(&audio, b"AUDIO").unwrap();
+        std::mem::forget(src);
+        let mock = Arc::new(Mutex::new(MockEngine::default()));
+        let mut app = App::new(
+            Store::open_in_memory().unwrap(),
+            Box::new(mock.clone()),
+            Arc::new(FakeSeparator),
+        );
+        app.set_library_root(lib_dir.path().to_path_buf());
+        std::mem::forget(lib_dir);
+        let song = app
+            .library
+            .create_song(&audio, "Title", Some("Band"), "hash", 1.0)
+            .unwrap();
+        (mock, app, song.id)
+    }
+
+    fn save_sample(app: &mut App, song_id: SongId) -> Routine {
+        let save = app.dispatch(req(
+            "routine.save",
+            json!({ "song_id": song_id, "routine": sample_routine() }),
+        ));
+        serde_json::from_value(save.data).unwrap()
+    }
+
+    #[test]
+    fn start_applies_first_block_and_plays() {
+        let (mock, mut app, song_id) = app_with_song_shared();
+        // Open the song with stems so the mix applies stem gains.
+        app.open_song = Some(OpenSong {
+            song: app.library.song_by_id(song_id).unwrap(),
+            stems: true,
+        });
+        let saved = save_sample(&mut app, song_id);
+
+        let start = app.dispatch(req(
+            "routine.start",
+            json!({ "song_id": song_id, "id": saved.id }),
+        ));
+        assert!(start.ok, "got: {:?}", start.error);
+        assert_eq!(start.data["block_index"], json!(0));
+
+        let sent = &mock.lock().unwrap().sent;
+        assert!(sent
+            .iter()
+            .any(|c| matches!(c, EngineCmd::SetLoopSecs { .. })));
+        assert!(sent.iter().any(|c| matches!(c, EngineCmd::SetRate(_))));
+        assert!(sent
+            .iter()
+            .any(|c| matches!(c, EngineCmd::SetCountIn { .. })));
+        assert!(sent.iter().any(|c| matches!(c, EngineCmd::Play)));
+        // Block 0 isolates bass (stem idx 2 at unity, others muted).
+        let gains: Vec<_> = sent
+            .iter()
+            .filter_map(|c| match c {
+                EngineCmd::SetStemGain { idx, gain } => Some((*idx, *gain)),
+                _ => None,
+            })
+            .collect();
+        assert!(gains.contains(&(2, 1.0)), "bass up: {gains:?}");
+        assert!(gains.contains(&(0, 0.0)), "vocals down: {gains:?}");
+    }
+
+    #[test]
+    fn loop_wrap_advances_to_next_block() {
+        let (mock, mut app, song_id) = app_with_song_shared();
+        let saved = save_sample(&mut app, song_id);
+        app.dispatch(req(
+            "routine.start",
+            json!({ "song_id": song_id, "id": saved.id }),
+        ));
+
+        mock.lock().unwrap().sent.clear();
+        mock.lock()
+            .unwrap()
+            .queued_events
+            .push_back(EngineEvent::LoopWrapped);
+        let evs = app.tick();
+
+        let routine_ev = evs
+            .iter()
+            .find(|e| e.event == "routine")
+            .expect("a routine event on block change");
+        assert_eq!(routine_ev.data["block_index"], json!(1));
+        // Block 1 plays at 0.85×.
+        let sent = &mock.lock().unwrap().sent;
+        assert!(
+            sent.iter()
+                .any(|c| matches!(c, EngineCmd::SetRate(r) if (*r - 0.85).abs() < 1e-9)),
+            "block 1 rate applied"
+        );
+    }
+
+    #[test]
+    fn stop_halts_advancement() {
+        let (mock, mut app, song_id) = app_with_song_shared();
+        let saved = save_sample(&mut app, song_id);
+        app.dispatch(req(
+            "routine.start",
+            json!({ "song_id": song_id, "id": saved.id }),
+        ));
+        let stop = app.dispatch(req("routine.stop", json!({})));
+        assert_eq!(stop.data["running"], json!(false));
+
+        mock.lock()
+            .unwrap()
+            .queued_events
+            .push_back(EngineEvent::LoopWrapped);
+        let evs = app.tick();
+        assert!(
+            evs.iter().all(|e| e.event != "routine"),
+            "no advance after stop"
+        );
     }
 }

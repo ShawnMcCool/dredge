@@ -7,6 +7,7 @@ pub mod logging;
 mod profile;
 pub mod protocol;
 pub mod recording;
+pub mod routine;
 mod sampler;
 mod section_click;
 pub mod socket;
