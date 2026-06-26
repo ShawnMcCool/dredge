@@ -385,6 +385,10 @@ struct PendingRecording {
 }
 
 const INPUT_LATENCY_KEY: &str = "input_latency_frames";
+/// How `INPUT_LATENCY_KEY` was last set: `"auto"` (default — re-measured from
+/// PipeWire delays on every take) or `"loopback"` (pinned by AS-7 calibration,
+/// which auto must not clobber).
+const LATENCY_SOURCE_KEY: &str = "latency_source";
 /// Absolute-sample threshold for the latency-calibration click onset detector.
 const CALIBRATION_CLICK_THRESHOLD: f32 = 0.3;
 
@@ -1642,8 +1646,13 @@ impl App {
                 pending.ring_start, pending.anchor_frame, pending.len_frames
             );
         }
-        let samples = {
+        // Read PipeWire's input-stream delay while the capture session is still
+        // alive (before `rec.stop()` tears it down) and carry it out of the
+        // block; it pairs with the output delay below to form the auto RTL
+        // baseline.
+        let (samples, input_delay) = {
             let mut rec = self.recorder.lock().unwrap();
+            let input_delay = rec.input_delay_frames();
             // `ring_start` was pinned at the first real-playback tick (see `tick`).
             // Extract the take from there. `None` means the clocks never published
             // (non-PipeWire backend) or playback never started — fall back to the
@@ -1680,16 +1689,38 @@ impl App {
             // `stop()` tears down the capture session (joins its thread) in all
             // paths; its snapshot_last result is the fallback when the
             // transport-locked range was unavailable.
-            match extracted {
+            let samples = match extracted {
                 Some(s) => {
                     let _ = rec.stop();
                     s
                 }
                 None => rec.stop()?,
-            }
+            };
+            (samples, input_delay)
         };
         self.audio.disarm_playback_clock();
         self.audio.send(EngineCmd::Pause);
+        // Auto RTL baseline: shift every take earlier by the round-trip latency
+        // PipeWire reports (output buffering + input buffering). Skip when a
+        // loopback calibration (AS-7) has pinned the value.
+        let source = self
+            .store
+            .get_setting(LATENCY_SOURCE_KEY)
+            .ok()
+            .flatten()
+            .and_then(|v| v.as_str().map(str::to_owned));
+        if source.as_deref() != Some("loopback") {
+            let output_delay = self.audio.output_delay_frames();
+            let rtl = (output_delay + input_delay).max(0);
+            if std::env::var("DREDGE_DEBUG").is_ok() {
+                eprintln!(
+                    "dredge rtl[auto]: output_delay={output_delay} input_delay={input_delay} rtl={rtl}"
+                );
+            }
+            self.store
+                .set_setting(INPUT_LATENCY_KEY, &json!(rtl))
+                .err_str()?;
+        }
         let dir = self
             .library
             .bundle_dir(pending.song_id)
@@ -2760,6 +2791,7 @@ mod recording_tests {
                 canned: vec![0.3f32; SAMPLE_RATE as usize * CHANNELS],
                 started: None,
                 stopped: false,
+                input_delay: 0,
             }));
 
         let started = app.dispatch(Request {
@@ -2781,6 +2813,37 @@ mod recording_tests {
         let dir = app.song_bundle_dir(song_id).unwrap();
         assert!(dir.join(&recs[0].file).exists(), "WAV should be written");
         assert_eq!(mock.lock().unwrap().layers_len, 1, "one layer pushed");
+    }
+
+    /// AS-6: with `latency_source` unset (auto), finalizing a take writes the
+    /// RTL baseline = output delay + input delay back to `input_latency_frames`.
+    #[test]
+    fn finalize_writes_auto_rtl_baseline_from_pipewire_delays() {
+        let (mock, mut app, _song_id, _lib) =
+            make_shared_mock_with_recorder(Box::new(FakeRecorder {
+                canned: vec![0.3f32; SAMPLE_RATE as usize * CHANNELS],
+                input_delay: 120,
+                ..Default::default()
+            }));
+        mock.lock().unwrap().output_delay = 80;
+
+        app.dispatch(Request {
+            id: 1,
+            cmd: "recording.start".into(),
+            params: json!({ "span": "song", "device_id": "0" }),
+        });
+        let finished = app.dispatch(Request {
+            id: 2,
+            cmd: "recording.stop".into(),
+            params: json!(null),
+        });
+        assert!(finished.ok, "stop failed: {:?}", finished.error);
+
+        assert_eq!(
+            app.store.get_setting(INPUT_LATENCY_KEY).unwrap(),
+            Some(json!(200)),
+            "auto RTL baseline = output_delay(80) + input_delay(120)"
+        );
     }
 
     /// Locks the anchor wiring used by `finalize_recording`: a song frame is
@@ -2821,6 +2884,7 @@ mod recording_tests {
                 canned: vec![0.3f32; SAMPLE_RATE as usize * CHANNELS],
                 started: None,
                 stopped: false,
+                input_delay: 0,
             }));
         app.dispatch(Request {
             id: 1,
@@ -2865,6 +2929,7 @@ mod recording_tests {
                 canned: vec![0.3f32; SAMPLE_RATE as usize * CHANNELS],
                 started: None,
                 stopped: false,
+                input_delay: 0,
             }));
         app.dispatch(Request {
             id: 1,
@@ -2895,6 +2960,7 @@ mod recording_tests {
                 canned: vec![0.3f32; SAMPLE_RATE as usize * CHANNELS],
                 started: None,
                 stopped: false,
+                input_delay: 0,
             }));
         let first = app.dispatch(Request {
             id: 1,
@@ -2935,6 +3001,7 @@ mod recording_tests {
                 canned: vec![0.3f32; SAMPLE_RATE as usize * CHANNELS],
                 started: None,
                 stopped: false,
+                input_delay: 0,
             }));
         app.dispatch(Request {
             id: 1,
@@ -2984,6 +3051,7 @@ mod recording_tests {
                 canned: vec![],
                 started: None,
                 stopped: false,
+                input_delay: 0,
             }));
         let resp = app.dispatch(Request {
             id: 1,

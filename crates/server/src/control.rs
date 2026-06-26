@@ -76,6 +76,8 @@ pub struct MockEngine {
     pub click_schedule: Vec<ClickMark>,
     /// Layer count from the most recent `set_layers`.
     pub layers_len: usize,
+    /// Canned output-stream delay (frames) returned by `output_delay_frames`.
+    pub output_delay: i64,
 }
 
 impl AudioControl for MockEngine {
@@ -113,7 +115,7 @@ impl AudioControl for MockEngine {
     }
     fn disarm_playback_clock(&self) {}
     fn output_delay_frames(&self) -> i64 {
-        0
+        self.output_delay
     }
 }
 

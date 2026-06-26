@@ -58,6 +58,9 @@ pub trait RecordingControl: Send {
     /// `[ring_start, ring_start + len)`, or `None` if `ring_start` is negative or
     /// the range has been evicted from the ring.
     fn extract_range(&self, ring_start: i64, len: i64) -> Option<Vec<f32>>;
+    /// Input-stream buffering reported by PipeWire (`pw_time.delay`), in frames.
+    /// Half of the round-trip latency; the output stream is the other half.
+    fn input_delay_frames(&self) -> i64;
     /// Stop the capture clock publishing.
     fn disarm_clock(&self);
     /// Capture `secs` of input from `device_id` for latency calibration (the
@@ -69,10 +72,13 @@ pub trait RecordingControl: Send {
 }
 
 #[cfg(test)]
+#[derive(Default)]
 pub struct FakeRecorder {
     pub canned: Vec<f32>,
     pub started: Option<(String, i64)>,
     pub stopped: bool,
+    /// Canned input-stream delay (frames) returned by `input_delay_frames`.
+    pub input_delay: i64,
 }
 
 #[cfg(test)]
@@ -101,6 +107,9 @@ impl RecordingControl for FakeRecorder {
     }
     fn extract_range(&self, _ring_start: i64, _len: i64) -> Option<Vec<f32>> {
         Some(self.canned.clone())
+    }
+    fn input_delay_frames(&self) -> i64 {
+        self.input_delay
     }
     fn disarm_clock(&self) {}
 }
@@ -155,6 +164,13 @@ impl RecordingControl for RealRecorder {
         let cap = self.capture.as_ref()?;
         let ring = cap.ring.lock().ok()?;
         ring.read_range(ring_start as u64, (ring_start + len) as u64)
+    }
+
+    fn input_delay_frames(&self) -> i64 {
+        self.capture
+            .as_ref()
+            .map(|c| c.clock().delay_frames())
+            .unwrap_or(0)
     }
 
     fn disarm_clock(&self) {
