@@ -177,11 +177,14 @@
 
 <div class="shell" class:lib-collapsed={$libraryCollapsed} class:panels-collapsed={$panelsCollapsed}>
   <aside class="library" class:collapsed={$libraryCollapsed}>
-    {#if $libraryCollapsed}
-      <button class="rail" onclick={() => actions.toggleLibrary()} title="show library (Ctrl+[)" aria-label="show library">›</button>
-    {:else}
-      <button class="edge left" onclick={() => actions.toggleLibrary()} title="hide library (Ctrl+[)" aria-label="hide library">‹</button>
-      <Library />
+    <button
+      class="rail"
+      onclick={() => actions.toggleLibrary()}
+      title={$libraryCollapsed ? "show library (Ctrl+[)" : "hide library (Ctrl+[)"}
+      aria-label={$libraryCollapsed ? "show library" : "hide library"}
+    >{$libraryCollapsed ? "›" : "‹"}</button>
+    {#if !$libraryCollapsed}
+      <div class="pane"><Library /></div>
     {/if}
   </aside>
   <main class="stage">
@@ -209,36 +212,41 @@
     </div>
   </main>
   <aside class="panels" class:collapsed={$panelsCollapsed}>
-    {#if $panelsCollapsed}
-      <button class="rail" onclick={() => actions.togglePanels()} title="show panels (Ctrl+])" aria-label="show panels">‹</button>
-    {:else}
-      <button class="edge right" onclick={() => actions.togglePanels()} title="hide panels (Ctrl+])" aria-label="hide panels">›</button>
-      <nav class="tabs">
-        {#each shownTabs as t (t)}
-          <button
-            class="tab"
-            class:active={tab === t}
-            class:dragging={dragKey === t}
-            data-tab={t}
-            onpointerdown={(e) => onTabDown(e, t)}
-            onpointermove={onTabMove}
-            onpointerup={onTabUp}
-            onpointercancel={onTabUp}
-            onclick={() => onTabClick(t)}
-            animate:flip={{ duration: 180 }}
-            title="drag to reorder"
-          >
-            {t}
-          </button>
-        {/each}
-      </nav>
-      {#key tab}
-        {@const View = TAB_VIEWS[tab]}
-        <div class="fade-in">
-          <View />
-        </div>
-      {/key}
+    {#if !$panelsCollapsed}
+      <div class="pane">
+        <nav class="tabs">
+          {#each shownTabs as t (t)}
+            <button
+              class="tab"
+              class:active={tab === t}
+              class:dragging={dragKey === t}
+              data-tab={t}
+              onpointerdown={(e) => onTabDown(e, t)}
+              onpointermove={onTabMove}
+              onpointerup={onTabUp}
+              onpointercancel={onTabUp}
+              onclick={() => onTabClick(t)}
+              animate:flip={{ duration: 180 }}
+              title="drag to reorder"
+            >
+              {t}
+            </button>
+          {/each}
+        </nav>
+        {#key tab}
+          {@const View = TAB_VIEWS[tab]}
+          <div class="fade-in">
+            <View />
+          </div>
+        {/key}
+      </div>
     {/if}
+    <button
+      class="rail"
+      onclick={() => actions.togglePanels()}
+      title={$panelsCollapsed ? "show panels (Ctrl+])" : "hide panels (Ctrl+])"}
+      aria-label={$panelsCollapsed ? "show panels" : "hide panels"}
+    >{$panelsCollapsed ? "‹" : "›"}</button>
   </aside>
 </div>
 
@@ -274,49 +282,42 @@
     --col-panels: var(--rail-w);
   }
 
+  /* Each aside is a flex row: an always-present full-height rail on the outer
+     edge plus the slidable pane. The rail is the single collapse/expand handle —
+     a slam to the window's outer edge lands on it at any height. */
   .library {
-    position: relative;
+    display: flex;
+    flex-direction: row;
     border-right: 1px solid var(--line);
-    padding: var(--space);
     min-width: 0;
-    overflow-y: auto;
   }
-
-  /* overflow visible (not hidden) so the rail can bleed past the corner below */
+  .panels {
+    display: flex;
+    flex-direction: row;
+    border-left: 1px solid var(--line);
+    min-width: 0;
+  }
+  /* collapsed: only the rail remains, so the divider has nothing to separate */
   .library.collapsed,
   .panels.collapsed {
-    padding: 0;
-    overflow: visible;
-    /* the divider belongs to the open pane — once collapsed there's nothing to
-       separate, so drop it rather than leave a free-floating vertical line */
     border: none;
   }
 
-  /* thin expand rail shown when a side column is collapsed. Absolutely placed so
-     it can BLEED 6px past the top + outer edges (same fractional-HiDPI fix as
-     .edge) — a slam to the literal corner/edge then lands inside the rail. */
+  /* full-height edge rail — toggles its pane. Expanded → collapse; collapsed →
+     expand. Stays quiet (chevron hidden) until hovered, like the old handles. */
   .rail {
-    position: absolute;
-    top: -6px;
-    bottom: 0;
-    width: auto;
-    height: auto;
+    flex: 0 0 var(--rail-w);
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     background: none;
     border: none;
     color: var(--muted);
     cursor: pointer;
     font-size: 14px;
-    /* expand chevron stays hidden until the cursor is over the collapsed rail */
     opacity: 0;
     transition: opacity 120ms ease;
-  }
-  .library.collapsed .rail {
-    left: -6px;
-    right: 0;
-  }
-  .panels.collapsed .rail {
-    left: 0;
-    right: 0;
   }
   .rail:hover {
     background: var(--bg-raised);
@@ -324,47 +325,13 @@
     opacity: 1;
   }
 
-  /* Collapse handle tucked into the window's top outer corner. It BLEEDS 6px
-     past the top + outer edges (negative offsets) so the very corner pixel
-     (0,0 etc.) lands in the handle's interior — under fractional HiDPI scaling
-     (e.g. dpr 1.75) a box flush to the edge snaps just inside it, so a slam to
-     the literal corner falls through to the column. The off-screen bleed makes
-     the corner-slam reliable; padding pushes the chevron into the visible part. */
-  .edge {
-    position: absolute;
-    top: -6px;
-    z-index: 2;
-    width: 28px;
-    height: 28px;
-    background: var(--bg);
-    border: 1px solid var(--line);
-    color: var(--muted);
-    font-size: 11px;
-    cursor: pointer;
-    /* collapse chevron stays hidden until the cursor nears the corner (its hit
-       area is unchanged, so the corner-slam still collapses) */
-    opacity: 0;
-    transition: opacity 120ms ease;
-  }
-  .edge:hover {
-    color: var(--fg);
-    border-color: var(--muted);
-    opacity: 1;
-  }
-  /* square the off-screen (outer) corner; pad the chevron into the on-screen part */
-  .edge.left {
-    left: -6px;
-    padding: 6px 0 0 6px;
-    border-top-left-radius: 0;
-    border-bottom-right-radius: var(--radius);
-  }
-  /* right side: the slam lands at (W-1, 0) — already 1px inside horizontally, so
-     only the top edge needs the bleed (no rightward bleed → no panel overflow) */
-  .edge.right {
-    right: 0;
-    padding: 6px 6px 0 0;
-    border-top-right-radius: 0;
-    border-bottom-left-radius: var(--radius);
+  /* the slidable content inboard of the rail */
+  .pane {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: var(--space);
   }
 
   .stage {
@@ -388,15 +355,6 @@
   }
 
 
-
-  .panels {
-    position: relative;
-    border-left: 1px solid var(--line);
-    padding: var(--space);
-    min-width: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
-  }
 
 
   .tabs {
