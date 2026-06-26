@@ -1,9 +1,10 @@
 # Campaign: Overdub auto-sync
 
-**Status:** CORE COMPLETE — verified on hardware 2026-06-26. Transport-locked
-capture + auto RTL trim (64ms) work; count-in excluded, early-stop clamped,
-from-playhead anchored ("seems ok"). Only optional AS-7 (loopback calibration)
-remains, deferred. Started 2026-06-25.
+**Status:** COMPLETE — fully verified on hardware 2026-06-26. Transport-locked
+capture (count-in excluded, early-stop clamped, from-playhead anchored) + auto
+RTL trim + loopback calibration (visualized modal; measured 34.1ms over the
+cable — notably the PipeWire auto-estimate of 64ms was ~2× too high, so loopback
+is the accurate value). Started 2026-06-25.
 **Spec:** `docs/superpowers/specs/2026-06-25-overdub-autosync-design.md`
 **Plan:** `docs/superpowers/plans/2026-06-25-overdub-autosync.md`
 **Research/reference (critical — read before touching alignment):** `docs/research/recording-latency-compensation.md`
@@ -53,7 +54,8 @@ timing today; the ring has no absolute frame index.
 | AS-5d | Fix negative ring_start (from-playhead recording) | DONE — awaiting hardware test |
 | — | Logging: DREDGE_DEBUG keeps stderr; breadcrumb; `just logs` | DONE — tested via daemon |
 | AS-8b | Bundle spawn slots into `RenderShared` struct | DONE (bfba05e) — −35 lines, 4 `#[allow]`s gone, gate green |
-| AS-7 | Part 2: loopback ping calibration | BUILT (3a73cc4 backend + f174926 UI) — cable available; awaiting hardware test |
+| AS-7 | Part 2: loopback ping calibration | DONE & VERIFIED on hardware — measured 34.1ms (1637 frames) over the cable, clean single return spike |
+| AS-7-fix | Clamp calibration window to captured frames | DONE — fixed "window unavailable" (read 1s past a ~1s capture) |
 | AS-7-UI | Calibration modal (visualizes the round trip) | DONE (f174926) — vite+chrome smoke test passed (renders, no effect loop) |
 | AS-8 | Full gate + cleanup | gate GREEN; spawn refactor done |
 
@@ -123,6 +125,16 @@ it's a contained sub-project; the spec/plan already describe it.
 ## Progress log
 
 (Newest first.)
+
+- 2026-06-26: **AS-7 loopback calibration DONE & verified on hardware.** Built
+  backend (engine output impulse + emit-time capture, clock-correlated onset
+  measurement; 3a73cc4) + a visualized modal (envelope with sent/returned
+  markers; f174926, vite+chrome smoke-tested). Hit a "window unavailable" bug
+  (read 1s past a ~1s capture) — fixed by clamping the window to captured frames.
+  User measured **34.1ms (1637 frames)** over the cable, clean single return
+  spike. Key finding: PipeWire's reported delay (64ms) was ~2× the true
+  round-trip — loopback gives the accurate value. **Overdub auto-sync feature
+  fully complete.**
 
 - 2026-06-26: From-playhead anchor fix verified ("seems ok"). **Overdub
   auto-sync core feature COMPLETE & hardware-verified** across all paths:
