@@ -36,12 +36,34 @@ function isEditingTarget(target: EventTarget | null): boolean {
   return target.closest('[data-keys="capture"]') !== null;
 }
 
-/** Jump the playhead one bar (downbeat) in `dir`, falling back to a beat when
- *  the song has no downbeats, and to a 2 s nudge when it isn't analyzed. */
-async function seekByBar(dir: 1 | -1): Promise<void> {
+// ── Waveform bar navigation ──────────────────────────────────────────────────
+// Left/Right step the playhead one bar at a time. Two things the naive version
+// got wrong, fixed here:
+//   1. ACCUMULATION. Stepping from the *live* playhead breaks during playback —
+//      the playhead creeps forward between presses, so repeated Lefts snap back
+//      to the same bar. Instead we step a `pendingTarget` that accumulates while
+//      presses stay rapid (within ACCUM_WINDOW); a longer gap resets it to the
+//      live playhead so a deliberate new move starts from "here".
+//   2. OUR OWN KEY-REPEAT. We ignore the OS auto-repeat (`e.repeat`) and run our
+//      own timer on keydown→keyup, so the repeat rate/acceleration is ours to
+//      tune (and a future on-screen control can drive the same mechanism).
+const ACCUM_WINDOW = 600; // ms: presses within this accumulate; longer resets
+const HOLD_DELAY = 300; // ms a key is held before auto-repeat kicks in
+const REPEAT_START = 140; // ms: first auto-repeat interval
+const REPEAT_MIN = 55; // ms: fastest interval after acceleration
+const REPEAT_ACCEL = 12; // ms shaved off each tick
+
+let navDir: -1 | 0 | 1 = 0;
+let holdTimer: ReturnType<typeof setTimeout> | null = null;
+let repeatTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingTarget: number | null = null;
+let lastStepAt = 0;
+
+/** The previous/next bar (downbeat) from `from`, falling back to beats, then a
+ *  2 s nudge when the song isn't analyzed. Clamped to the song. */
+function barTarget(from: number, dir: 1 | -1): number {
   const open = get(openSong);
-  if (!open) return;
-  const now = get(position).secs;
+  if (!open) return from;
   const grid = open.analysis?.downbeats?.length
     ? open.analysis.downbeats
     : (open.analysis?.beats ?? []);
@@ -49,12 +71,52 @@ async function seekByBar(dir: 1 | -1): Promise<void> {
   let target: number | undefined;
   if (grid.length) {
     target =
-      dir > 0 ? grid.find((t) => t > now + eps) : [...grid].reverse().find((t) => t < now - eps);
+      dir > 0 ? grid.find((t) => t > from + eps) : [...grid].reverse().find((t) => t < from - eps);
   }
-  if (target === undefined) {
-    target = Math.max(0, Math.min(open.song.duration_secs, now + dir * 2));
+  if (target === undefined) target = from + dir * 2;
+  return Math.max(0, Math.min(open.song.duration_secs, target));
+}
+
+function stepBar(dir: 1 | -1): void {
+  if (!get(openSong)) return;
+  const now = performance.now();
+  if (pendingTarget === null || now - lastStepAt > ACCUM_WINDOW) {
+    pendingTarget = get(position).secs; // fresh move: start from the live playhead
   }
-  await actions.seek(target);
+  pendingTarget = barTarget(pendingTarget, dir);
+  lastStepAt = now;
+  void actions.seek(pendingTarget);
+}
+
+function clearNavTimers(): void {
+  if (holdTimer !== null) clearTimeout(holdTimer);
+  if (repeatTimer !== null) clearTimeout(repeatTimer);
+  holdTimer = null;
+  repeatTimer = null;
+}
+
+/** Begin navigating: one immediate step, then our own accelerating repeat. */
+function startNav(dir: 1 | -1): void {
+  if (navDir === dir) return; // already running this direction
+  clearNavTimers();
+  navDir = dir;
+  stepBar(dir);
+  holdTimer = setTimeout(() => {
+    let interval = REPEAT_START;
+    const tick = () => {
+      if (navDir !== dir) return;
+      stepBar(dir);
+      interval = Math.max(REPEAT_MIN, interval - REPEAT_ACCEL);
+      repeatTimer = setTimeout(tick, interval);
+    };
+    tick();
+  }, HOLD_DELAY);
+}
+
+function stopNav(dir?: 1 | -1): void {
+  if (dir !== undefined && navDir !== dir) return;
+  navDir = 0;
+  clearNavTimers();
 }
 
 async function handle(e: KeyboardEvent): Promise<void> {
@@ -92,11 +154,11 @@ async function handle(e: KeyboardEvent): Promise<void> {
     }
     case "ArrowRight":
       e.preventDefault();
-      await seekByBar(1);
+      if (!e.repeat) startNav(1); // ignore the OS auto-repeat; our timer drives it
       break;
     case "ArrowLeft":
       e.preventDefault();
-      await seekByBar(-1);
+      if (!e.repeat) startNav(-1);
       break;
     case "r": {
       const l = get(activeLoop);
@@ -170,7 +232,21 @@ async function handle(e: KeyboardEvent): Promise<void> {
 }
 
 export function installKeys(): () => void {
-  const listener = (e: KeyboardEvent) => void handle(e);
-  window.addEventListener("keydown", listener);
-  return () => window.removeEventListener("keydown", listener);
+  const onKeydown = (e: KeyboardEvent) => void handle(e);
+  // Arrow release stops our custom repeat. Window blur does too, so a key held
+  // as focus leaves can't get stuck repeating.
+  const onKeyup = (e: KeyboardEvent) => {
+    if (e.key === "ArrowRight") stopNav(1);
+    else if (e.key === "ArrowLeft") stopNav(-1);
+  };
+  const onBlur = () => stopNav();
+  window.addEventListener("keydown", onKeydown);
+  window.addEventListener("keyup", onKeyup);
+  window.addEventListener("blur", onBlur);
+  return () => {
+    window.removeEventListener("keydown", onKeydown);
+    window.removeEventListener("keyup", onKeyup);
+    window.removeEventListener("blur", onBlur);
+    clearNavTimers();
+  };
 }
