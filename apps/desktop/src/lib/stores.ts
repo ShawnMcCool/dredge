@@ -59,6 +59,46 @@ export interface LoopRegion {
   kind: LoopKind;
 }
 
+// ── Practice routines (mirrors practice::model) ───────────────────────────────
+
+/** Resolved isolation state: bass-focus + per-stem gains (vocals/drums/bass/
+ *  other, 0..1). The canonical "what you hear", matching the backend `Mix`. */
+export interface Mix {
+  bass_focus: boolean;
+  stems: number[];
+}
+
+export interface CountIn {
+  beats: number;
+  loop_mode: "first" | "every";
+}
+
+export interface Block {
+  span: { start: number; end: number };
+  mix: Mix;
+  speed: number;
+  passes: number;
+  lead_in_beats: number;
+  count_in: CountIn;
+  name: string | null;
+}
+
+export interface Routine {
+  id: number;
+  name: string;
+  blocks: Block[];
+}
+
+/** Pushed by the backend scheduler each time the active block changes. */
+export interface RoutineStatus {
+  running: boolean;
+  routine_id: number;
+  block_index: number;
+  block_count: number;
+  passes_remaining: number;
+  block: Block;
+}
+
 export type TempoCurve =
   | { curve: "dwell"; rate: number }
   | { curve: "ladder"; start: number; step: number; target: number }
@@ -123,6 +163,7 @@ export interface OpenSong {
   song: Song;
   sections: Section[];
   loops: LoopRegion[];
+  routines: Routine[];
   peaks: Peaks;
   /** True when the engine was loaded with the song's 4 cached stems. */
   stems: boolean;
@@ -342,6 +383,10 @@ export const tunerOn = writable(false);
 export const tunerInput = writable<string>("default");
 /** Mixer state for the open song's stems (sliders × mute × solo). */
 export const stemMix = writable<StemMix>(defaultStemMix());
+
+/** The running practice routine, or null. Set from the `routine` event and the
+ *  start/stop responses; drives the block indicator and the fader animation. */
+export const activeRoutine = writable<RoutineStatus | null>(null);
 export const stemsError = writable<string | null>(null);
 /** All overdub recordings for the open song. */
 export const recordings = writable<Recording[]>([]);
@@ -664,6 +709,7 @@ export const actions = {
       currentLoop.set(null);
       workingLoop.set(null);
       stemMix.set(defaultStemMix());
+      activeRoutine.set(null);
       stemsError.set(null);
       analysisError.set(null);
       recordings.set(data.recordings ?? []);
@@ -1174,6 +1220,82 @@ export const actions = {
     await this.applyStemMix();
   },
 
+  // --- routines ---
+
+  /** Snapshot the live isolation state as a `Mix` (the block's "what you hear").
+   *  Resolved gains — mute/solo folded in — matching the backend contract. */
+  captureMix(): Mix {
+    return { bass_focus: get(bassFocus), stems: this.stemGainsVector(get(stemMix)) };
+  },
+
+  /** Build a block from the current span (active loop → drill span → whole song),
+   *  speed, and mix. The author tweaks fields afterward. */
+  captureBlock(): Block {
+    const open = get(openSong);
+    const loop = get(currentLoop);
+    const drill = get(drillSpan);
+    const span = loop
+      ? { start: loop.start, end: loop.end }
+      : drill
+        ? { start: drill.start, end: drill.end }
+        : { start: 0, end: open?.song.duration_secs ?? 0 };
+    return {
+      span,
+      mix: this.captureMix(),
+      speed: get(position).rate,
+      passes: 1,
+      lead_in_beats: 0,
+      count_in: { beats: 0, loop_mode: "first" },
+      name: null,
+    };
+  },
+
+  async refreshRoutines(): Promise<void> {
+    const open = get(openSong);
+    if (!open) return;
+    const routines = await cmd<Routine[]>("routine.list", { song_id: open.song.id });
+    openSong.update((o) => (o ? { ...o, routines } : o));
+  },
+
+  /** Upsert a routine (id 0 = new) and refresh the list. */
+  async saveRoutine(routine: Routine): Promise<void> {
+    const open = get(openSong);
+    if (!open) return;
+    await cmd("routine.save", { song_id: open.song.id, routine });
+    await this.refreshRoutines();
+  },
+
+  /** New routine seeded with one block captured from the current state, so it's
+   *  immediately launchable. */
+  async newRoutine(): Promise<void> {
+    await this.saveRoutine({ id: 0, name: "routine", blocks: [this.captureBlock()] });
+  },
+
+  async addBlock(routine: Routine): Promise<void> {
+    await this.saveRoutine({ ...routine, blocks: [...routine.blocks, this.captureBlock()] });
+  },
+
+  async deleteRoutine(id: number): Promise<void> {
+    const open = get(openSong);
+    if (!open) return;
+    await cmd("routine.delete", { song_id: open.song.id, id });
+    if (get(activeRoutine)?.routine_id === id) activeRoutine.set(null);
+    await this.refreshRoutines();
+  },
+
+  async startRoutine(id: number): Promise<void> {
+    const open = get(openSong);
+    if (!open) return;
+    const status = await cmd<RoutineStatus>("routine.start", { song_id: open.song.id, id });
+    activeRoutine.set(status);
+    applyRoutineMix(status.block.mix);
+  },
+
+  async stopRoutine(): Promise<void> {
+    await cmd("routine.stop");
+    activeRoutine.set(null);
+  },
+
   // --- recordings ---
 
   /** Trigger an armed take from the transport: resolve the configured span +
@@ -1393,6 +1515,27 @@ async function openLastSong(): Promise<void> {
 
 // --- events ----------------------------------------------------------------
 
+/** Animate the isolation faders to a routine block's mix (display only — the
+ *  backend already applied it to the engine, with its own gain slew). Glides
+ *  the levels over a short window so the faders don't lurch between blocks. */
+let routineMixRaf = 0;
+function applyRoutineMix(mix: Mix): void {
+  bassFocus.set(mix.bass_focus);
+  const target = mix.stems.map((g) => Math.max(0, Math.min(100, g * 100)));
+  const start = get(stemMix).levels.slice();
+  const t0 = performance.now();
+  const DUR = 220;
+  cancelAnimationFrame(routineMixRaf);
+  const tick = (now: number) => {
+    const k = Math.min(1, (now - t0) / DUR);
+    const levels = target.map((tl, i) => (start[i] ?? tl) + (tl - (start[i] ?? tl)) * k);
+    // Routine mix is absolute gains — mute/solo are folded in, so clear them.
+    stemMix.set({ levels, mutes: [false, false, false, false], solos: [false, false, false, false] });
+    if (k < 1) routineMixRaf = requestAnimationFrame(tick);
+  };
+  routineMixRaf = requestAnimationFrame(tick);
+}
+
 export async function initEvents(): Promise<() => void> {
   void openLastSong();
   return onEvent((ev) => {
@@ -1438,6 +1581,12 @@ export async function initEvents(): Promise<() => void> {
           }
           if (r.armNext) drillRecall.set({ ...r, armNext: false });
         }
+        break;
+      }
+      case "routine": {
+        const status = ev.data as RoutineStatus;
+        activeRoutine.set(status);
+        applyRoutineMix(status.block.mix);
         break;
       }
       case "stems_progress": {

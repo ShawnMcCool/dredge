@@ -12,6 +12,7 @@
   import Isolation from "./components/Isolation.svelte";
   import Notes from "./components/Notes.svelte";
   import Recordings from "./components/Recordings.svelte";
+  import Routines from "./components/Routines.svelte";
   import Sections from "./components/Sections.svelte";
   import SettingsPanel from "./components/SettingsPanel.svelte";
   import Transport from "./components/Transport.svelte";
@@ -34,12 +35,13 @@
     settingsOpen,
   } from "./lib/stores";
 
-  const ALL_TABS = ["structure", "loops", "export", "profile", "devices", "settings", "guide"] as const;
+  const ALL_TABS = ["structure", "loops", "routines", "export", "profile", "devices", "settings", "guide"] as const;
   type Tab = (typeof ALL_TABS)[number];
   // one panel view per tab — the nav and the body both drive off this map
   const TAB_VIEWS: Record<Tab, Component> = {
     structure: Sections,
     loops: Loops,
+    routines: Routines,
     export: Export,
     profile: ProfilingPanel,
     devices: Devices,
