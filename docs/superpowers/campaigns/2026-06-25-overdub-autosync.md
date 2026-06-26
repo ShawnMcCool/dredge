@@ -1,6 +1,6 @@
 # Campaign: Overdub auto-sync
 
-**Status:** IN PROGRESS — Part 1 code-complete + count-in fix; **awaiting on-Focusrite re-test** before Part 2 (RTL calibration). Started 2026-06-25.
+**Status:** IN PROGRESS — **Part 1 VERIFIED on hardware** (2026-06-26: "much closer now", count-in excluded, take lands close). Building Part 2 (auto RTL trim). Started 2026-06-25.
 **Spec:** `docs/superpowers/specs/2026-06-25-overdub-autosync-design.md`
 **Plan:** `docs/superpowers/plans/2026-06-25-overdub-autosync.md`
 **Research/reference (critical — read before touching alignment):** `docs/research/recording-latency-compensation.md`
@@ -45,7 +45,8 @@ timing today; the ring has no absolute frame index.
 | AS-5 | Transport-locked take extraction | DONE (b548249) |
 | AS-5b | Count-in fix: pin anchor at playback start | DONE (3c7dcff) — **awaiting re-test** |
 | — | Recordings UI: "default (follow devices)" + "from playhead" | DONE (35067c2) |
-| AS-6 | Part 2: PipeWire-reported latency baseline | pending (after Part 1 re-test) |
+| AS-5c | Clamp take to captured frames (early-stop fallback re-included count-in) | DONE — verified on hardware |
+| AS-6 | Part 2: PipeWire-reported latency baseline | in progress |
 | AS-7 | Part 2: loopback ping calibration | pending |
 | AS-8 | Full gate + smoke + manual device verification | pending |
 
