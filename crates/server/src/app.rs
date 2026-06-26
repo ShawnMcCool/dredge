@@ -8,7 +8,7 @@ use engine::metronome::{Cadence, Kit};
 use engine::pipeline::{EngineCmd, EngineEvent};
 use practice::library::{LoopRename, NewLoop, NewSection};
 use practice::model::{
-    Analysis, AnalysisSection, LoopId, LoopKind, ProfileRun, Recording, RecordingId, Section,
+    Analysis, AnalysisSection, LoopId, LoopKind, Mix, ProfileRun, Recording, RecordingId, Section,
     SectionId, Song, SongId,
 };
 use practice::notes::NotesDoc;
@@ -415,6 +415,10 @@ pub struct App {
     audio: Box<dyn AudioControl>,
     separator: Arc<dyn StemSeparator>,
     open_song: Option<OpenSong>,
+    /// Canonical live mix — the resolved isolation state (stem gains +
+    /// bass-focus). Every isolation control mutates this; the routine scheduler
+    /// applies whole snapshots of it. Reset to `Mix::default()` on song open.
+    current_mix: Mix,
     last_position: Option<PositionSnapshot>,
     /// Background-job events (stem separation); drained by `tick()`.
     job_tx: mpsc::Sender<Event>,
@@ -523,6 +527,7 @@ impl App {
             audio,
             separator,
             open_song: None,
+            current_mix: Mix::default(),
             last_position: None,
             job_tx,
             job_rx,
@@ -656,6 +661,8 @@ impl App {
             "loop.set" => self.loop_set(p),
             "loop.clear" => self.send_ok(EngineCmd::ClearLoop),
             "bass_focus" => self.bass_focus(p),
+            "mix.get" => serde_json::to_value(self.current_mix()).err_str(),
+            "mix.set" => self.mix_set(p),
             "mute" => self.mute(p),
             "pitch" => self.pitch(p),
             "countin.set" => self.countin_set(p),
@@ -834,7 +841,33 @@ impl App {
             on: bool,
         }
         let p: P = from_params(p)?;
+        self.current_mix.bass_focus = p.on;
         self.send_ok(EngineCmd::BassFocus(p.on))
+    }
+
+    /// The canonical live mix (resolved isolation state).
+    pub(crate) fn current_mix(&self) -> Mix {
+        self.current_mix
+    }
+
+    /// Apply a whole mix to the engine and record it as the live mix. Bass-focus
+    /// always applies; stem gains only when the open song actually has stems
+    /// (matching the `stems.gains` guard). The single path the routine scheduler
+    /// drives when a block becomes active.
+    fn apply_mix(&mut self, mix: Mix) {
+        self.current_mix = mix;
+        self.audio.send(EngineCmd::BassFocus(mix.bass_focus));
+        if self.open_song.as_ref().is_some_and(|o| o.stems) {
+            for (idx, gain) in mix.stems.into_iter().enumerate() {
+                self.audio.send(EngineCmd::SetStemGain { idx, gain });
+            }
+        }
+    }
+
+    fn mix_set(&mut self, p: Value) -> Result<Value, String> {
+        let mix: Mix = from_params(p)?;
+        self.apply_mix(mix);
+        Ok(Value::Null)
     }
 
     fn mute(&mut self, p: Value) -> Result<Value, String> {
@@ -1368,6 +1401,7 @@ impl App {
         if !open.stems {
             return Err("no stems loaded for the open song".into());
         }
+        self.current_mix.stems = p.gains;
         for (idx, gain) in p.gains.into_iter().enumerate() {
             self.audio.send(EngineCmd::SetStemGain { idx, gain });
         }
@@ -2170,6 +2204,10 @@ impl App {
             song,
             stems: decoded.stems,
         });
+        // A freshly opened song starts at full band, no listening aid — the
+        // engine loads stems at unity and the UI resets its isolation stores to
+        // match, so the canonical mix tracks that.
+        self.current_mix = Mix::default();
         // The layer cache only ever holds the open song's takes, and recording
         // ids are assigned per-song (each song's takes start at 1). Clearing on
         // every open makes cross-song id collisions impossible — a take from the
@@ -3386,5 +3424,130 @@ mod recording_tests {
         });
         assert!(!resp.ok);
         assert!(resp.error.unwrap().contains("not recording"));
+    }
+}
+
+#[cfg(test)]
+mod mix_tests {
+    use super::*;
+    use crate::control::MockEngine;
+    use crate::stems::FakeSeparator;
+    use practice::store::Store;
+    use std::sync::{Arc, Mutex};
+
+    fn make_shared_mock() -> (Arc<Mutex<MockEngine>>, App) {
+        let mock = Arc::new(Mutex::new(MockEngine::default()));
+        let app = App::new(
+            Store::open_in_memory().unwrap(),
+            Box::new(mock.clone()),
+            Arc::new(FakeSeparator),
+        );
+        (mock, app)
+    }
+
+    fn req(cmd: &str, params: Value) -> Request {
+        Request {
+            id: 1,
+            cmd: cmd.into(),
+            params,
+        }
+    }
+
+    #[test]
+    fn mix_get_starts_at_default() {
+        let (_mock, mut app) = make_shared_mock();
+        let resp = app.dispatch(req("mix.get", json!({})));
+        assert!(resp.ok, "got: {:?}", resp.error);
+        let mix: Mix = serde_json::from_value(resp.data).unwrap();
+        assert_eq!(mix, Mix::default());
+    }
+
+    #[test]
+    fn bass_focus_updates_current_mix_and_forwards() {
+        let (mock, mut app) = make_shared_mock();
+        let resp = app.dispatch(req("bass_focus", json!({ "on": true })));
+        assert!(resp.ok, "got: {:?}", resp.error);
+        assert!(app.current_mix().bass_focus);
+        assert!(mock
+            .lock()
+            .unwrap()
+            .sent
+            .iter()
+            .any(|c| matches!(c, EngineCmd::BassFocus(true))));
+    }
+
+    #[test]
+    fn stems_gains_updates_current_mix() {
+        let (_mock, mut app) = make_shared_mock();
+        // Pretend a stems-loaded song is open (no decode paid).
+        app.open_song = Some(OpenSong {
+            song: Song {
+                id: SongId(1),
+                title: "T".into(),
+                artist: None,
+                path: "p".into(),
+                file_hash: "h".into(),
+                duration_secs: 1.0,
+            },
+            stems: true,
+        });
+        let gains = [0.0_f32, 1.0, 0.5, 0.25];
+        let resp = app.dispatch(req("stems.gains", json!({ "gains": gains })));
+        assert!(resp.ok, "got: {:?}", resp.error);
+        assert_eq!(app.current_mix().stems, gains);
+    }
+
+    #[test]
+    fn mix_set_applies_bass_focus_and_stem_gains_with_stems() {
+        let (mock, mut app) = make_shared_mock();
+        app.open_song = Some(OpenSong {
+            song: Song {
+                id: SongId(1),
+                title: "T".into(),
+                artist: None,
+                path: "p".into(),
+                file_hash: "h".into(),
+                duration_secs: 1.0,
+            },
+            stems: true,
+        });
+        let mix = Mix {
+            bass_focus: true,
+            stems: [0.0, 1.0, 0.5, 0.25],
+        };
+        let resp = app.dispatch(req("mix.set", serde_json::to_value(mix).unwrap()));
+        assert!(resp.ok, "got: {:?}", resp.error);
+        assert_eq!(app.current_mix(), mix);
+
+        let sent = &mock.lock().unwrap().sent;
+        assert!(sent.iter().any(|c| matches!(c, EngineCmd::BassFocus(true))));
+        let gain_cmds: Vec<_> = sent
+            .iter()
+            .filter_map(|c| match c {
+                EngineCmd::SetStemGain { idx, gain } => Some((*idx, *gain)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(gain_cmds, vec![(0, 0.0), (1, 1.0), (2, 0.5), (3, 0.25)]);
+    }
+
+    #[test]
+    fn mix_set_skips_stem_gains_without_stems() {
+        let (mock, mut app) = make_shared_mock();
+        // No open song → no stems → stem gains must not be sent, bass-focus still is.
+        let mix = Mix {
+            bass_focus: true,
+            stems: [0.2, 0.3, 0.4, 0.5],
+        };
+        let resp = app.dispatch(req("mix.set", serde_json::to_value(mix).unwrap()));
+        assert!(resp.ok, "got: {:?}", resp.error);
+        let sent = &mock.lock().unwrap().sent;
+        assert!(sent.iter().any(|c| matches!(c, EngineCmd::BassFocus(true))));
+        assert!(
+            !sent
+                .iter()
+                .any(|c| matches!(c, EngineCmd::SetStemGain { .. })),
+            "stem gains must be skipped when no stems are loaded"
+        );
     }
 }

@@ -57,6 +57,30 @@ pub struct LoopRegion {
     pub kind: LoopKind,
 }
 
+/// What you hear: the stem balance plus the bass-focus listening aid. The live
+/// isolation state is an instance of this; a routine block stores a snapshot of
+/// it. `stems` are the resolved "what you hear" gains (mute/solo already folded
+/// in), in the fixed order vocals/drums/bass/other — matching the engine's
+/// per-stem gain index and the export contract. Speed/pitch are not part of the
+/// mix; they live on the transport.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Mix {
+    /// Bass-focus listening aid (low-pass / octave): on or off.
+    pub bass_focus: bool,
+    /// Per-stem gains, 0.0..=1.0, order vocals/drums/bass/other.
+    pub stems: [f32; 4],
+}
+
+impl Default for Mix {
+    /// Full band, no listening aid — the state a freshly opened song carries.
+    fn default() -> Self {
+        Self {
+            bass_focus: false,
+            stems: [1.0; 4],
+        }
+    }
+}
+
 /// An overdub take: your own input recorded over one pass of a span, held as an
 /// additive layer. Audio lives at `<bundle>/recordings/<file>`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -163,5 +187,28 @@ mod click_guide_tests {
         let json = r#"{"id":1,"song_id":2,"name":"verse","start":0.0,"end":4.0,"position":0,"click_guide":true}"#;
         let s: Section = serde_json::from_str(json).unwrap();
         assert!(s.click_guide);
+    }
+}
+
+#[cfg(test)]
+mod mix_tests {
+    use super::*;
+
+    #[test]
+    fn default_is_full_band_no_focus() {
+        let m = Mix::default();
+        assert!(!m.bass_focus);
+        assert_eq!(m.stems, [1.0; 4]);
+    }
+
+    #[test]
+    fn round_trips_through_json() {
+        let m = Mix {
+            bass_focus: true,
+            stems: [0.0, 1.0, 0.5, 0.25],
+        };
+        let json = serde_json::to_string(&m).unwrap();
+        let back: Mix = serde_json::from_str(&json).unwrap();
+        assert_eq!(m, back);
     }
 }
