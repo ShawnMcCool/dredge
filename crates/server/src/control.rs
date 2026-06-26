@@ -22,6 +22,11 @@ pub trait AudioControl: Send {
     fn disarm_playback_clock(&self);
     /// Output round-trip delay (frames) reported by the audio graph.
     fn output_delay_frames(&self) -> i64;
+    /// Request a one-shot loopback calibration impulse out the output stream.
+    fn emit_impulse(&self);
+    /// Graph-clock time (ns) the last calibration impulse went out, or `0` if it
+    /// has not been emitted yet.
+    fn impulse_emit_ns(&self) -> i64;
 }
 
 impl AudioControl for engine::Engine {
@@ -60,6 +65,12 @@ impl AudioControl for engine::Engine {
     fn output_delay_frames(&self) -> i64 {
         engine::Engine::output_delay_frames(self)
     }
+    fn emit_impulse(&self) {
+        engine::Engine::emit_impulse(self);
+    }
+    fn impulse_emit_ns(&self) -> i64 {
+        engine::Engine::impulse_emit_ns(self)
+    }
 }
 
 /// Test double: records commands, plays back queued events.
@@ -78,6 +89,10 @@ pub struct MockEngine {
     pub layers_len: usize,
     /// Canned output-stream delay (frames) returned by `output_delay_frames`.
     pub output_delay: i64,
+    /// Set true by `emit_impulse`; gates the emit-time read.
+    pub impulse_emitted: bool,
+    /// Graph-clock emit time (ns) returned by `impulse_emit_ns` once emitted.
+    pub canned_emit_ns: i64,
 }
 
 impl AudioControl for MockEngine {
@@ -117,6 +132,17 @@ impl AudioControl for MockEngine {
     fn output_delay_frames(&self) -> i64 {
         self.output_delay
     }
+    fn emit_impulse(&self) {
+        // A bare MockEngine can't record through `&self`; the realistic test
+        // path wraps it in `Arc<Mutex<_>>` (below), which can.
+    }
+    fn impulse_emit_ns(&self) -> i64 {
+        if self.impulse_emitted {
+            self.canned_emit_ns
+        } else {
+            0
+        }
+    }
 }
 
 /// Shared handle so tests can keep a clone while App owns the AudioControl.
@@ -153,6 +179,12 @@ impl AudioControl for std::sync::Arc<std::sync::Mutex<MockEngine>> {
     }
     fn output_delay_frames(&self) -> i64 {
         self.lock().unwrap().output_delay_frames()
+    }
+    fn emit_impulse(&self) {
+        self.lock().unwrap().impulse_emitted = true;
+    }
+    fn impulse_emit_ns(&self) -> i64 {
+        self.lock().unwrap().impulse_emit_ns()
     }
 }
 

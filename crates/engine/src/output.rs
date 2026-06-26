@@ -7,7 +7,7 @@
 
 use crate::buffer::{CHANNELS, SAMPLE_RATE};
 use crate::pipeline::{EngineCmd, EngineEvent};
-use crate::render_core::RenderShared;
+use crate::render_core::{ImpulseSlot, RenderShared};
 use crate::stream_clock::{ClockSnapshot, StreamClock};
 use pipewire as pw;
 use pw::{properties::properties, spa};
@@ -30,8 +30,37 @@ struct State {
     /// Publishes the audible song frame against the graph clock. A no-op on the
     /// steady path unless the control thread arms it around a recording.
     playback_clock: Arc<StreamClock>,
+    /// One-shot loopback RTL calibration impulse request. Idle unless the control
+    /// thread sets `pending` for a calibration pass.
+    impulse: Arc<ImpulseSlot>,
     /// One-shot guard for the `DREDGE_DEBUG` raw-`pw_time` dump.
     debug_printed: bool,
+}
+
+/// Approximate impulse length: ~3 ms at 48 kHz, long enough that a loopback
+/// cable round-trip is reliably detectable (not a single sample).
+const IMPULSE_FRAMES: usize = (SAMPLE_RATE as usize * 3) / 1000;
+/// Half-period of the impulse square wave in frames (~1 kHz square at 48 kHz).
+const IMPULSE_HALF_PERIOD: usize = 24;
+/// Full-scale-ish impulse amplitude.
+const IMPULSE_AMP: f32 = 0.8;
+
+/// Write a short, loud square-wave burst into the start of the interleaved
+/// stereo block `out`, bounded by both `IMPULSE_FRAMES` and `out`'s length.
+/// RT-safe: writes in place, no allocation.
+fn write_impulse(out: &mut [f32]) {
+    let frames = (out.len() / CHANNELS).min(IMPULSE_FRAMES);
+    for f in 0..frames {
+        let sign = if (f / IMPULSE_HALF_PERIOD).is_multiple_of(2) {
+            1.0
+        } else {
+            -1.0
+        };
+        let v = IMPULSE_AMP * sign;
+        for ch in 0..CHANNELS {
+            out[f * CHANNELS + ch] = v;
+        }
+    }
 }
 
 pub fn spawn(
@@ -81,10 +110,12 @@ fn run(
     let stream = pw::stream::StreamBox::new(&core, "dredge", props)?;
 
     let playback_clock = shared.playback_clock.clone();
+    let impulse = shared.impulse.clone();
     let state = State {
         core: crate::render_core::RenderCore::new(cmd_rx, evt_tx, shared),
         render_buf: vec![0.0; MAX_QUANTUM_FRAMES * CHANNELS],
         playback_clock,
+        impulse,
         debug_printed: false,
     };
 
@@ -106,6 +137,18 @@ fn run(
                 }
                 let out = &mut state.render_buf[..n_frames * CHANNELS];
                 state.core.fill(out);
+                // Loopback RTL calibration: if the control thread requested an
+                // impulse, overwrite the start of this block with a loud burst
+                // and record the graph-clock time it goes out. The capture ring
+                // sees it return over the cable; the onset delay from `emit_ns`
+                // is the round-trip latency. RT-safe (atomics + in-place write).
+                if state.impulse.pending.load(Ordering::Acquire) {
+                    if let Ok(t) = stream.time() {
+                        write_impulse(out);
+                        state.impulse.emit_ns.store(t.now(), Ordering::Release);
+                        state.impulse.pending.store(false, Ordering::Release);
+                    }
+                }
                 // F32LE device buffer + little-endian host (asserted at module
                 // load): render_buf bytes are already in destination layout.
                 let bytes: &[u8] = bytemuck::cast_slice(&out[..]);

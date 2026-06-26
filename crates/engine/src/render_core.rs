@@ -9,11 +9,22 @@ use crate::metronome::{Metronome, MetronomeBeat};
 use crate::pipeline::{ClickMark, EngineCmd, EngineEvent, Pipeline};
 use crate::stream_clock::StreamClock;
 use arc_swap::ArcSwapOption;
+use std::sync::atomic::{AtomicBool, AtomicI64};
 use std::sync::Arc;
+
+/// One-shot loopback round-trip-latency (RTL) calibration request. The control
+/// thread sets `pending`; the output RT callback emits a short impulse on its
+/// next block, records the graph-clock time it went out in `emit_ns`, and clears
+/// `pending`. Atomics only — RT-safe, no allocation.
+#[derive(Default)]
+pub struct ImpulseSlot {
+    pub pending: AtomicBool,
+    pub emit_ns: AtomicI64,
+}
 
 /// Lock-free state the control thread publishes into and the render core reads.
 /// Cheap to clone (all `Arc`s). Bundles the per-spawn shared slots so the output
-/// `spawn`/`run` and `RenderCore::new` don't each carry four separate params.
+/// `spawn`/`run` and `RenderCore::new` don't each carry several separate params.
 #[derive(Clone)]
 pub struct RenderShared {
     pub song: Arc<ArcSwapOption<StemSet>>,
@@ -21,6 +32,8 @@ pub struct RenderShared {
     pub layers: Arc<ArcSwapOption<Vec<Layer>>>,
     /// Publishes the audible song frame against the graph clock (PipeWire only).
     pub playback_clock: Arc<StreamClock>,
+    /// Loopback RTL calibration impulse request (PipeWire only).
+    pub impulse: Arc<ImpulseSlot>,
 }
 
 pub struct RenderCore {
@@ -204,6 +217,7 @@ mod tests {
             clicks: Arc::new(ArcSwapOption::<Vec<crate::pipeline::ClickMark>>::empty()),
             layers: Arc::new(ArcSwapOption::<Vec<Layer>>::empty()),
             playback_clock: Arc::new(StreamClock::default()),
+            impulse: Arc::new(ImpulseSlot::default()),
         };
         (RenderCore::new(cmd_rx, evt_tx, shared), cmd_tx)
     }
@@ -219,6 +233,7 @@ mod tests {
             clicks: Arc::new(ArcSwapOption::<Vec<ClickMark>>::empty()),
             layers: Arc::new(ArcSwapOption::new(layers.map(Arc::new))),
             playback_clock: Arc::new(StreamClock::default()),
+            impulse: Arc::new(ImpulseSlot::default()),
         };
         let core = RenderCore::new(cmd_rx, evt_tx, shared);
         (core, cmd_tx)

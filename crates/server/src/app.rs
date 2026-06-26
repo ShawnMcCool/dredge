@@ -106,11 +106,20 @@ fn import_phased(app: &Arc<Mutex<App>>, p: Value) -> Result<Value, String> {
     app.lock().unwrap().import_prepared(prep)
 }
 
-/// Latency calibration off the App lock. `calibrate_capture` blocks for ~1.5s,
-/// so the recorder lives behind its own mutex (cloned out under a brief App
-/// lock) and the long capture runs with neither lock held — the tick pump and
-/// other clients keep moving. We then re-lock only to persist the result and
-/// rebuild layers.
+/// Loopback round-trip-latency (RTL) calibration, off the App lock. With a
+/// physical loopback cable (an output patched to an input), this emits a short
+/// impulse out the output and measures the sample delay until it returns on the
+/// capture ring; that delay IS the RTL.
+///
+/// Flow (reuses the verified overdub-sync clock machinery): start + arm a
+/// capture on the input, emit the impulse (the output RT callback stamps its
+/// graph-clock emit time), wait ~1s for the cable round-trip, then map `emit_ns`
+/// to the capture ring frame `f_emit` via `ring_frame_at_ns` and read ~1s from
+/// there. `detect_click_onset` on that window — which starts exactly at the emit
+/// instant — yields the RTL in frames. The recorder lives behind its own mutex
+/// so the ~1s wait runs with neither the App lock nor the recorder lock held in
+/// a way that stalls the tick pump; we re-lock only to emit, read back, and
+/// persist.
 fn calibrate_phased(app: &Arc<Mutex<App>>, p: Value) -> Result<Value, String> {
     #[derive(Deserialize)]
     struct P {
@@ -118,19 +127,63 @@ fn calibrate_phased(app: &Arc<Mutex<App>>, p: Value) -> Result<Value, String> {
     }
     let p: P = from_params(p)?;
     let recorder = app.lock().unwrap().recorder.clone();
-    let captured = recorder
-        .lock()
-        .unwrap()
-        .calibrate_capture(&p.device_id, 1.5)?;
-    let latency = crate::recording::detect_click_onset(&captured, CALIBRATION_CLICK_THRESHOLD)
-        .ok_or("calibration: no click detected")? as i64;
+
+    // Start + arm the capture on the loopback input before emitting, so the ring
+    // is recording when the impulse returns.
+    recorder.lock().unwrap().calibrate_session(&p.device_id)?;
+    // Emit the impulse (just sets an atomic; the RT callback does the rest).
+    app.lock().unwrap().audio.emit_impulse();
+    // Wait for the impulse to traverse the cable and be captured.
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+
+    let emit_ns = app.lock().unwrap().audio.impulse_emit_ns();
+    if emit_ns == 0 {
+        let _ = recorder.lock().unwrap().stop();
+        return Err("calibration: impulse never emitted (no output stream?)".into());
+    }
+
+    // Map the emit instant to the capture ring frame, then read ~1s from there.
+    let rate = engine::buffer::SAMPLE_RATE as i64;
+    let measured = {
+        let rec = recorder.lock().unwrap();
+        rec.capture_snapshot().and_then(|(cap_snap, ring_total)| {
+            let f_emit = engine::stream_clock::ring_frame_at_ns(&cap_snap, ring_total, emit_ns);
+            rec.extract_range(f_emit, rate).map(|slice| (f_emit, slice))
+        })
+    };
+    let _ = recorder.lock().unwrap().stop(); // tear the capture session down
+
+    let (f_emit, slice) = measured.ok_or("calibration: capture timing/window unavailable")?;
+    let rtl = crate::recording::detect_click_onset(&slice, CALIBRATION_CLICK_THRESHOLD)
+        .ok_or("calibration: no click detected in loopback")? as i64;
+    // Sanity-clamp: reject anything outside 0..=2s as not a real cable round-trip.
+    if !(0..=2 * rate).contains(&rtl) {
+        return Err(format!(
+            "calibration: implausible round-trip latency ({rtl} frames)"
+        ));
+    }
+    if std::env::var("DREDGE_DEBUG").is_ok() {
+        eprintln!(
+            "dredge calibrate[loopback]: emit_ns={emit_ns} f_emit={f_emit} rtl={rtl} ({:.1} ms)",
+            rtl as f64 / rate as f64 * 1000.0
+        );
+    }
+
     let mut guard = app.lock().unwrap();
     guard
         .store
-        .set_setting(INPUT_LATENCY_KEY, &json!(latency))
+        .set_setting(INPUT_LATENCY_KEY, &json!(rtl))
+        .err_str()?;
+    guard
+        .store
+        .set_setting(LATENCY_SOURCE_KEY, &json!("loopback"))
         .err_str()?;
     guard.refresh_layers();
-    Ok(json!({ "latency_frames": latency }))
+    Ok(json!({
+        "latency_frames": rtl,
+        "latency_ms": rtl as f64 / rate as f64 * 1000.0,
+        "source": "loopback",
+    }))
 }
 
 #[derive(Deserialize)]
@@ -608,6 +661,7 @@ impl App {
             "recording.setGain" => self.recording_set_gain(p),
             "recording.setMute" => self.recording_set_mute(p),
             "recording.setNudge" => self.recording_set_nudge(p),
+            "recording.calibrate.reset" => self.calibrate_reset(),
             _ => Err(format!("unknown command: {cmd}")),
         }
     }
@@ -1530,6 +1584,20 @@ impl App {
             .flatten()
             .and_then(|v| v.as_i64())
             .unwrap_or(0)
+    }
+
+    /// Drop a loopback calibration: reset `latency_source` to `"auto"` and clear
+    /// the manual value so per-take auto-trim (output+input PipeWire delays)
+    /// resumes setting `input_latency_frames` again.
+    fn calibrate_reset(&mut self) -> Result<Value, String> {
+        self.store
+            .set_setting(LATENCY_SOURCE_KEY, &json!("auto"))
+            .err_str()?;
+        self.store
+            .set_setting(INPUT_LATENCY_KEY, &json!(0))
+            .err_str()?;
+        self.refresh_layers();
+        Ok(json!({ "source": "auto", "latency_frames": 0 }))
     }
 
     /// Rebuild the engine's layer set from the open song's recordings. A take
@@ -3049,6 +3117,79 @@ mod recording_tests {
         );
         // B has no takes, so the cache is empty after the switch.
         assert!(app.layer_cache.is_empty(), "cache holds only the open song");
+    }
+
+    /// Loopback calibration: with a canned ring holding an impulse `OFFSET`
+    /// frames after the emit instant, `recording.calibrate` stores `OFFSET` as
+    /// `input_latency_frames` and pins `latency_source = "loopback"`.
+    ///
+    /// The fake capture snapshot is `now_ns=0, ticks=0, ring_total=0`, and the
+    /// mock's canned emit time (1 ns) maps to ring frame 0, so the canned buffer
+    /// is read from its start and the onset index is exactly the latency.
+    #[test]
+    fn calibrate_stores_loopback_onset_as_latency() {
+        const OFFSET: usize = 240; // 5 ms at 48 kHz
+        let mut canned = vec![0.0f32; OFFSET * CHANNELS];
+        canned.extend_from_slice(&[0.8, 0.8]); // the loud loopback click
+        canned.extend(std::iter::repeat_n(0.0f32, 1000 * CHANNELS));
+
+        let (mock, app, _song_id, _lib) = make_shared_mock_with_recorder(Box::new(FakeRecorder {
+            canned,
+            ..Default::default()
+        }));
+        mock.lock().unwrap().canned_emit_ns = 1; // nonzero; maps to f_emit = 0
+
+        let app = Arc::new(Mutex::new(app));
+        let resp = super::dispatch_shared(
+            &app,
+            Request {
+                id: 1,
+                cmd: "recording.calibrate".into(),
+                params: json!({ "device_id": "0" }),
+            },
+        );
+        assert!(resp.ok, "calibrate failed: {:?}", resp.error);
+        assert_eq!(resp.data["latency_frames"], json!(OFFSET as i64));
+        assert_eq!(resp.data["source"], json!("loopback"));
+
+        let g = app.lock().unwrap();
+        assert_eq!(
+            g.store.get_setting(INPUT_LATENCY_KEY).unwrap(),
+            Some(json!(OFFSET as i64))
+        );
+        assert_eq!(
+            g.store.get_setting(LATENCY_SOURCE_KEY).unwrap(),
+            Some(json!("loopback"))
+        );
+    }
+
+    /// `recording.calibrate.reset` returns to auto latency: source `"auto"` and
+    /// the manual value cleared, so per-take auto-trim resumes.
+    #[test]
+    fn calibrate_reset_returns_to_auto() {
+        let (_mock, mut app, _song_id, _lib) =
+            make_shared_mock_with_recorder(Box::new(FakeRecorder::default()));
+        app.store
+            .set_setting(LATENCY_SOURCE_KEY, &json!("loopback"))
+            .unwrap();
+        app.store
+            .set_setting(INPUT_LATENCY_KEY, &json!(512))
+            .unwrap();
+
+        let resp = app.dispatch(Request {
+            id: 1,
+            cmd: "recording.calibrate.reset".into(),
+            params: json!(null),
+        });
+        assert!(resp.ok, "reset failed: {:?}", resp.error);
+        assert_eq!(
+            app.store.get_setting(LATENCY_SOURCE_KEY).unwrap(),
+            Some(json!("auto"))
+        );
+        assert_eq!(
+            app.store.get_setting(INPUT_LATENCY_KEY).unwrap(),
+            Some(json!(0))
+        );
     }
 
     #[test]

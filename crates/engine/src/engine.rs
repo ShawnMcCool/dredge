@@ -33,6 +33,7 @@ impl Engine {
             clicks: Arc::new(ArcSwapOption::<Vec<ClickMark>>::empty()),
             layers: Arc::new(ArcSwapOption::<Vec<crate::layers::Layer>>::empty()),
             playback_clock: Arc::new(StreamClock::default()),
+            impulse: Arc::new(crate::render_core::ImpulseSlot::default()),
         };
         let stop = Arc::new(AtomicBool::new(false));
         let audio_thread =
@@ -58,6 +59,21 @@ impl Engine {
     /// `0` until the clock has been armed and a snapshot stored.
     pub fn output_delay_frames(&self) -> i64 {
         self.shared.playback_clock.delay_frames()
+    }
+
+    /// Request a one-shot loopback calibration impulse. The output RT callback
+    /// emits it on its next block and records the graph-clock emit time; read it
+    /// back with `impulse_emit_ns`. Clears any stale emit time first so a `0`
+    /// read means "not emitted yet".
+    pub fn emit_impulse(&self) {
+        self.shared.impulse.emit_ns.store(0, Ordering::Release);
+        self.shared.impulse.pending.store(true, Ordering::Release);
+    }
+
+    /// Graph-clock time (ns) the last calibration impulse went out, or `0` if
+    /// none has been emitted since the request (e.g. no PipeWire output stream).
+    pub fn impulse_emit_ns(&self) -> i64 {
+        self.shared.impulse.emit_ns.load(Ordering::Acquire)
     }
 
     /// Swap in a new song; audio thread picks it up at the next block.

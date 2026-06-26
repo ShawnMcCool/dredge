@@ -63,12 +63,12 @@ pub trait RecordingControl: Send {
     fn input_delay_frames(&self) -> i64;
     /// Stop the capture clock publishing.
     fn disarm_clock(&self);
-    /// Capture `secs` of input from `device_id` for latency calibration (the
-    /// caller emits a click out the output and analyses the result with
-    /// `detect_click_onset`). Returns the captured interleaved-stereo f32.
-    /// NOTE: blocks the calling thread for ~`secs` seconds — dispatch it outside
-    /// any hot lock.
-    fn calibrate_capture(&mut self, device_id: &str, secs: f64) -> Result<Vec<f32>, String>;
+    /// Start + arm a capture session on `device_id` for loopback latency
+    /// calibration. The caller then emits an impulse out the output, waits for
+    /// the cable round-trip, and reads the ring via `capture_snapshot` +
+    /// `extract_range`, finishing with `stop`. Non-blocking (the wait is the
+    /// caller's).
+    fn calibrate_session(&mut self, device_id: &str) -> Result<(), String>;
 }
 
 #[cfg(test)]
@@ -91,8 +91,9 @@ impl RecordingControl for FakeRecorder {
         self.stopped = true;
         Ok(self.canned.clone())
     }
-    fn calibrate_capture(&mut self, _device_id: &str, _secs: f64) -> Result<Vec<f32>, String> {
-        Ok(self.canned.clone())
+    fn calibrate_session(&mut self, device_id: &str) -> Result<(), String> {
+        self.started = Some((device_id.to_string(), 0));
+        Ok(())
     }
     fn arm_clock(&self) {}
     fn capture_snapshot(&self) -> Option<(ClockSnapshot, i64)> {
@@ -179,21 +180,18 @@ impl RecordingControl for RealRecorder {
         }
     }
 
-    fn calibrate_capture(&mut self, device_id: &str, secs: f64) -> Result<Vec<f32>, String> {
-        let cap = engine::capture::start_capture_by_id(device_id, secs + 0.5)
-            .map_err(|e| e.to_string())?;
-        // Caller emits a click out the output during this window.
-        std::thread::sleep(std::time::Duration::from_secs_f64(secs));
-        let snap = cap
-            .ring
-            .lock()
-            .map_err(|_| "capture ring poisoned")?
-            .snapshot_last(secs);
-        // the snapshot's MutexGuard is a temporary that drops at the end of the
-        // previous statement, so the lock is released before cap.stop() joins
-        // the capture thread (no deadlock).
-        cap.stop();
-        Ok(snap)
+    fn calibrate_session(&mut self, device_id: &str) -> Result<(), String> {
+        // Roomy buffer for the loopback: the caller waits ~1s and reads a 1s
+        // window from the impulse's emit frame, so 2.5s covers ring eviction.
+        let secs = 2.5;
+        let cap =
+            engine::capture::start_capture_by_id(device_id, secs).map_err(|e| e.to_string())?;
+        self.capture = Some(cap);
+        self.len_frames = (secs * SAMPLE_RATE as f64) as i64;
+        // Arm the capture clock so it publishes timing snapshots; the impulse's
+        // graph-clock emit time is mapped to a ring frame through them.
+        self.arm_clock();
+        Ok(())
     }
 }
 
