@@ -46,9 +46,11 @@ timing today; the ring has no absolute frame index.
 | AS-5b | Count-in fix: pin anchor at playback start | DONE (3c7dcff) — **awaiting re-test** |
 | — | Recordings UI: "default (follow devices)" + "from playhead" | DONE (35067c2) |
 | AS-5c | Clamp take to captured frames (early-stop fallback re-included count-in) | DONE — verified on hardware |
-| AS-6 | Part 2: PipeWire-reported latency baseline | DONE (ab0a83d) — awaiting hardware test |
-| AS-7 | Part 2: loopback ping calibration | pending (only if AS-6 baseline isn't tight enough) |
-| AS-8 | Full gate + smoke + manual device verification | pending |
+| AS-6 | Part 2: PipeWire-reported latency baseline | DONE (ab0a83d) — VERIFIED (rtl=3072/64ms, "tighter") |
+| AS-5d | Fix negative ring_start (from-playhead recording) | DONE — awaiting hardware test |
+| — | Logging: DREDGE_DEBUG keeps stderr; breadcrumb; `just logs` | DONE — tested via daemon |
+| AS-7 | Part 2: loopback ping calibration | DEFERRED — AS-6 auto-trim works; needs a cable to test |
+| AS-8 | Full gate + cleanup | gate GREEN; spawn-args struct refactor deferred (don't churn working audio) |
 
 **Part 1 = AS-1..5 + AS-5b: CODE-COMPLETE.** Blocking gate: user records a take
 on the Focusrite (with count-in) and confirms it lands in time. Then Part 2.
