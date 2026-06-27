@@ -108,7 +108,7 @@ test:
 lint:
     cargo clippy --workspace --all-targets -- -D warnings
     cargo fmt --check
-    cd apps/desktop && pnpm exec svelte-check --tsconfig ./tsconfig.json
+    cd apps/desktop && pnpm exec svelte-check --tsconfig ./tsconfig.app.json
     ./scripts/check-theme-colors
 
 # Format rust code
