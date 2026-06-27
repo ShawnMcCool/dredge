@@ -3,6 +3,28 @@
 All notable user-facing changes to dredge, newest first. Entries are written
 at release time by `scripts/ship release`.
 
+## v0.8.0 — 2026-06-27
+
+### New
+
+- **Practice routines.** Build a routine out of blocks — each block is a loop with its own speed, mix, and count-in — then launch it and let dredge advance from one block to the next automatically as each loop comes back around. Drag blocks to reorder them, or click a block's name to jump straight to it. The block you're on is highlighted on the waveform.
+- **Record yourself over the track.** Arm recording in the recordings box and trigger or stop it from the transport. Your takes stack as layers beneath the waveform and play back locked to the song's timeline, so what you played lines up with where you played it. Choose which input to record from and whether to capture starting at the playhead.
+- **Latency calibration.** A calibration screen measures your system's round-trip audio delay — and shows the round trip so you can see it — so recorded takes land in time on their own. The Devices panel shows which recording latency is in use (auto-detected or calibrated).
+- **Dock panels on both sides.** The left and right columns are now docks. Drag a tab (structure, loops, routines, export, library, and the rest) to reorder it, stack tabs into a panel, split one off into its own panel, and drag a tab from one side to the other. Resize stacked panels by dragging the divider between them. The library is now just another tab — put it wherever you like.
+
+### Improved
+
+- **Bar-by-bar navigation.** The Left and Right arrow keys step the playhead a bar at a time and speed up as you hold them. Touching a fader no longer steals the arrow keys mid-practice.
+- **Click to play, or click to place.** A toggle decides whether clicking the waveform starts playback from that spot or just moves the playhead there.
+- **One collapse handle per side.** Each column hides and shows from a single full-height edge rail — slam the pointer to the window edge and it's there.
+
+### Fixed
+
+- **The playhead now tracks what you're hearing**, not where the engine is reading ahead — so the cursor sits where the sound actually is.
+- **Overlapping loops.** Hovering a selection that sits on top of a saved loop no longer pops the loop's controls out from under it.
+- **Switching songs no longer bleeds audio** from the previous song's recorded layers.
+- **Fixed a UI freeze** — a render loop that could lock up the interface.
+
 ## v0.7.0 — 2026-06-24
 
 ### New
