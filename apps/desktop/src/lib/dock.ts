@@ -125,3 +125,152 @@ export function setWeights(layout: DockLayout, weights: number[]): DockLayout {
   normalizeWeights(next);
   return next;
 }
+
+// ── Workspace: the window arrangement as two regions ───────────────────────
+// A region is a dock (its DockLayout) plus a collapse flag. The workspace holds
+// exactly two — left and right — with the stage fixed between them (not a region
+// here). The exactly-once invariant is enforced ACROSS both regions, so a region
+// may legally be empty (its dock renders nothing; only the rail shows). This is
+// the one place where empty layouts are allowed; `normalizeRegion` keeps `[]`.
+export type RegionId = "left" | "right";
+export interface Region {
+  layout: DockLayout;
+  collapsed: boolean;
+}
+export interface Workspace {
+  left: Region;
+  right: Region;
+}
+
+/** First-run shape: the first tab (library) alone on the left, the rest on the
+ *  right, both expanded. */
+export function defaultWorkspace(allTabs: string[]): Workspace {
+  const [first, ...rest] = allTabs;
+  return {
+    left: { layout: first ? [{ tabs: [first], active: first, weight: 1 }] : [], collapsed: false },
+    right: { layout: rest.length ? [{ tabs: rest, active: rest[0], weight: 1 }] : [], collapsed: false },
+  };
+}
+
+/** Reconcile a whole workspace against the code's tab set: every known tab
+ *  appears exactly once ACROSS both regions (first occurrence wins, scanning
+ *  left then right), unknown tabs dropped, tabs new-in-code appended to right's
+ *  last panel, each region's weights normalized. Empty regions are legal; if
+ *  BOTH end up empty the default workspace is returned. Collapse flags pass
+ *  through. */
+export function reconcileWorkspace(ws: Workspace, allTabs: string[]): Workspace {
+  const known = new Set(allTabs);
+  const seen = new Set<string>();
+  const prune = (layout: DockLayout): DockLayout => {
+    const next: DockLayout = [];
+    for (const p of Array.isArray(layout) ? layout : []) {
+      const tabs = (Array.isArray(p?.tabs) ? p.tabs : []).filter((t) => known.has(t) && !seen.has(t));
+      for (const t of tabs) seen.add(t);
+      if (tabs.length === 0) continue;
+      const active = tabs.includes(p.active) ? p.active : tabs[0];
+      const weight = Number.isFinite(p?.weight) && p.weight > 0 ? p.weight : 1;
+      next.push({ tabs, active, weight });
+    }
+    return next;
+  };
+  const left = prune(ws?.left?.layout ?? []);
+  const right = prune(ws?.right?.layout ?? []);
+  // nothing valid was stored → first-run default (library left, rest right)
+  // rather than dumping every tab onto one side.
+  if (seen.size === 0) return defaultWorkspace(allTabs);
+  const missing = allTabs.filter((t) => !seen.has(t));
+  if (missing.length) {
+    if (right.length) right[right.length - 1].tabs.push(...missing);
+    else right.push({ tabs: missing, active: missing[0], weight: 1 });
+  }
+  normalizeWeights(left);
+  normalizeWeights(right);
+  return {
+    left: { layout: left, collapsed: !!ws?.left?.collapsed },
+    right: { layout: right, collapsed: !!ws?.right?.collapsed },
+  };
+}
+
+function regionOf(ws: Workspace, tab: string): RegionId | null {
+  if (ws.left.layout.some((p) => p.tabs.includes(tab))) return "left";
+  if (ws.right.layout.some((p) => p.tabs.includes(tab))) return "right";
+  return null;
+}
+
+/** Pure: a copy of `layout` with `tab` removed from wherever it is. */
+function removeFrom(layout: DockLayout, tab: string): DockLayout {
+  const next = layout.map((p) => ({ ...p, tabs: [...p.tabs] }));
+  removeTab(next, tab);
+  return next;
+}
+
+/** Like `normalize`, but a region may end empty: drop empty panels, fix each
+ *  active, renormalize the survivors; `[]` stays `[]`. */
+function normalizeRegion(layout: DockLayout): DockLayout {
+  const next = layout.filter((p) => p.tabs.length > 0).map((p) => ({ ...p, tabs: [...p.tabs] }));
+  for (const p of next) {
+    if (!p.tabs.includes(p.active)) p.active = p.tabs[0];
+  }
+  normalizeWeights(next);
+  return next;
+}
+
+/** Move `tab` to (region, panel, index). Within-region reorders/joins (delegates
+ *  to `moveTab`); across regions it leaves the source (possibly empty) and joins
+ *  the target, focusing the moved tab. */
+export function moveTabTo(ws: Workspace, tab: string, toRegion: RegionId, toPanel: number, toIndex: number): Workspace {
+  const from = regionOf(ws, tab);
+  if (!from) return ws;
+  if (from === toRegion) {
+    return { ...ws, [toRegion]: { ...ws[toRegion], layout: moveTab(ws[toRegion].layout, tab, toPanel, toIndex) } };
+  }
+  const srcLayout = removeFrom(ws[from].layout, tab);
+  let dst = ws[toRegion].layout.map((p) => ({ ...p, tabs: [...p.tabs] }));
+  if (dst.length === 0) {
+    dst = [{ tabs: [tab], active: tab, weight: 1 }];
+  } else {
+    const target = dst[Math.max(0, Math.min(toPanel, dst.length - 1))];
+    const at = Math.max(0, Math.min(toIndex, target.tabs.length));
+    target.tabs.splice(at, 0, tab);
+    target.active = tab;
+  }
+  return {
+    ...ws,
+    [from]: { ...ws[from], layout: normalizeRegion(srcLayout) },
+    [toRegion]: { ...ws[toRegion], layout: normalizeRegion(dst) },
+  };
+}
+
+/** Split `tab` into a brand-new panel at boundary `atBoundary` in `toRegion`
+ *  (cross-region split included). */
+export function splitTabTo(ws: Workspace, tab: string, toRegion: RegionId, atBoundary: number): Workspace {
+  const from = regionOf(ws, tab);
+  if (!from) return ws;
+  if (from === toRegion) {
+    return { ...ws, [toRegion]: { ...ws[toRegion], layout: splitTab(ws[toRegion].layout, tab, atBoundary) } };
+  }
+  const srcLayout = removeFrom(ws[from].layout, tab);
+  const dst = ws[toRegion].layout.map((p) => ({ ...p, tabs: [...p.tabs] }));
+  const at = Math.max(0, Math.min(atBoundary, dst.length));
+  dst.splice(at, 0, { tabs: [tab], active: tab, weight: 1 });
+  return {
+    ...ws,
+    [from]: { ...ws[from], layout: normalizeRegion(srcLayout) },
+    [toRegion]: { ...ws[toRegion], layout: normalizeRegion(dst) },
+  };
+}
+
+/** Make `tab` the active page of panel `panel` in `region`. */
+export function setActiveIn(ws: Workspace, region: RegionId, panel: number, tab: string): Workspace {
+  return { ...ws, [region]: { ...ws[region], layout: setActive(ws[region].layout, panel, tab) } };
+}
+
+/** Replace `region`'s panel weights (positional), then renormalize. */
+export function setWeightsIn(ws: Workspace, region: RegionId, weights: number[]): Workspace {
+  return { ...ws, [region]: { ...ws[region], layout: setWeights(ws[region].layout, weights) } };
+}
+
+/** Set a region's collapse flag. */
+export function setCollapsed(ws: Workspace, region: RegionId, collapsed: boolean): Workspace {
+  return { ...ws, [region]: { ...ws[region], collapsed } };
+}

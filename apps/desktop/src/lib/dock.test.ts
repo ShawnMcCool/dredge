@@ -1,8 +1,27 @@
 import { describe, it, expect } from "vitest";
-import { defaultLayout, fromTabOrder, reconcile, moveTab, splitTab, setActive, setWeights } from "./dock";
+import {
+  defaultLayout,
+  fromTabOrder,
+  reconcile,
+  moveTab,
+  splitTab,
+  setActive,
+  setWeights,
+  defaultWorkspace,
+  reconcileWorkspace,
+  moveTabTo,
+  splitTabTo,
+  setActiveIn,
+  setCollapsed,
+  type Workspace,
+} from "./dock";
 
 const ALL = ["a", "b", "c", "d"];
 const keys = (layout: { tabs: string[] }[]) => layout.map((p) => p.tabs);
+const wkeys = (ws: Workspace) => ({
+  left: ws.left.layout.map((p) => p.tabs),
+  right: ws.right.layout.map((p) => p.tabs),
+});
 
 describe("defaultLayout", () => {
   it("is one panel with every tab", () => {
@@ -137,5 +156,119 @@ describe("setActive / setWeights", () => {
     );
     expect(l[0].weight).toBeCloseTo(0.75);
     expect(l[1].weight).toBeCloseTo(0.25);
+  });
+});
+
+// ── workspace (two regions) ──────────────────────────────────────────────────
+
+describe("defaultWorkspace", () => {
+  it("seeds the first tab left, the rest right, both expanded", () => {
+    const ws = defaultWorkspace(["library", "a", "b"]);
+    expect(wkeys(ws)).toEqual({ left: [["library"]], right: [["a", "b"]] });
+    expect(ws.left.collapsed).toBe(false);
+    expect(ws.right.collapsed).toBe(false);
+  });
+});
+
+describe("reconcileWorkspace", () => {
+  it("keeps each known tab exactly once across both regions", () => {
+    const ws = reconcileWorkspace(
+      {
+        left: { layout: [{ tabs: ["library"], active: "library", weight: 1 }], collapsed: false },
+        right: { layout: [{ tabs: ["a", "b"], active: "a", weight: 1 }], collapsed: false },
+      },
+      ["library", "a", "b"],
+    );
+    expect(wkeys(ws)).toEqual({ left: [["library"]], right: [["a", "b"]] });
+  });
+  it("drops a tab duplicated across regions (first occurrence wins)", () => {
+    const ws = reconcileWorkspace(
+      {
+        left: { layout: [{ tabs: ["a"], active: "a", weight: 1 }], collapsed: false },
+        right: { layout: [{ tabs: ["a", "b"], active: "a", weight: 1 }], collapsed: false },
+      },
+      ["a", "b"],
+    );
+    expect(wkeys(ws)).toEqual({ left: [["a"]], right: [["b"]] });
+  });
+  it("appends tabs new-in-code to right's last panel", () => {
+    const ws = reconcileWorkspace(
+      {
+        left: { layout: [{ tabs: ["library"], active: "library", weight: 1 }], collapsed: false },
+        right: { layout: [{ tabs: ["a"], active: "a", weight: 1 }], collapsed: false },
+      },
+      ["library", "a", "b"],
+    );
+    expect(wkeys(ws).right).toEqual([["a", "b"]]);
+  });
+  it("allows an empty region and passes its collapse flag through", () => {
+    const ws = reconcileWorkspace(
+      {
+        left: { layout: [], collapsed: true },
+        right: { layout: [{ tabs: ["a", "b"], active: "a", weight: 1 }], collapsed: false },
+      },
+      ["a", "b"],
+    );
+    expect(wkeys(ws).left).toEqual([]);
+    expect(ws.left.collapsed).toBe(true);
+  });
+  it("defaults when nothing valid remains", () => {
+    const ws = reconcileWorkspace(
+      { left: { layout: [], collapsed: false }, right: { layout: [], collapsed: false } },
+      ["library", "a"],
+    );
+    expect(wkeys(ws)).toEqual({ left: [["library"]], right: [["a"]] });
+  });
+});
+
+const baseWs = (): Workspace => ({
+  left: { layout: [{ tabs: ["library"], active: "library", weight: 1 }], collapsed: false },
+  right: { layout: [{ tabs: ["a", "b"], active: "a", weight: 1 }], collapsed: false },
+});
+
+describe("moveTabTo", () => {
+  it("moves a tab from right to left", () => {
+    const ws = moveTabTo(baseWs(), "a", "left", 0, 1);
+    expect(wkeys(ws)).toEqual({ left: [["library", "a"]], right: [["b"]] });
+    expect(ws.left.layout[0].active).toBe("a");
+  });
+  it("within-region reorder leaves the other region untouched", () => {
+    const ws = moveTabTo(baseWs(), "b", "right", 0, 0);
+    expect(wkeys(ws)).toEqual({ left: [["library"]], right: [["b", "a"]] });
+  });
+  it("moving the last tab out leaves the source region empty", () => {
+    const ws = moveTabTo(baseWs(), "library", "right", 0, 0);
+    expect(wkeys(ws).left).toEqual([]);
+    expect(wkeys(ws).right).toEqual([["library", "a", "b"]]);
+  });
+  it("moving into an empty region creates a panel there", () => {
+    const start: Workspace = {
+      left: { layout: [], collapsed: false },
+      right: { layout: [{ tabs: ["a", "b"], active: "a", weight: 1 }], collapsed: false },
+    };
+    const ws = moveTabTo(start, "a", "left", 0, 0);
+    expect(wkeys(ws)).toEqual({ left: [["a"]], right: [["b"]] });
+  });
+});
+
+describe("splitTabTo", () => {
+  it("splits a tab into a new panel in the target region", () => {
+    const ws = splitTabTo(baseWs(), "a", "left", 1);
+    expect(wkeys(ws).left).toEqual([["library"], ["a"]]);
+    expect(wkeys(ws).right).toEqual([["b"]]);
+  });
+  it("within-region split keeps it on one side", () => {
+    const ws = splitTabTo(baseWs(), "b", "right", 0);
+    expect(wkeys(ws).right).toEqual([["b"], ["a"]]);
+    expect(wkeys(ws).left).toEqual([["library"]]);
+  });
+});
+
+describe("setActiveIn / setCollapsed", () => {
+  it("sets the active tab in one region", () => {
+    expect(setActiveIn(baseWs(), "right", 0, "b").right.layout[0].active).toBe("b");
+  });
+  it("sets collapse on one region", () => {
+    expect(setCollapsed(baseWs(), "left", true).left.collapsed).toBe(true);
   });
 });
