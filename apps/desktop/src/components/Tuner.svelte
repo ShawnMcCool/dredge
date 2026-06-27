@@ -60,7 +60,7 @@
   }
 </script>
 
-<Box id="tuner" label="tuner" dim={!$tunerOn}>
+<Box id="tuner" dim={!$tunerOn}>
   {#snippet tools()}
     <button onclick={openGear} title="input device" aria-label="choose input">⚙</button>
   {/snippet}

@@ -26,7 +26,7 @@
 </script>
 
 {#if $openSong}
-  <Box id="isolation" label="isolation" grow={!hasStems}>
+  <Box id="isolation" grow={!hasStems}>
     {#snippet tools()}
       {#if hasStems}
         <button

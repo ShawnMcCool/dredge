@@ -22,7 +22,7 @@
   import { createDockDrag, setDockDrag } from "./lib/dock-drag.svelte";
   import type { DockLayout, RegionId } from "./lib/dock";
   import { createStageFlow, setStageFlow } from "./lib/stage-flow.svelte";
-  import type { BoxId } from "./lib/stage";
+  import { BOX_LABELS, type BoxId } from "./lib/stage";
   import { installKeys } from "./lib/keys";
   import { initTheme } from "./lib/theme";
   import { initTrace } from "./lib/trace";
@@ -85,7 +85,16 @@
     (flow) => void actions.setWorkspace({ ...$workspace, stage: flow }),
   );
   setStageFlow(stageFlow);
-  const stageBoxes = $derived($workspace.stage.order.filter((id) => STAGE_REGISTRY[id].present()));
+  // present ∧ ¬hidden render on the stage, in saved order; present ∧ hidden are
+  // offered in the `+ tool` restore menu. A hidden contextual box (e.g. drill)
+  // only reappears in the menu once its context is back — never auto-shown.
+  const stageBoxes = $derived(
+    $workspace.stage.order.filter((id) => STAGE_REGISTRY[id].present() && !$workspace.stage.hidden.includes(id)),
+  );
+  const hiddenBoxes = $derived(
+    $workspace.stage.order.filter((id) => STAGE_REGISTRY[id].present() && $workspace.stage.hidden.includes(id)),
+  );
+  let addOpen = $state(false);
   function registerStage(el: HTMLElement) {
     stageFlow.registerContainer(el);
     return {};
@@ -159,15 +168,57 @@
     {#if $openSong}
       <Transport />
     {/if}
-    <!-- the stage flow region: present boxes in saved order. Order + per-box
-         collapse live in workspace.stage; the flow controller drives reorder
-         (drag a box header) and collapse. The boxes wrap to fill the stage. -->
-    <div class="boxes" use:registerStage>
+    <!-- the stage flow region: present, non-hidden boxes in saved order. Order +
+         per-box collapse + hidden live in workspace.stage; the flow controller
+         drives reorder (drag a box header), tap-collapse, and hide. The boxes
+         wrap to fill the stage; a `+ tool` tail restores hidden boxes. -->
+    <div class="boxes" class:dragging={stageFlow.dragId !== null} use:registerStage>
       {#each stageBoxes as id (id)}
         {@const Tool = STAGE_REGISTRY[id].component}
         <Tool />
       {/each}
     </div>
+    <!-- restore dock: a quiet + pinned to the stage's bottom-right corner,
+         present only while a tool is hidden. Clicking raises a menu of the
+         hidden tools; picking one returns it to the flow. -->
+    {#if hiddenBoxes.length}
+      <div class="add-dock">
+        {#if addOpen}
+          <!-- click-away catcher behind the menu -->
+          <button class="add-backdrop" aria-label="close menu" onclick={() => (addOpen = false)}></button>
+          <div class="add-menu">
+            {#each hiddenBoxes as id (id)}
+              <button
+                onclick={() => {
+                  stageFlow.show(id);
+                  addOpen = false;
+                }}>{BOX_LABELS[id]}</button
+              >
+            {/each}
+          </div>
+        {/if}
+        <button
+          class="add-fab"
+          class:open={addOpen}
+          title="add a hidden tool to the stage"
+          aria-label="add a hidden tool to the stage"
+          onclick={() => (addOpen = !addOpen)}>+</button
+        >
+      </div>
+    {/if}
+    <!-- drag cues (viewport-fixed, mirror the dock's insertion caret): the bar
+         shows where the box will land; the ghost chip says which box is moving -->
+    {#if stageFlow.caret}
+      <div
+        class="stage-caret"
+        style="left: {stageFlow.caret.x}px; top: {stageFlow.caret.y}px; height: {stageFlow.caret.h}px"
+      ></div>
+    {/if}
+    {#if stageFlow.dragId && stageFlow.pointer}
+      <div class="drag-ghost" style="left: {stageFlow.pointer.x}px; top: {stageFlow.pointer.y}px">
+        {BOX_LABELS[stageFlow.dragId as BoxId]}
+      </div>
+    {/if}
   </main>
   <DockRegion
     side="right"
@@ -233,8 +284,113 @@
     padding: var(--space) 0;
     min-width: 0;
   }
+  /* while reordering, the whole flow reads as "grabbing" */
+  .boxes.dragging,
+  .boxes.dragging :global(.head) {
+    cursor: grabbing;
+  }
 
+  /* the restore control: a quiet + in the stage's bottom-right corner. margin-top
+     auto eats the free vertical space so it pins to the bottom whenever the boxes
+     don't fill the stage; when they do, it flows to the end (scroll to reach) and
+     never overlaps a box. position: relative anchors the pop-up menu to it. */
+  .add-dock {
+    position: relative;
+    margin-top: auto;
+    align-self: flex-end;
+    z-index: 30;
+  }
+  .add-fab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    background: var(--bg-raised);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 20px;
+    line-height: 1;
+    box-shadow: 0 2px 8px -2px rgb(0 0 0 / 0.5);
+  }
+  .add-fab:hover {
+    color: var(--fg);
+    border-color: var(--accent-dim);
+  }
+  .add-fab.open {
+    color: var(--accent);
+    border-color: var(--accent-dim);
+  }
+  /* full-viewport click-away catcher behind the open menu */
+  .add-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: none;
+    border: none;
+    cursor: default;
+  }
+  /* menu rises upward from the corner + (start-menu style), right-aligned */
+  .add-menu {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    right: 0;
+    z-index: 41;
+    display: flex;
+    flex-direction: column;
+    min-width: 130px;
+    background: var(--bg-raised);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    box-shadow: 0 4px 12px -4px rgb(0 0 0 / 0.5);
+    overflow: hidden;
+  }
+  .add-menu button {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    text-align: left;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 7px 12px;
+  }
+  .add-menu button:hover {
+    color: var(--fg);
+    background: var(--accent-dim);
+  }
 
-
-
+  /* insertion bar — where the dragged box will land; glides like the dock's */
+  .stage-caret {
+    position: fixed;
+    width: 2px;
+    background: var(--accent);
+    border-radius: 1px;
+    z-index: 50;
+    pointer-events: none;
+    transition:
+      left 90ms ease,
+      top 90ms ease,
+      height 90ms ease;
+  }
+  /* ghost chip — the box's name trailing the cursor, says what's in flight */
+  .drag-ghost {
+    position: fixed;
+    z-index: 51;
+    transform: translate(12px, 12px);
+    pointer-events: none;
+    background: var(--bg-raised);
+    border: 1px solid var(--accent-dim);
+    border-radius: 4px;
+    color: var(--fg);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 4px 8px;
+    box-shadow: 0 4px 12px -4px rgb(0 0 0 / 0.5);
+  }
 </style>

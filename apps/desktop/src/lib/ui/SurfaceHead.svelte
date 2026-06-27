@@ -1,10 +1,10 @@
 <script lang="ts">
-  // The one labelled-surface header row: a small-caps muted label, an optional
-  // right-aligned tools slot, and an optional leading collapse caret. Backs both
-  // the stage box header (Box, a span label) and the in-page group heading
-  // (SectionHead, an h3) so every label header in the app is drawn once. Outer
-  // chrome (card border vs page divider) and the drag surface belong to the
-  // caller; this is only the row.
+  // The one labelled-surface header row: a small-caps muted label and an optional
+  // right-aligned tools slot. Backs both the stage box header (Box, a span label)
+  // and the in-page group heading (SectionHead, an h3) so every label header in
+  // the app is drawn once. Outer chrome (card border vs page divider), the drag
+  // surface, and a box's tap-collapse / hide affordances belong to the caller;
+  // this is only the row.
   import type { Snippet } from "svelte";
 
   interface Props {
@@ -14,23 +14,11 @@
     tools?: Snippet;
     /** Label element — `span` for stage boxes, `h3` for page section headings. */
     as?: "span" | "h3";
-    /** Show a collapse caret before the label (stage boxes only). */
-    collapsible?: boolean;
-    collapsed?: boolean;
-    oncollapse?: () => void;
   }
-  let { children, tools, as = "span", collapsible = false, collapsed = false, oncollapse }: Props = $props();
+  let { children, tools, as = "span" }: Props = $props();
 </script>
 
 <span class="surface-head">
-  {#if collapsible}
-    <button
-      class="caret"
-      onclick={oncollapse}
-      title={collapsed ? "expand" : "collapse"}
-      aria-label={collapsed ? "expand" : "collapse"}>{collapsed ? "›" : "⌄"}</button
-    >
-  {/if}
   <svelte:element this={as} class="lbl">{@render children()}</svelte:element>
   {#if tools}<span class="tools">{@render tools()}</span>{/if}
 </span>
@@ -71,19 +59,6 @@
     line-height: 1;
   }
   .tools :global(button:hover) {
-    color: var(--fg);
-  }
-  .caret {
-    background: none;
-    border: none;
-    color: var(--muted);
-    cursor: pointer;
-    padding: 0;
-    font-size: 0.95rem;
-    line-height: 1;
-    flex: 0 0 auto;
-  }
-  .caret:hover {
     color: var(--fg);
   }
 </style>

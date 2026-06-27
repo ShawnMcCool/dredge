@@ -2,18 +2,21 @@
   // Shared stage-box shell: a labelled header (with optional right-aligned
   // actions) over a padded body. Every box under the waveform — stems, tuner,
   // analyze — uses this so their headers are guaranteed identical. The box is
-  // the managed unit of the stage flow: its `id` keys order + collapse, the
-  // header is the drag surface for reorder, and a caret collapses it to the
-  // header strip. The stage-flow controller comes from context (inert if absent).
+  // the managed unit of the stage flow: its `id` keys order + collapse + hidden,
+  // and the header is one surface — a short tap collapses it to the header strip,
+  // a drag reorders the flow. A hover-revealed × hides it from the stage. The
+  // canonical label comes from the box id (override only for a dynamic header,
+  // e.g. notes). The stage-flow controller comes from context (inert if absent).
   import type { Snippet } from "svelte";
   import SurfaceHead from "./SurfaceHead.svelte";
   import { getStageFlow } from "../stage-flow.svelte";
-  import type { BoxId } from "../stage";
+  import { BOX_LABELS, type BoxId } from "../stage";
 
   interface Props {
-    /** Stable flow id — keys this box in the stage order + collapse set. */
+    /** Stable flow id — keys this box in the stage order + collapse + hidden sets. */
     id: BoxId;
-    label: string;
+    /** Header label override; defaults to the box's canonical name (`BOX_LABELS`). */
+    label?: string;
     /** Soften the whole box (e.g. the tuner while powered off). */
     dim?: boolean;
     /** Grow to fill the row (default), or lock the box to its content width. */
@@ -31,10 +34,13 @@
   const flow = getStageFlow();
   const collapsed = $derived(flow.isCollapsed(id));
   const dragging = $derived(flow.dragId === id);
+  const heading = $derived(label ?? BOX_LABELS[id]);
 </script>
 
 <section class="box" class:dim class:nogrow={!grow} class:wide class:collapsed class:dragging data-box={id}>
-  <!-- the header is the drag surface; the caret + tools still click (threshold) -->
+  <!-- the header is one surface: tap to collapse, drag to reorder (threshold).
+       A pointerdown that lands on a button (tools / hide-×) is ignored by the
+       controller, so those still click. -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <header
     class="head"
@@ -42,15 +48,10 @@
     onpointermove={(e) => flow.onHeadMove(e)}
     onpointerup={(e) => flow.onHeadUp(e)}
     onpointercancel={() => flow.onHeadUp()}
+    onlostpointercapture={() => flow.onHeadUp()}
   >
-    <SurfaceHead
-      {tools}
-      collapsible
-      {collapsed}
-      oncollapse={() => {
-        if (!flow.didDrag()) flow.toggle(id);
-      }}>{label}</SurfaceHead
-    >
+    <SurfaceHead {tools}>{heading}</SurfaceHead>
+    <button class="hide-x" title="hide from stage" aria-label="hide from stage" onclick={() => flow.hide(id)}>×</button>
   </header>
   {#if !collapsed}
     <div class="body">{@render children()}</div>
@@ -79,12 +80,15 @@
   .box.dim {
     opacity: 0.8;
   }
-  /* the box being dragged to a new flow position */
+  /* the box being dragged reads as a lifted placeholder: dimmed + dashed, still
+     holding its footprint so the row doesn't reflow under the drag */
   .box.dragging {
-    opacity: 0.5;
+    opacity: 0.4;
+    border-style: dashed;
   }
   .box.dragging .head {
     cursor: grabbing;
+    border-bottom-style: dashed;
   }
 
   .head {
@@ -93,12 +97,36 @@
     min-height: 32px;
     padding: 4px 10px;
     border-bottom: 1px solid var(--line);
-    cursor: grab; /* the header is the reorder drag surface */
+    cursor: grab; /* the header is the reorder drag surface (tap = collapse) */
     touch-action: none;
   }
   /* collapsed → just the header strip (no body, no divider) */
   .box.collapsed .head {
     border-bottom: none;
+  }
+  /* hide-from-stage ×: quiet until the header is hovered (or it's focused) */
+  .hide-x {
+    flex: 0 0 auto;
+    margin-left: 6px;
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 0;
+    font-size: 1rem;
+    line-height: 1;
+    opacity: 0;
+    transition:
+      opacity 100ms ease,
+      color 100ms ease;
+  }
+  .head:hover .hide-x {
+    opacity: 0.65;
+  }
+  .hide-x:hover,
+  .hide-x:focus-visible {
+    color: var(--fg);
+    opacity: 1;
   }
 
   .body {

@@ -28,7 +28,7 @@
   }
 </script>
 
-<Box id="metronome" label="metronome">
+<Box id="metronome">
   <div class="rows">
     <div class="bar" aria-hidden="true">
       {#each dots as d (d)}

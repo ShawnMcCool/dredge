@@ -201,7 +201,7 @@ export function reconcileWorkspace(ws: StoredWorkspace | null | undefined, allTa
   return {
     left: { layout: left, collapsed: !!ws?.left?.collapsed },
     right: { layout: right, collapsed: !!ws?.right?.collapsed },
-    stage: reconcileFlow((ws?.stage ?? {}) as { order?: unknown; collapsed?: unknown }, STAGE_BOXES),
+    stage: reconcileFlow((ws?.stage ?? {}) as { order?: unknown; collapsed?: unknown; hidden?: unknown }, STAGE_BOXES),
   };
 }
 
