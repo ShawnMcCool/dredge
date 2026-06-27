@@ -3,6 +3,13 @@
 All notable user-facing changes to dredge, newest first. Entries are written
 at release time by `scripts/ship release`.
 
+## v0.9.0 — 2026-06-27
+
+### Improved
+
+- **Tidy the control boxes under the transport.** Each box — metronome, isolation, notes, recordings, tuner, and the rest — now collapses to just its title bar: click the caret to fold one away when you're not using it, click again to bring it back. Less scrolling when the stage gets busy.
+- **Reorder the boxes to taste.** Drag a box by its header to move it; the order you set sticks between sessions. The waveform and play controls stay put at the top.
+
 ## v0.8.0 — 2026-06-27
 
 ### New
