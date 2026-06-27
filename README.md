@@ -89,8 +89,11 @@ A GPU is optional throughout — CPU works, slower. The virtualenvs and model we
 | Component | Required for | Install |
 |---|---|---|
 | **PipeWire 1.0+** | the app to run at all | system package (`pipewire`) |
-| **Runtime libraries** | the app to run | pulled automatically by `apt` / the AUR package |
+| **rubberband** | pitch-preserving slow-down (the core stretch engine — the app won't start without it) | `sudo pacman -S rubberband` · `sudo apt install librubberband2` · `sudo dnf install rubberband` |
+| **Runtime libraries** (webkit2gtk-4.1, gtk3, …) | the app to run | rubberband + these are pulled in automatically by the `.deb` (`apt`) and the `dredge` AUR package — nothing to do |
 | **ffmpeg** | MP3 export, mkv/webm containers, stem export | `sudo apt install ffmpeg` · `sudo pacman -S ffmpeg` |
+
+> The `.deb` and the `dredge` AUR package install rubberband for you; the line above is only for a hand-rolled setup (e.g. running the prebuilt `dredge-*-x86_64-linux.tar.gz` directly). The prebuilt binaries target Debian/Ubuntu library versions — on Arch, use the `dredge` package, which builds against your system's rubberband.
 
 ### ML enabled
 
