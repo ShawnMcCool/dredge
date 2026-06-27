@@ -21,6 +21,8 @@
   import DockRegion from "./lib/ui/DockRegion.svelte";
   import { createDockDrag, setDockDrag } from "./lib/dock-drag.svelte";
   import type { DockLayout, RegionId } from "./lib/dock";
+  import { createStageFlow, setStageFlow } from "./lib/stage-flow.svelte";
+  import type { BoxId } from "./lib/stage";
   import { installKeys } from "./lib/keys";
   import { initTheme } from "./lib/theme";
   import { initTrace } from "./lib/trace";
@@ -63,6 +65,31 @@
 
   const setLayout = (region: RegionId) => (layout: DockLayout) =>
     void actions.setWorkspace({ ...$workspace, [region]: { ...$workspace[region], layout } });
+
+  // The stage is a flow region: a registry maps each box id → its tool component
+  // + a presence predicate (the stage analogue of TAB_VIEWS). The flow controller
+  // (context) owns per-box collapse + header-drag reorder; App renders the
+  // present boxes in saved order. Transport + waveform are the fixed stage head,
+  // outside the flow.
+  const STAGE_REGISTRY: Record<BoxId, { component: Component; present: () => boolean }> = {
+    metronome: { component: MetronomeBox, present: () => true },
+    isolation: { component: Isolation, present: () => !!$openSong },
+    click: { component: ClickTrack, present: () => !!$openSong },
+    notes: { component: Notes, present: () => !!$openSong },
+    recordings: { component: Recordings, present: () => !!$openSong },
+    tuner: { component: Tuner, present: () => true },
+    drill: { component: Drill, present: () => !!$openSong && !!$drillSpan },
+  };
+  const stageFlow = createStageFlow(
+    () => $workspace.stage,
+    (flow) => void actions.setWorkspace({ ...$workspace, stage: flow }),
+  );
+  setStageFlow(stageFlow);
+  const stageBoxes = $derived($workspace.stage.order.filter((id) => STAGE_REGISTRY[id].present()));
+  function registerStage(el: HTMLElement) {
+    stageFlow.registerContainer(el);
+    return {};
+  }
 
   // open-settings / open-structure / open-loops shortcuts reveal their tab
   $effect(() => {
@@ -132,23 +159,14 @@
     {#if $openSong}
       <Transport />
     {/if}
-    <!-- boxes flow to fill the stage width and wrap to the next row as they run
-         out of room; every row (even a lone box) spans the full width. The tuner
-         is always present (useful with no song open); the song-scoped boxes join
-         the row once a track is open. The drill sits last, after the standing
-         boxes, since it only appears mid-practice. -->
-    <div class="boxes">
-      <MetronomeBox />
-      {#if $openSong}
-        <Isolation />
-        <ClickTrack />
-        <Notes />
-        <Recordings />
-      {/if}
-      <Tuner />
-      {#if $openSong && $drillSpan}
-        <Drill />
-      {/if}
+    <!-- the stage flow region: present boxes in saved order. Order + per-box
+         collapse live in workspace.stage; the flow controller drives reorder
+         (drag a box header) and collapse. The boxes wrap to fill the stage. -->
+    <div class="boxes" use:registerStage>
+      {#each stageBoxes as id (id)}
+        {@const Tool = STAGE_REGISTRY[id].component}
+        <Tool />
+      {/each}
     </div>
   </main>
   <DockRegion

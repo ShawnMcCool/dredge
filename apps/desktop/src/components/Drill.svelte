@@ -71,7 +71,7 @@
   let anyHidden = $derived(!show.region || !show.trainer || !show.recall);
 </script>
 
-<Box label="drill" wide>
+<Box id="drill" label="drill" wide>
   <div class="head-row">
     <span class="loop-name">{loopName}</span>
     {#if span}

@@ -11,7 +11,7 @@
 </script>
 
 {#if $sectionClickAvailable}
-  <Box label="click track">
+  <Box id="click" label="click track">
     <div class="rows">
       <Group label="count in">
         <button

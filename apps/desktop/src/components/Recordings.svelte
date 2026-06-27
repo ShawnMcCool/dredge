@@ -34,7 +34,7 @@
 </script>
 
 {#if $openSong}
-  <Box label="recordings" wide>
+  <Box id="recordings" label="recordings" wide>
     <div class="bar">
       <select bind:value={$recordSpan} disabled={$recordingActive} aria-label="recording span">
         <option value="song">full song</option>
