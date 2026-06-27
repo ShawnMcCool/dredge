@@ -97,15 +97,20 @@ Three single-label headers have drifted into near-duplicates:
 > redesign avoids. It keeps its own rendering.
 
 Extract one **`SurfaceHead`** primitive — the shared label + optional `tools` slot
-row — plus two optional adornments used only by stage boxes:
+row — plus one optional adornment used only by stage boxes: a **collapse toggle**
+(a caret, matching the dock's chevron idiom).
 
-- a **collapse toggle** (a caret, matching the dock's chevron idiom), and
-- a **drag handle** (the reorder grip).
+`Box` renders `SurfaceHead` with the collapse prop; `SectionHead` renders it with
+just label + tools. One header definition, so a stage box, an in-page group, and
+(visually) the rest of the app read identically. This is also the *mechanism* for
+per-box collapse — the toggle lives in the shared header.
 
-`Box` renders `SurfaceHead` with the collapse + drag props; `SectionHead` renders
-it with just label + tools. One header definition, so a stage box, an in-page
-group, and (visually) the rest of the app read identically. This is also the
-*mechanism* for per-box collapse — the toggle lives in the shared header.
+**Reorder grabs the whole header — no separate grip.** The box header *is* the
+drag surface (this is a power-user affordance; an extra grip glyph is visual
+noise we don't want). A pointerdown on the header that crosses the drag threshold
+starts a reorder; one that doesn't is a normal click, so the collapse caret and
+any `tools` buttons in the header still work — the same down→threshold→drag-or-click
+discipline the dock tabs already use.
 
 ## How a box is managed without rewriting every tool
 
@@ -115,8 +120,8 @@ Isolation, ClickTrack, Notes, Recordings, Tuner, Drill — one Box each). So `Bo
 
 - Each tool passes a stable `id` to its `Box` (e.g. `<Box id="tuner" label="tuner">`).
 - `Box` reads a **stage context** (provided by the stage flow component) for its
-  `collapsed` state, and renders the collapse toggle + drag handle in its
-  `SurfaceHead`. Collapsed → body hidden, header strip remains.
+  `collapsed` state, renders the collapse toggle in its `SurfaceHead`, and makes
+  the header a drag surface for reorder. Collapsed → body hidden, header strip remains.
 - **App renders the flow** by iterating `workspace.stage.order`, filtering to
   present boxes via a registry (`BoxId → { component, present }`, the stage
   analogue of `TAB_VIEWS`), so DOM order = saved order. Reorder = rewrite
@@ -140,7 +145,8 @@ Same `workspace` setting; no new key, no Rust change. `migrateWorkspace` /
 | `Box.head` + `SectionHead` headers | Unified into `SurfaceHead`. **Fix now.** |
 | dock `.tabs` strip | Left as-is (different kind — a tab strip, not a label). **Explicitly not merged.** |
 | Stage box order hard-coded in `App.svelte` markup | Driven by `workspace.stage.order` + a box registry. **Fix now.** |
-| Per-box collapse | New, via `SurfaceHead` toggle + stage context. **Build.** |
+| Per-box collapse | New, via `SurfaceHead` caret + stage context. **Build.** |
+| Reorder affordance | The whole box header is the drag surface — no grip glyph. **Build.** |
 | `Workspace = {left, right}` | Widened to `{left, right, stage}`; migration seeds `stage`. **Fix now.** |
 | Transport / waveform | Stay the fixed stage head, outside the flow region. **Unchanged.** |
 | Box↔tab interchange | Parked — tools are always-visible by design. **Deferred, not designed-for.** |
@@ -171,10 +177,11 @@ and shows the collapse toggle. Per-box collapse works and persists.
 persists across reload; contextual presence still correct; smoke-test, no effect loop.
 
 ### Phase 4 — box reorder drag
-A drag handle in each box header reorders within the flow (`moveBox`), persisted,
-with a FLIP glide. Stage-only (no cross-region drag).
-**Gate:** dragging a box reorders the flow and persists; collapse still works;
-smoke-test.
+Dragging a box by its header reorders within the flow (`moveBox`), persisted, with
+a FLIP glide. The header is the drag surface (down→threshold→drag-or-click, so the
+collapse caret and tools still click). Stage-only (no cross-region drag).
+**Gate:** dragging a box header reorders the flow and persists; the collapse caret
+and header tools still click without starting a drag; smoke-test.
 
 ## Deferred (not designed-for)
 
