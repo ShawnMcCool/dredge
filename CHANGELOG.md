@@ -3,6 +3,16 @@
 All notable user-facing changes to dredge, newest first. Entries are written
 at release time by `scripts/ship release`.
 
+## v0.10.0 — 2026-06-27
+
+Packaging and install only this release — no app changes (the reorderable/collapsible control boxes shipped in 0.9.0).
+
+### Packaging
+
+- **Arch: install with `yay -S dredge`.** The prebuilt `dredge-looper-bin` AUR package has been removed — it was built on Ubuntu and couldn't start on Arch, because Arch ships a newer rubberband than the prebuilt binary was linked against. The `dredge` package builds from source against your own system libraries and is the supported Arch path; if you had `dredge-looper-bin`, `yay -S dredge` replaces it.
+- **Fixed building `dredge` from the AUR on machines with an older Node.** The build now pins its own pnpm version, so it no longer fails when your system's pnpm is newer than its Node.
+- **Debian / Ubuntu is unchanged** — keep installing the `.deb` from the releases page.
+
 ## v0.9.0 — 2026-06-27
 
 ### Improved
