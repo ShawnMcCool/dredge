@@ -15,7 +15,7 @@ export interface StageFlow {
   registerContainer(el: HTMLElement): void;
   onHeadDown(e: PointerEvent, id: BoxId): void;
   onHeadMove(e: PointerEvent): void;
-  onHeadUp(): void;
+  onHeadUp(e?: PointerEvent): void;
   didDrag(): boolean;
 }
 
@@ -51,11 +51,9 @@ export function createStageFlow(getFlow: () => FlowRegion, onchange: (flow: Flow
       downX = e.clientX;
       downY = e.clientY;
       didDragFlag = false;
-      try {
-        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-      } catch {
-        /* non-fatal */
-      }
+      // NOTE: do NOT capture here — capturing on pointerdown redirects the click
+      // to the header and steals it from the caret/tools buttons. Capture lazily
+      // once a real drag starts (below), so a plain click stays a click.
     },
     onHeadMove(e) {
       if (downId === null) return;
@@ -63,24 +61,35 @@ export function createStageFlow(getFlow: () => FlowRegion, onchange: (flow: Flow
         if (Math.abs(e.clientX - downX) < DRAG_PX && Math.abs(e.clientY - downY) < DRAG_PX) return;
         dragId = downId;
         didDragFlag = true;
+        // a real drag began — now capture so moves keep flowing off the header
+        try {
+          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        } catch {
+          /* non-fatal */
+        }
       }
-      if (!container) return;
-      const el = document.elementFromPoint(e.clientX, e.clientY);
-      const overBox = el?.closest<HTMLElement>(".box");
-      if (!overBox || !container.contains(overBox)) return;
-      const targetId = overBox.dataset.box as BoxId | undefined;
-      if (!targetId || targetId === dragId) return;
-      // insert before/after the target depending on which side of its centre the
-      // pointer is on (the flow wraps, so use the larger axis — boxes are wider
-      // than tall, so x reads as reading order within a row).
-      const r = overBox.getBoundingClientRect();
-      const after = e.clientX > r.left + r.width / 2;
-      const order = getFlow().order;
-      let toIndex = order.indexOf(targetId);
-      if (after) toIndex += 1;
-      onchange({ ...getFlow(), order: moveBox(order, dragId as BoxId, toIndex) });
+      // No mutation during the drag — only the dragging cue (dragId) tracks. The
+      // reorder is computed and applied once, on drop. Live-mutating here makes a
+      // hovered target oscillate (each move re-evaluates the just-changed order).
     },
-    onHeadUp() {
+    onHeadUp(e) {
+      if (dragId !== null && e && container) {
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        const overBox = el?.closest<HTMLElement>(".box");
+        const targetId = overBox?.dataset.box as BoxId | undefined;
+        if (overBox && container.contains(overBox) && targetId && targetId !== dragId) {
+          // insert before/after the target by which side of its centre we dropped
+          // on (boxes are wider than tall, so x reads as reading order in a row).
+          // The index is computed among the OTHER boxes — exactly what `moveBox`
+          // splices into after it removes the dragged id.
+          const r = overBox.getBoundingClientRect();
+          const order = getFlow().order;
+          const others = order.filter((x) => x !== dragId);
+          let toIndex = others.indexOf(targetId);
+          if (e.clientX > r.left + r.width / 2) toIndex += 1;
+          onchange({ ...getFlow(), order: moveBox(order, dragId as BoxId, toIndex) });
+        }
+      }
       dragId = null;
       downId = null;
     },

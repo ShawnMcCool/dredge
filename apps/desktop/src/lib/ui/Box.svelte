@@ -40,7 +40,7 @@
     class="head"
     onpointerdown={(e) => flow.onHeadDown(e, id)}
     onpointermove={(e) => flow.onHeadMove(e)}
-    onpointerup={() => flow.onHeadUp()}
+    onpointerup={(e) => flow.onHeadUp(e)}
     onpointercancel={() => flow.onHeadUp()}
   >
     <SurfaceHead
