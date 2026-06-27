@@ -224,6 +224,7 @@ describe("reconcileWorkspace", () => {
 const baseWs = (): Workspace => ({
   left: { layout: [{ tabs: ["library"], active: "library", weight: 1 }], collapsed: false },
   right: { layout: [{ tabs: ["a", "b"], active: "a", weight: 1 }], collapsed: false },
+  stage: defaultFlow(),
 });
 
 describe("moveTabTo", () => {
@@ -245,6 +246,7 @@ describe("moveTabTo", () => {
     const start: Workspace = {
       left: { layout: [], collapsed: false },
       right: { layout: [{ tabs: ["a", "b"], active: "a", weight: 1 }], collapsed: false },
+      stage: defaultFlow(),
     };
     const ws = moveTabTo(start, "a", "left", 0, 0);
     expect(wkeys(ws)).toEqual({ left: [["a"]], right: [["b"]] });
@@ -270,5 +272,35 @@ describe("setActiveIn / setCollapsed", () => {
   });
   it("sets collapse on one region", () => {
     expect(setCollapsed(baseWs(), "left", true).left.collapsed).toBe(true);
+  });
+});
+
+import { defaultFlow } from "./stage";
+
+describe("workspace carries the stage flow", () => {
+  it("defaultWorkspace seeds a default stage flow", () => {
+    expect(defaultWorkspace(["library", "a", "b"]).stage).toEqual(defaultFlow());
+  });
+  it("reconcileWorkspace seeds a missing stage", () => {
+    const ws = reconcileWorkspace(
+      {
+        left: { layout: [{ tabs: ["library"], active: "library", weight: 1 }], collapsed: false },
+        right: { layout: [{ tabs: ["a", "b"], active: "a", weight: 1 }], collapsed: false },
+      } as never,
+      ["library", "a", "b"],
+    );
+    expect(ws.stage).toEqual(defaultFlow());
+  });
+  it("reconcileWorkspace reconciles a present stage", () => {
+    const ws = reconcileWorkspace(
+      {
+        left: { layout: [{ tabs: ["library"], active: "library", weight: 1 }], collapsed: false },
+        right: { layout: [{ tabs: ["a", "b"], active: "a", weight: 1 }], collapsed: false },
+        stage: { order: ["tuner", "metronome"], collapsed: ["tuner"] },
+      } as never,
+      ["library", "a", "b"],
+    );
+    expect(ws.stage.order.slice(0, 2)).toEqual(["tuner", "metronome"]);
+    expect(ws.stage.collapsed).toEqual(["tuner"]);
   });
 });

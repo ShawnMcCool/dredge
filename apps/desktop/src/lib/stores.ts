@@ -8,6 +8,7 @@ import { subdivisionTimes, type GridSubdivision } from "./waveform-math";
 import { bisect, nudgeEdge, rateForRep, runUp, type Span } from "./drill";
 import { setActiveIn, setCollapsed, type RegionId, type Workspace } from "./dock";
 import { migrateWorkspace } from "./workspace-migrate";
+import { defaultFlow } from "./stage";
 import { deriveLoopName } from "./loop-name";
 import { meterNumerator } from "./meter";
 import { tapTempo as computeTap, clampBpm, strongMask, type TapState } from "./metronome";
@@ -434,6 +435,7 @@ export const ALL_TABS = [
 export const workspace = writable<Workspace>({
   left: { layout: [], collapsed: false },
   right: { layout: [], collapsed: false },
+  stage: defaultFlow(),
 });
 /** Grid display (persisted): show/hide the drawn grid, full lines vs bottom
  *  ticks, and the subdivision used for both the grid and snapping. */

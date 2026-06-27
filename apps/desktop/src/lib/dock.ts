@@ -4,6 +4,8 @@
 // normalize (drop empty panels, fix each active, renormalize weights). These are
 // pure transforms; the component renders them and reads drag gestures.
 
+import { defaultFlow, reconcileFlow, STAGE_BOXES, type FlowRegion } from "./stage";
+
 /** One stackable unit: an ordered tab list, the active tab, and its vertical
  *  share (`weight`, relative — the render uses it as flex-grow). */
 export interface Panel {
@@ -133,22 +135,24 @@ export function setWeights(layout: DockLayout, weights: number[]): DockLayout {
 // may legally be empty (its dock renders nothing; only the rail shows). This is
 // the one place where empty layouts are allowed; `normalizeRegion` keeps `[]`.
 export type RegionId = "left" | "right";
-export interface Region {
+export interface DockRegion {
   layout: DockLayout;
   collapsed: boolean;
 }
 export interface Workspace {
-  left: Region;
-  right: Region;
+  left: DockRegion;
+  right: DockRegion;
+  stage: FlowRegion;
 }
 
 /** First-run shape: the first tab (library) alone on the left, the rest on the
- *  right, both expanded. */
+ *  right, both expanded; the stage flow in its canonical order. */
 export function defaultWorkspace(allTabs: string[]): Workspace {
   const [first, ...rest] = allTabs;
   return {
     left: { layout: first ? [{ tabs: [first], active: first, weight: 1 }] : [], collapsed: false },
     right: { layout: rest.length ? [{ tabs: rest, active: rest[0], weight: 1 }] : [], collapsed: false },
+    stage: defaultFlow(),
   };
 }
 
@@ -158,13 +162,22 @@ export function defaultWorkspace(allTabs: string[]): Workspace {
  *  last panel, each region's weights normalized. Empty regions are legal; if
  *  BOTH end up empty the default workspace is returned. Collapse flags pass
  *  through. */
-export function reconcileWorkspace(ws: Workspace, allTabs: string[]): Workspace {
+/** The shape `reconcileWorkspace` actually receives — untrusted, possibly-partial
+ *  data read back from settings. Reconciled into a valid `Workspace`. */
+type StoredWorkspace = {
+  left?: { layout?: unknown; collapsed?: unknown };
+  right?: { layout?: unknown; collapsed?: unknown };
+  stage?: unknown;
+};
+
+export function reconcileWorkspace(ws: StoredWorkspace | null | undefined, allTabs: string[]): Workspace {
   const known = new Set(allTabs);
   const seen = new Set<string>();
-  const prune = (layout: DockLayout): DockLayout => {
+  const prune = (layout: unknown): DockLayout => {
     const next: DockLayout = [];
-    for (const p of Array.isArray(layout) ? layout : []) {
-      const tabs = (Array.isArray(p?.tabs) ? p.tabs : []).filter((t) => known.has(t) && !seen.has(t));
+    for (const p of (Array.isArray(layout) ? layout : []) as Panel[]) {
+      const src = Array.isArray(p?.tabs) ? (p.tabs as string[]) : [];
+      const tabs = src.filter((t) => known.has(t) && !seen.has(t));
       for (const t of tabs) seen.add(t);
       if (tabs.length === 0) continue;
       const active = tabs.includes(p.active) ? p.active : tabs[0];
@@ -188,6 +201,7 @@ export function reconcileWorkspace(ws: Workspace, allTabs: string[]): Workspace 
   return {
     left: { layout: left, collapsed: !!ws?.left?.collapsed },
     right: { layout: right, collapsed: !!ws?.right?.collapsed },
+    stage: reconcileFlow((ws?.stage ?? {}) as { order?: unknown; collapsed?: unknown }, STAGE_BOXES),
   };
 }
 

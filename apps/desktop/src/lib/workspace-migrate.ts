@@ -13,7 +13,8 @@ export function migrateWorkspace(all: Record<string, unknown>, allTabs: string[]
   const [first, ...rest] = allTabs;
   const rightLayout = Array.isArray(all.panel_layout) ? (all.panel_layout as DockLayout) : null;
   if (!rightLayout && !rest.length) return defaultWorkspace(allTabs);
-  const ws: Workspace = {
+  // Intermediate stored shape; reconcileWorkspace validates it and seeds `stage`.
+  const ws = {
     left: {
       layout: first ? [{ tabs: [first], active: first, weight: 1 }] : [],
       collapsed: all.library_collapsed === true,

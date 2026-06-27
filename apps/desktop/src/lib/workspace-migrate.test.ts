@@ -54,3 +54,25 @@ describe("migrateWorkspace", () => {
     expect(keys(migrateWorkspace({}, ALL))).toEqual({ left: [["library"]], right: [["a", "b"]] });
   });
 });
+
+import { defaultFlow } from "./stage";
+
+describe("migrateWorkspace seeds the stage flow", () => {
+  it("seeds a default stage when migrating a stage-less workspace", () => {
+    const ws = migrateWorkspace(
+      {
+        workspace: {
+          left: { layout: [{ tabs: ["library"], active: "library", weight: 1 }], collapsed: false },
+          right: { layout: [{ tabs: ["a", "b"], active: "a", weight: 1 }], collapsed: false },
+        },
+      },
+      ALL,
+    );
+    expect(ws.stage).toEqual(defaultFlow());
+  });
+  it("seeds a stage on legacy migration too", () => {
+    expect(
+      migrateWorkspace({ panel_layout: [{ tabs: ["a", "b"], active: "a", weight: 1 }] }, ALL).stage,
+    ).toEqual(defaultFlow());
+  });
+});
