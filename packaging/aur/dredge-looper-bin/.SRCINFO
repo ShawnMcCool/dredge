@@ -15,6 +15,8 @@ pkgbase = dredge-looper-bin
 	optdepends = demucs: 4-stem separation (vocals/drums/bass/other)
 	provides = dredge
 	conflicts = dredge
+	options = !strip
+	options = !debug
 	source = https://github.com/ShawnMcCool/dredge/releases/download/v0.4.1/dredge-0.4.1-x86_64-linux.tar.gz
 	sha256sums = 603d59448cff36bebab6552e602ca88784018647be6572c407be2c834ae4e11b
 

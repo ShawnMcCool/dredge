@@ -7,6 +7,10 @@ pkgdesc="Ear-first practice looper: loop sections, slow them down pitch-preservi
 arch=('x86_64')
 url="https://github.com/ShawnMcCool/dredge"
 license=('MIT')
+# Prebuilt, already-stripped release binaries: don't re-strip them, and don't
+# try to split a -debug package (there's no debuginfo, so makepkg's gdb-add-index
+# step errors and emits an empty *-debug package).
+options=('!strip' '!debug')
 depends=('rubberband' 'pipewire' 'webkit2gtk-4.1' 'gtk3')
 optdepends=('ffmpeg: MP3 export, extra container formats, and demucs stem export'
             'uv: bootstrap the analyze/songformer ML venvs (beats, sections)'
