@@ -30,9 +30,10 @@
 
   const flow = getStageFlow();
   const collapsed = $derived(flow.isCollapsed(id));
+  const dragging = $derived(flow.dragId === id);
 </script>
 
-<section class="box" class:dim class:nogrow={!grow} class:wide class:collapsed data-box={id}>
+<section class="box" class:dim class:nogrow={!grow} class:wide class:collapsed class:dragging data-box={id}>
   <!-- the header is the drag surface; the caret + tools still click (threshold) -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <header
@@ -77,6 +78,13 @@
   }
   .box.dim {
     opacity: 0.8;
+  }
+  /* the box being dragged to a new flow position */
+  .box.dragging {
+    opacity: 0.5;
+  }
+  .box.dragging .head {
+    cursor: grabbing;
   }
 
   .head {
