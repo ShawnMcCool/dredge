@@ -3,6 +3,7 @@
   // actions) over a padded body. Every box under the waveform — stems, tuner,
   // analyze — uses this so their headers are guaranteed identical.
   import type { Snippet } from "svelte";
+  import SurfaceHead from "./SurfaceHead.svelte";
 
   interface Props {
     label: string;
@@ -23,8 +24,7 @@
 
 <section class="box" class:dim class:nogrow={!grow} class:wide>
   <header class="head">
-    <span class="lbl">{label}</span>
-    {#if tools}<span class="head-actions">{@render tools()}</span>{/if}
+    <SurfaceHead {tools}>{label}</SurfaceHead>
   </header>
   <div class="body">{@render children()}</div>
 </section>
@@ -55,39 +55,9 @@
   .head {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
     min-height: 32px;
     padding: 4px 10px;
     border-bottom: 1px solid var(--line);
-  }
-
-  .lbl {
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-
-  .head-actions {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  /* uniform header tools across every box: a plain muted glyph, no border —
-     so the header height (and the icons) match whatever box you're looking at */
-  .head-actions :global(button) {
-    background: none;
-    border: none;
-    color: var(--muted);
-    cursor: pointer;
-    padding: 0;
-    font-size: 0.95rem;
-    line-height: 1;
-  }
-  .head-actions :global(button:hover) {
-    color: var(--fg);
   }
 
   .body {
