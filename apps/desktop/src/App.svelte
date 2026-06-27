@@ -18,7 +18,9 @@
   import Transport from "./components/Transport.svelte";
   import Tuner from "./components/Tuner.svelte";
   import Waveform from "./components/Waveform.svelte";
-  import Dock from "./lib/ui/Dock.svelte";
+  import DockRegion from "./lib/ui/DockRegion.svelte";
+  import { createDockDrag, setDockDrag } from "./lib/dock-drag.svelte";
+  import type { DockLayout, RegionId } from "./lib/dock";
   import { installKeys } from "./lib/keys";
   import { initTheme } from "./lib/theme";
   import { initTrace } from "./lib/trace";
@@ -26,21 +28,19 @@
   import { initZoom, resyncZoom } from "./lib/zoom";
   import {
     actions,
+    ALL_TABS,
     drillSpan,
     initEvents,
-    libraryCollapsed,
     loopsOpen,
     openSong,
-    panelsCollapsed,
     sectionsOpen,
     settingsOpen,
-    panelLayout,
+    workspace,
   } from "./lib/stores";
 
-  const ALL_TABS = ["structure", "loops", "routines", "export", "profile", "devices", "settings", "guide"] as const;
-  type Tab = (typeof ALL_TABS)[number];
-  // one panel view per tab — the nav and the body both drive off this map
-  const TAB_VIEWS: Record<Tab, Component> = {
+  // one view per tab key — keyed by the canonical ALL_TABS set in stores.ts
+  const TAB_VIEWS: Record<(typeof ALL_TABS)[number], Component> = {
+    library: Library,
     structure: Sections,
     loops: Loops,
     routines: Routines,
@@ -50,28 +50,36 @@
     settings: SettingsPanel,
     guide: Guide,
   };
-  // The right aside is a reusable Dock (lib/ui/Dock.svelte) over these tabs; its
-  // layout persists in `panelLayout`. `dock.reveal(tab)` activates a tab for the
-  // open-settings / open-structure / open-loops shortcuts below.
-  let dock: { reveal: (key: string) => void } | undefined = $state();
 
+  // The window arrangement is two regions of one workspace; the shared drag
+  // coordinator (provided via context) lets a tab drag cross between them. Each
+  // region's within-region changes (select / resize) write back through
+  // `setLayout`; cross-region moves write the whole workspace.
+  const drag = createDockDrag(
+    () => $workspace,
+    (ws) => void actions.setWorkspace(ws),
+  );
+  setDockDrag(drag);
+
+  const setLayout = (region: RegionId) => (layout: DockLayout) =>
+    void actions.setWorkspace({ ...$workspace, [region]: { ...$workspace[region], layout } });
+
+  // open-settings / open-structure / open-loops shortcuts reveal their tab
   $effect(() => {
     if ($settingsOpen) {
-      dock?.reveal("settings");
+      void actions.revealTab("settings");
       settingsOpen.set(false);
     }
   });
-
   $effect(() => {
     if ($sectionsOpen) {
-      dock?.reveal("structure");
+      void actions.revealTab("structure");
       sectionsOpen.set(false);
     }
   });
-
   $effect(() => {
     if ($loopsOpen) {
-      dock?.reveal("loops");
+      void actions.revealTab("loops");
       loopsOpen.set(false);
     }
   });
@@ -110,18 +118,15 @@
   });
 </script>
 
-<div class="shell" class:lib-collapsed={$libraryCollapsed} class:panels-collapsed={$panelsCollapsed}>
-  <aside class="library" class:collapsed={$libraryCollapsed}>
-    <button
-      class="rail"
-      onclick={() => actions.toggleLibrary()}
-      title={$libraryCollapsed ? "show library (Ctrl+[)" : "hide library (Ctrl+[)"}
-      aria-label={$libraryCollapsed ? "show library" : "hide library"}
-    >{$libraryCollapsed ? "›" : "‹"}</button>
-    {#if !$libraryCollapsed}
-      <div class="pane"><Library /></div>
-    {/if}
-  </aside>
+<div class="shell" class:lib-collapsed={$workspace.left.collapsed} class:panels-collapsed={$workspace.right.collapsed}>
+  <DockRegion
+    side="left"
+    layout={$workspace.left.layout}
+    collapsed={$workspace.left.collapsed}
+    views={TAB_VIEWS}
+    onlayout={setLayout("left")}
+    ontoggle={() => void actions.toggleRegion("left")}
+  />
   <main class="stage">
     <Waveform />
     {#if $openSong}
@@ -146,23 +151,14 @@
       {/if}
     </div>
   </main>
-  <aside class="panels" class:collapsed={$panelsCollapsed}>
-    {#if !$panelsCollapsed}
-      <Dock
-        bind:this={dock}
-        layout={$panelLayout}
-        tabs={ALL_TABS}
-        views={TAB_VIEWS}
-        onchange={(l) => void actions.setPanelLayout(l)}
-      />
-    {/if}
-    <button
-      class="rail"
-      onclick={() => actions.togglePanels()}
-      title={$panelsCollapsed ? "show panels (Ctrl+])" : "hide panels (Ctrl+])"}
-      aria-label={$panelsCollapsed ? "show panels" : "hide panels"}
-    >{$panelsCollapsed ? "‹" : "›"}</button>
-  </aside>
+  <DockRegion
+    side="right"
+    layout={$workspace.right.layout}
+    collapsed={$workspace.right.collapsed}
+    views={TAB_VIEWS}
+    onlayout={setLayout("right")}
+    ontoggle={() => void actions.toggleRegion("right")}
+  />
 </div>
 
 <style>
@@ -197,57 +193,8 @@
     --col-panels: var(--rail-w);
   }
 
-  /* Each aside is a flex row: an always-present full-height rail on the outer
-     edge plus the slidable pane. The rail is the single collapse/expand handle —
-     a slam to the window's outer edge lands on it at any height. */
-  .library {
-    display: flex;
-    flex-direction: row;
-    border-right: 1px solid var(--line);
-    min-width: 0;
-  }
-  .panels {
-    display: flex;
-    flex-direction: row;
-    border-left: 1px solid var(--line);
-    min-width: 0;
-  }
-  /* collapsed: only the rail remains, so the divider has nothing to separate */
-  .library.collapsed,
-  .panels.collapsed {
-    border: none;
-  }
-
-  /* full-height edge rail — toggles its pane. Expanded → collapse; collapsed →
-     expand. Stays quiet (chevron hidden) until hovered, like the old handles. */
-  .rail {
-    flex: 0 0 var(--rail-w);
-    align-self: stretch;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: none;
-    border: none;
-    color: var(--muted);
-    cursor: pointer;
-    font-size: 14px;
-    opacity: 0;
-    transition: opacity 120ms ease;
-  }
-  .rail:hover {
-    background: var(--bg-raised);
-    color: var(--fg);
-    opacity: 1;
-  }
-
-  /* the slidable content inboard of the rail */
-  .pane {
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
-    padding: var(--space);
-  }
+  /* The left/right grid columns are filled by <DockRegion> (its own rail +
+     collapse + Dock). The shell only owns the column widths + collapse below. */
 
   .stage {
     display: flex;

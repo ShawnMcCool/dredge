@@ -136,10 +136,10 @@ async function handle(e: KeyboardEvent): Promise<void> {
       await zoomReset();
     } else if (e.key === "[" && !isEditingTarget(e.target)) {
       e.preventDefault();
-      await actions.toggleLibrary();
+      await actions.toggleRegion("left");
     } else if (e.key === "]" && !isEditingTarget(e.target)) {
       e.preventDefault();
-      await actions.togglePanels();
+      await actions.toggleRegion("right");
     }
     return;
   }

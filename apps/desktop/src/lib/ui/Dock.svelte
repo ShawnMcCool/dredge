@@ -1,138 +1,48 @@
 <script lang="ts">
-  // A reusable dock: a vertical stack of resizable panels, each holding an
-  // ordered set of tabs (pages). Tabs drag to reorder within a panel, join into
-  // another panel, or split into a new one; splitters (or a right-drag anywhere,
-  // which snaps to the nearest break) resize. The pure layout transforms live in
-  // `lib/dock.ts`; this component renders them and reads the drag gestures. It is
-  // self-contained — every DOM query is scoped to its own root — so multiple
-  // docks can coexist.
+  // A dock renders ONE region of the workspace: a vertical stack of resizable
+  // panels, each holding an ordered set of tabs (pages). Tab drags — reorder,
+  // join into another panel, or split into a new one, including ACROSS to the
+  // other region — are driven by the shared coordinator (`lib/dock-drag`), which
+  // is the only thing that can see both regions at once. Within-region resize
+  // (splitters / right-drag-snap) stays here, since it never crosses regions.
+  // Pure layout transforms live in `lib/dock.ts`; this component renders the
+  // region's layout and reads the coordinator's drag state.
   import type { Component } from "svelte";
   import { flip } from "svelte/animate";
-  import { reconcile, moveTab, splitTab, setActive, setWeights, type DockLayout } from "../dock";
+  import { setActive, setWeights, type DockLayout, type RegionId } from "../dock";
+  import { getDockDrag } from "../dock-drag.svelte";
 
   interface Props {
-    /** Persisted layout (may be empty/stale; reconciled internally for render). */
+    /** Which region this dock renders. */
+    region: RegionId;
+    /** This region's panels (already reconciled by the parent). */
     layout: DockLayout;
-    /** Known tab keys, in code order. */
-    tabs: readonly string[];
     /** Tab key → the view rendered when that tab is the panel's active one. */
     views: Record<string, Component>;
-    /** New layout on any reorder / join / split / resize / tab switch. The
-     *  parent owns persistence. */
-    onchange: (layout: DockLayout) => void;
+    /** New layout for THIS region after a within-region change (select / resize).
+     *  Cross-region tab moves go through the coordinator, not this. */
+    onlayout: (layout: DockLayout) => void;
   }
-  let { layout, tabs, views, onchange }: Props = $props();
+  let { region, layout, views, onlayout }: Props = $props();
 
-  const effective = $derived(reconcile(layout, [...tabs]));
+  const drag = getDockDrag();
   let dockEl: HTMLElement;
 
-  // ── tab drag: reorder / join / split, with an insertion caret ──────────────
-  type Drop = { kind: "tab"; panel: number; index: number } | { kind: "split"; at: number };
-  let dragTab = $state<string | null>(null);
-  let drop = $state<Drop | null>(null);
-  let caret = $state<{ x: number; y: number; h: number } | null>(null);
-  let downTab: string | null = null;
-  let downX = 0;
-  let downY = 0;
-  let didDrag = false;
-  const DRAG_PX = 4;
+  // register this region's root so the coordinator can hit-test drops into it
+  $effect(() => {
+    drag.register(region, dockEl);
+    return () => drag.unregister(region);
+  });
 
-  function onTabDown(e: PointerEvent, t: string) {
-    if (e.button !== 0) return;
-    downTab = t;
-    downX = e.clientX;
-    downY = e.clientY;
-    didDrag = false;
-    try {
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    } catch {
-      /* non-fatal */
-    }
-  }
-  function onTabMove(e: PointerEvent) {
-    if (downTab === null) return;
-    if (dragTab === null) {
-      if (Math.abs(e.clientX - downX) < DRAG_PX && Math.abs(e.clientY - downY) < DRAG_PX) return;
-      dragTab = downTab;
-      didDrag = true;
-    }
-    const el = document.elementFromPoint(e.clientX, e.clientY);
-    if (!el || !dockEl.contains(el)) {
-      drop = null;
-      caret = null;
-      return;
-    }
-    const panels = [...dockEl.querySelectorAll<HTMLElement>(".dock-panel")];
-    const barEl = el.closest<HTMLElement>(".tabs");
-    if (barEl) {
-      // anywhere over a tab bar — a tab OR the gap between tabs — joins that
-      // panel; the slot is the pointer's reading-order position among the tabs.
-      const pi = panels.indexOf(barEl.closest<HTMLElement>(".dock-panel") as HTMLElement);
-      const els = [...barEl.querySelectorAll<HTMLElement>(".tab")].filter((b) => b.dataset.tab !== dragTab);
-      let index = els.length;
-      for (let i = 0; i < els.length; i++) {
-        const r = els[i].getBoundingClientRect();
-        if (e.clientY < r.top || (e.clientY <= r.bottom && e.clientX < r.left + r.width / 2)) {
-          index = i;
-          break;
-        }
-      }
-      drop = { kind: "tab", panel: pi, index };
-      caret = caretAt(barEl, els, index);
-      return;
-    }
-    const panelEl = el.closest<HTMLElement>(".dock-panel");
-    if (panelEl) {
-      // over a panel body → split into a new panel above/below
-      const pi = panels.indexOf(panelEl);
-      const r = panelEl.getBoundingClientRect();
-      drop = { kind: "split", at: e.clientY < r.top + r.height / 2 ? pi : pi + 1 };
-      caret = null;
-      return;
-    }
-    drop = null;
-    caret = null;
-  }
-  /** Insertion-caret rect (viewport coords) for slot `index` among a bar's
-   *  non-dragged tabs `els`. */
-  function caretAt(bar: HTMLElement, els: HTMLElement[], index: number): { x: number; y: number; h: number } {
-    if (els.length === 0) {
-      const r = bar.getBoundingClientRect();
-      return { x: r.left + 6, y: r.top + 5, h: 16 };
-    }
-    if (index < els.length) {
-      const r = els[index].getBoundingClientRect();
-      return { x: r.left - 3, y: r.top, h: r.height };
-    }
-    const r = els[els.length - 1].getBoundingClientRect();
-    return { x: r.right + 1, y: r.top, h: r.height };
-  }
-  function onTabUp() {
-    if (dragTab !== null && drop) {
-      const next =
-        drop.kind === "tab"
-          ? moveTab(effective, dragTab, drop.panel, drop.index)
-          : splitTab(effective, dragTab, drop.at);
-      onchange(next);
-    }
-    dragTab = null;
-    downTab = null;
-    drop = null;
-    caret = null;
-  }
+  // coordinator drag state, scoped to this region for the drop affordances
+  const drop = $derived(drag.drop);
+  const caret = $derived(drag.caret);
+  const tabDropHere = $derived(drop?.kind === "tab" && drop.region === region);
+  const showCaret = $derived(drag.dragTab !== null && tabDropHere && caret !== null);
+
   function selectTab(panel: number, t: string) {
-    if (didDrag) {
-      didDrag = false;
-      return; // the pointer gesture was a drag, not a select
-    }
-    onchange(setActive(effective, panel, t));
-  }
-
-  /** Bring `key` to the front of whichever panel holds it — for host shortcuts
-   *  (e.g. "open settings"). */
-  export function reveal(key: string) {
-    const pi = effective.findIndex((p) => p.tabs.includes(key));
-    if (pi >= 0) onchange(setActive(effective, pi, key));
+    if (drag.didDrag()) return; // the pointer gesture was a drag, not a select
+    onlayout(setActive(layout, panel, t));
   }
 
   // ── vertical resize: splitters + right-drag snap-to-nearest break ──────────
@@ -145,7 +55,7 @@
   const MIN_PANEL_PX = 64;
 
   function panelWeight(pi: number): number {
-    return resizeWeights ? resizeWeights[pi] : effective[pi].weight;
+    return resizeWeights ? resizeWeights[pi] : layout[pi].weight;
   }
   function beginResize(i: number, clientY: number, captureEl: HTMLElement, pointerId: number) {
     const panels = [...dockEl.querySelectorAll<HTMLElement>(".dock-panel")];
@@ -155,8 +65,8 @@
     resizeIdx = i;
     resizeStartY = clientY;
     resizeH = [above.offsetHeight, below.offsetHeight];
-    resizeCombined = effective[i - 1].weight + effective[i].weight;
-    resizeWeights = effective.map((p) => p.weight);
+    resizeCombined = layout[i - 1].weight + layout[i].weight;
+    resizeWeights = layout.map((p) => p.weight);
     resizeMoved = false;
     try {
       captureEl.setPointerCapture(pointerId);
@@ -206,7 +116,7 @@
     resizeWeights = w;
   }
   function onResizeUp() {
-    if (resizeWeights && resizeMoved) onchange(setWeights(effective, resizeWeights));
+    if (resizeWeights && resizeMoved) onlayout(setWeights(layout, resizeWeights));
     resizeWeights = null;
   }
 </script>
@@ -224,12 +134,15 @@
   onpointercancel={onResizeUp}
   oncontextmenu={(e) => e.preventDefault()}
 >
-  {#each effective as panel, pi (pi)}
+  {#each layout as panel, pi (pi)}
     <section
       class="dock-panel"
-      class:droptab={drop?.kind === "tab" && drop.panel === pi}
-      class:splitabove={drop?.kind === "split" && drop.at === pi}
-      class:splitbelow={drop?.kind === "split" && drop.at === pi + 1 && pi === effective.length - 1}
+      class:droptab={tabDropHere && drop?.kind === "tab" && drop.panel === pi}
+      class:splitabove={drop?.kind === "split" && drop.region === region && drop.at === pi}
+      class:splitbelow={drop?.kind === "split" &&
+        drop.region === region &&
+        drop.at === pi + 1 &&
+        pi === layout.length - 1}
       style="flex-grow: {panelWeight(pi)}"
     >
       {#if pi > 0}
@@ -249,13 +162,13 @@
           <button
             class="tab"
             class:active={panel.active === t}
-            class:dragging={dragTab === t}
+            class:dragging={drag.dragTab === t}
             data-tab={t}
             data-panel={pi}
-            onpointerdown={(e) => onTabDown(e, t)}
-            onpointermove={onTabMove}
-            onpointerup={onTabUp}
-            onpointercancel={onTabUp}
+            onpointerdown={(e) => drag.onTabDown(e, t)}
+            onpointermove={(e) => drag.onTabMove(e)}
+            onpointerup={() => drag.onTabUp()}
+            onpointercancel={() => drag.onTabUp()}
             onclick={() => selectTab(pi, t)}
             animate:flip={{ duration: 180 }}
             title="drag to reorder"
@@ -276,7 +189,7 @@
     </section>
   {/each}
 </div>
-{#if dragTab && drop?.kind === "tab" && caret}
+{#if showCaret && caret}
   <div class="drop-caret" style="left: {caret.x}px; top: {caret.y}px; height: {caret.h}px"></div>
 {/if}
 
