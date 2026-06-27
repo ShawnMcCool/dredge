@@ -68,23 +68,24 @@ jobs:
             dist/SHA256SUMS
           generate_release_notes: true
 
-  # After the release publishes, push the bumped PKGBUILDs to the AUR. Runs in
+  # After the release publishes, push the bumped PKGBUILD to the AUR. Runs in
   # an Arch container (makepkg refuses to run as root, hence the 'builder' user)
-  # and reuses scripts/ship's aur logic in --ci mode — it reads the tarball
-  # checksum from the just-published release SHA256SUMS, regenerates .SRCINFO,
-  # and pushes both packages (dredge + dredge-looper-bin) to their AUR remotes.
-  # Requires the AUR_SSH_PRIVATE_KEY secret: a deploy key whose public half is
-  # registered on the maintainer's AUR account (additional to the personal key).
-  # The in-repo PKGBUILDs are left as templates here; run `scripts/ship aur`
-  # locally to also commit a bump back to the repo. New per-release publishing
-  # (rpm, Flatpak, announcements) belongs here as further `needs: release` jobs.
+  # and reuses scripts/ship's aur logic in --ci mode — it bumps pkgver,
+  # regenerates .SRCINFO, and pushes the source `dredge` package to its AUR
+  # remote (the package builds from the git tag, so no release checksum is
+  # needed; `needs: release` still gates on a green build). Requires the
+  # AUR_SSH_PRIVATE_KEY secret: a deploy key whose public half is registered on
+  # the maintainer's AUR account (additional to the personal key). The in-repo
+  # PKGBUILD is left as a template here; run `scripts/ship aur` locally to also
+  # commit a bump back to the repo. New per-release publishing (rpm, Flatpak,
+  # announcements) belongs here as further `needs: release` jobs.
   aur:
     needs: release
     runs-on: ubuntu-24.04
     container: archlinux:base-devel
     steps:
       - name: Install tooling
-        run: pacman -Syu --noconfirm --needed git openssh github-cli
+        run: pacman -Syu --noconfirm --needed git openssh
 
       - uses: actions/checkout@v4
 
@@ -107,12 +108,9 @@ jobs:
           chown -R builder:builder /home/builder/.ssh
 
       - name: Publish to the AUR
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ver="${GITHUB_REF_NAME#v}"
           su - builder -c "
-            export GH_TOKEN='$GH_TOKEN'
             git config --global user.name 'Shawn McCool'
             git config --global user.email 'shawn@mccool.email'
             git config --global --add safe.directory '$GITHUB_WORKSPACE'

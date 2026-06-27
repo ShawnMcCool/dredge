@@ -32,16 +32,15 @@ set -euo pipefail
 #       failing fast if the release workflow run concluded in failure.
 #
 #   aur [<version>] [--pkgrel <n>] [--ci] [--dry-run]
-#       Update the AUR packages for a published release (default: the version
-#       in tauri.conf.json). Pulls the prebuilt tarball checksum from the
-#       release SHA256SUMS, bumps pkgver in both PKGBUILDs (source `dredge` +
-#       prebuilt `dredge-looper-bin`), regenerates .SRCINFO, verifies the
-#       prebuilt source resolves, commits the bump to main, then pushes each
-#       package to its AUR remote. Needs makepkg and an unlocked AUR SSH key.
-#       Run after `verify` confirms the release. --pkgrel sets the release
-#       number (default 1) for a packaging-only re-push at the same version.
-#       --ci skips the repo commit (the release.yml `aur` job runs this in an
-#       Arch container; the in-repo PKGBUILDs stay templates there).
+#       Update the AUR package `dredge` for a published release (default: the
+#       version in tauri.conf.json). The package builds from the git tag
+#       (sha256sums=SKIP), so this just bumps pkgver in the PKGBUILD,
+#       regenerates .SRCINFO, commits the bump to main, then pushes to the AUR
+#       remote. Needs makepkg and an unlocked AUR SSH key. Run after `verify`
+#       confirms the release. --pkgrel sets the release number (default 1) for
+#       a packaging-only re-push at the same version. --ci skips the repo
+#       commit (the release.yml `aur` job runs this in an Arch container; the
+#       in-repo PKGBUILD stays a template there).
 #
 # Tests and lint are deliberately NOT run here — run `just check` before
 # shipping; this script gates the *release path*, not code quality.
@@ -77,12 +76,6 @@ last_tag() {
 # Bump pkgver + pkgrel in a PKGBUILD in place.
 set_pkgbuild_version() {
   sed -i -E -e "s/^pkgver=.*/pkgver=$2/" -e "s/^pkgrel=.*/pkgrel=$3/" "$1"
-}
-
-# Replace the single quoted sha256sums entry in a PKGBUILD (prebuilt only; the
-# source package keeps SKIP and is never passed here).
-set_pkgbuild_sha() {
-  sed -i -E "s/^sha256sums=\('.*'\)/sha256sums=('$2')/" "$1"
 }
 
 next_version() {
@@ -378,7 +371,6 @@ cmd_verify() {
 # -------------------------------------------------------------------- aur
 
 SRC_DIR="packaging/aur/dredge"
-BIN_DIR="packaging/aur/dredge-looper-bin"
 
 cmd_aur() {
   local version="" pkgrel=1 dry_run=false ci=false
@@ -392,67 +384,43 @@ cmd_aur() {
     esac
   done
   [ -n "$version" ] || version=$(conf_version)
-  local tag="v$version"
 
   command -v makepkg >/dev/null 2>&1 || fail "makepkg not found — run 'aur' on an Arch box"
-  command -v gh >/dev/null 2>&1 || fail "gh not found — needed to read the release SHA256SUMS"
-  [ -f "$SRC_DIR/PKGBUILD" ] && [ -f "$BIN_DIR/PKGBUILD" ] \
-    || fail "PKGBUILDs not found — expected $SRC_DIR and $BIN_DIR"
+  [ -f "$SRC_DIR/PKGBUILD" ] || fail "PKGBUILD not found — expected $SRC_DIR"
 
-  banner "Updating AUR packages to $version-$pkgrel"
+  banner "Updating the AUR package to $version-$pkgrel"
 
-  # The prebuilt's source is the release tarball; its checksum is authoritative
-  # in the release SHA256SUMS, so read it from there rather than recomputing.
-  local tarball="dredge-${version}-x86_64-linux.tar.gz"
-  local tmp; tmp=$(mktemp -d)
-  gh release download "$tag" -p SHA256SUMS -D "$tmp" >/dev/null 2>&1 \
-    || fail "no SHA256SUMS on release $tag — publish/verify it first (scripts/ship verify $version)"
-  local sha
-  sha=$(awk -v f="$tarball" '$2 == f {print $1}' "$tmp/SHA256SUMS")
-  rm -rf "$tmp"
-  [ -n "$sha" ] || fail "no checksum for $tarball in release $tag SHA256SUMS"
-  banner "$tarball sha256=$sha"
-
+  # The source package builds from the git tag (sha256sums=SKIP) — no release
+  # checksum to wire in. Just bump the version and regenerate .SRCINFO.
   set_pkgbuild_version "$SRC_DIR/PKGBUILD" "$version" "$pkgrel"
-  set_pkgbuild_version "$BIN_DIR/PKGBUILD" "$version" "$pkgrel"
-  set_pkgbuild_sha "$BIN_DIR/PKGBUILD" "$sha"
 
   banner "Regenerating .SRCINFO"
   ( cd "$SRC_DIR" && makepkg --printsrcinfo > .SRCINFO )
-  ( cd "$BIN_DIR" && makepkg --printsrcinfo > .SRCINFO )
-
-  banner "Verifying the prebuilt source resolves (makepkg --verifysource)"
-  if ! ( cd "$BIN_DIR" && makepkg --verifysource >/dev/null 2>&1 ); then
-    ( cd "$BIN_DIR" && rm -rf src pkg "$tarball" )
-    fail "verifysource failed for dredge-looper-bin — release tarball/checksum mismatch for $tag?"
-  fi
-  ( cd "$BIN_DIR" && rm -rf src pkg "$tarball" )
 
   if [ "$dry_run" = true ]; then
     banner "[dry-run] PKGBUILD / .SRCINFO changes:"
-    git --no-pager diff -- "$SRC_DIR" "$BIN_DIR"
-    banner "[dry-run] then: commit the bump, push main, push both packages to the AUR"
-    git checkout -- "$SRC_DIR" "$BIN_DIR"
+    git --no-pager diff -- "$SRC_DIR"
+    banner "[dry-run] then: commit the bump, push main, push the package to the AUR"
+    git checkout -- "$SRC_DIR"
     return 0
   fi
 
   if [ "$ci" = true ]; then
     banner "CI mode — not committing to the repo; publishing to the AUR only"
-  elif git diff --quiet -- "$SRC_DIR" "$BIN_DIR"; then
-    banner "PKGBUILDs already at $version-$pkgrel — publishing as-is"
+  elif git diff --quiet -- "$SRC_DIR"; then
+    banner "PKGBUILD already at $version-$pkgrel — publishing as-is"
   else
     banner "Committing the bump"
-    git add "$SRC_DIR" "$BIN_DIR"
+    git add "$SRC_DIR"
     git commit -m "packaging(aur): bump to $version"
     git push origin main \
       || echo "  (couldn't push main — commit exists locally; finish with: git push origin main)" >&2
   fi
 
   aur_publish dredge "$version" "$pkgrel"
-  aur_publish dredge-looper-bin "$version" "$pkgrel"
 
   echo
-  echo "AUR UPDATED — dredge + dredge-looper-bin at $version-$pkgrel."
+  echo "AUR UPDATED — dredge at $version-$pkgrel."
 }
 
 # Push one package's PKGBUILD + .SRCINFO to its AUR repo. The AUR default branch

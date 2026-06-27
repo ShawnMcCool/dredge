@@ -55,7 +55,7 @@ Linux only. The audio engine is PipeWire-native: **PipeWire 1.0+ is required**, 
 **Arch / Arch-based**
 
 ```bash
-yay -S dredge-looper-bin   # prebuilt; or `yay -S dredge` to build from source
+yay -S dredge   # builds from source against your system libraries
 ```
 
 **Debian / Ubuntu** (24.04+ / Debian 13+)
