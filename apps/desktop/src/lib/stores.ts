@@ -6,7 +6,8 @@ import { cmd, initialSong, onEvent } from "./ipc";
 import { trace, traceErr } from "./trace";
 import { subdivisionTimes, type GridSubdivision } from "./waveform-math";
 import { bisect, nudgeEdge, rateForRep, runUp, type Span } from "./drill";
-import type { DockLayout } from "./dock";
+import { setActiveIn, setCollapsed, type RegionId, type Workspace } from "./dock";
+import { migrateWorkspace } from "./workspace-migrate";
 import { deriveLoopName } from "./loop-name";
 import { meterNumerator } from "./meter";
 import { tapTempo as computeTap, clampBpm, strongMask, type TapState } from "./metronome";
@@ -411,11 +412,29 @@ export const gridSnap = writable(true);
  *  section header, a spot on the wave — also starts playback. Off = the click
  *  only moves the playhead. */
 export const activePlay = writable(false);
-/** Persisted dock layout: the right aside as a vertical stack of panels, each a
- *  set of tabs. Empty = code default; App.svelte reconciles it against the known
- *  tabs (so adding/removing a tab stays graceful). Supersedes the old flat
- *  `tab_order`, which migrates to a single panel on load. */
-export const panelLayout = writable<DockLayout>([]);
+/** Every tab (page) in the workspace, in code order. `library` is the first —
+ *  `defaultWorkspace` seeds it into the left region, the rest into the right.
+ *  The view map lives in App.svelte (`TAB_VIEWS`). */
+export const ALL_TABS = [
+  "library",
+  "structure",
+  "loops",
+  "routines",
+  "export",
+  "profile",
+  "devices",
+  "settings",
+  "guide",
+] as const;
+
+/** The window arrangement: left + right regions, each a dock stack plus its
+ *  collapse flag. One source of truth — supersedes the old `panel_layout`,
+ *  `library_collapsed`, and `panels_collapsed` settings (migrated on load by
+ *  `migrateWorkspace`, then no longer written). */
+export const workspace = writable<Workspace>({
+  left: { layout: [], collapsed: false },
+  right: { layout: [], collapsed: false },
+});
 /** Grid display (persisted): show/hide the drawn grid, full lines vs bottom
  *  ticks, and the subdivision used for both the grid and snapping. */
 export const gridVisible = writable(true);
@@ -440,12 +459,14 @@ export const vram = writable<{ used: number[]; peak: number; min: number; total:
 export const UI_SCALE = "ui_scale";
 export const GRID_SNAP_DEFAULT = "grid_snap_default";
 export const ACTIVE_PLAY = "active_play";
-export const PANEL_LAYOUT = "panel_layout";
-const TAB_ORDER_LEGACY = "tab_order"; // migrated to PANEL_LAYOUT, no longer written
+/** The whole window arrangement (left + right regions). Supersedes
+ *  `panel_layout` / `library_collapsed` / `panels_collapsed`, which are read
+ *  once by `migrateWorkspace` and never written again. */
+export const WORKSPACE = "workspace";
+// legacy keys — read only by the one-time migration in `migrateWorkspace`:
+//   panel_layout, library_collapsed, panels_collapsed, tab_order
 export const PLAYBACK_VOLUME = "playback_volume";
 export const ANALYSIS_DEVICE = "analysis_device";
-export const LIBRARY_COLLAPSED = "library_collapsed";
-export const PANELS_COLLAPSED = "panels_collapsed";
 export const GRID_VISIBLE = "grid_visible";
 export const GRID_LINES = "grid_lines";
 export const GRID_SUBDIV = "grid_subdivision";
@@ -472,10 +493,6 @@ export const COUNT_IN = "count_in";
 export const SECTION_CLICK = "section_click";
 /** Metronome config: `{ bpm, beats_per_bar, cadence, kit }`. Persisted. */
 export const METRONOME = "metronome";
-
-/** Side-column collapse state — persisted to settings, restored at launch. */
-export const libraryCollapsed = writable(false);
-export const panelsCollapsed = writable(false);
 
 /** Local mirror of the settings table; `loadSettings` fills it at launch and
  *  `setSetting` writes through. */
@@ -566,15 +583,9 @@ export const actions = {
     settings.set(all);
     if (typeof all[GRID_SNAP_DEFAULT] === "boolean") gridSnap.set(all[GRID_SNAP_DEFAULT]);
     if (typeof all[ACTIVE_PLAY] === "boolean") activePlay.set(all[ACTIVE_PLAY]);
-    if (Array.isArray(all[PANEL_LAYOUT])) {
-      panelLayout.set(all[PANEL_LAYOUT] as DockLayout);
-    } else if (Array.isArray(all[TAB_ORDER_LEGACY])) {
-      // migrate the old flat tab order into a single-panel layout
-      const order = (all[TAB_ORDER_LEGACY] as unknown[]).filter((t): t is string => typeof t === "string");
-      panelLayout.set(order.length ? [{ tabs: order, active: order[0], weight: 1 }] : []);
-    }
-    if (typeof all[LIBRARY_COLLAPSED] === "boolean") libraryCollapsed.set(all[LIBRARY_COLLAPSED]);
-    if (typeof all[PANELS_COLLAPSED] === "boolean") panelsCollapsed.set(all[PANELS_COLLAPSED]);
+    // The whole window arrangement: an existing `workspace` wins; else migrate
+    // the legacy panel_layout / *_collapsed keys. Reconciled against ALL_TABS.
+    workspace.set(migrateWorkspace(all, [...ALL_TABS]));
     if (typeof all[GRID_VISIBLE] === "boolean") gridVisible.set(all[GRID_VISIBLE]);
     if (typeof all[GRID_LINES] === "boolean") gridLines.set(all[GRID_LINES]);
     if (all[GRID_SUBDIV] === "bar" || all[GRID_SUBDIV] === "beat" || all[GRID_SUBDIV] === "eighth")
@@ -650,16 +661,33 @@ export const actions = {
     await cmd("settings.set", { key, value });
   },
 
-  async toggleLibrary(): Promise<void> {
-    const v = !get(libraryCollapsed);
-    libraryCollapsed.set(v);
-    await this.setSetting(LIBRARY_COLLAPSED, v);
+  /** Persist the whole window arrangement (write-through). */
+  async setWorkspace(ws: Workspace): Promise<void> {
+    workspace.set(ws);
+    await this.setSetting(WORKSPACE, ws);
   },
 
-  async togglePanels(): Promise<void> {
-    const v = !get(panelsCollapsed);
-    panelsCollapsed.set(v);
-    await this.setSetting(PANELS_COLLAPSED, v);
+  /** Toggle one region's collapse flag. */
+  async toggleRegion(region: RegionId): Promise<void> {
+    const ws = get(workspace);
+    await this.setWorkspace(setCollapsed(ws, region, !ws[region].collapsed));
+  },
+
+  /** Bring `tab` to the front of its region and un-collapse that region — the
+   *  one canonical "reveal a page" path (shortcuts + the waveform's library
+   *  link both route through here). No-op if the tab lives nowhere. */
+  async revealTab(tab: string): Promise<void> {
+    const ws = get(workspace);
+    const region: RegionId | null = ws.left.layout.some((p) => p.tabs.includes(tab))
+      ? "left"
+      : ws.right.layout.some((p) => p.tabs.includes(tab))
+        ? "right"
+        : null;
+    if (!region) return;
+    const panel = ws[region].layout.findIndex((p) => p.tabs.includes(tab));
+    let next = setActiveIn(ws, region, panel, tab);
+    if (next[region].collapsed) next = setCollapsed(next, region, false);
+    await this.setWorkspace(next);
   },
 
   async setGridSnap(on: boolean): Promise<void> {
@@ -669,10 +697,6 @@ export const actions = {
   async setActivePlay(on: boolean): Promise<void> {
     activePlay.set(on);
     await this.setSetting(ACTIVE_PLAY, on);
-  },
-  async setPanelLayout(layout: DockLayout): Promise<void> {
-    panelLayout.set(layout);
-    await this.setSetting(PANEL_LAYOUT, layout);
   },
   async setGridVisible(on: boolean): Promise<void> {
     gridVisible.set(on);

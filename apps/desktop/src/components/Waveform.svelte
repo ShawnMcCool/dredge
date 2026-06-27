@@ -14,7 +14,6 @@
     gridSnap,
     gridSubdivision,
     gridVisible,
-    libraryCollapsed,
     openingSong,
     openSong,
     position,
@@ -895,9 +894,10 @@
     if (l) await actions.deleteLoop(l.id);
   }
 
-  /** Empty-state "library" link: reveal the library pane if it's collapsed. */
+  /** Empty-state "library" link: bring the library tab to the front, expanding
+   *  its region if collapsed. */
   function openLibrary() {
-    if (get(libraryCollapsed)) void actions.toggleLibrary();
+    void actions.revealTab("library");
   }
 
   // Cursor position in waveform px (or null off-canvas) — drives the hover-reveal
