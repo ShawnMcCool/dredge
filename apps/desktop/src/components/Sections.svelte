@@ -172,7 +172,7 @@
 
 <SectionHead>
   sections
-  {#snippet actions()}
+  {#snippet tools()}
     {#if $openSong}
       <button class="txt-btn" class:active={editing} onclick={() => (editing = !editing)}>
         {editing ? "done" : "edit"}

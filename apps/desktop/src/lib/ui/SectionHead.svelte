@@ -7,16 +7,18 @@
   interface Props {
     /** The label text. */
     children: Snippet;
-    /** Optional trailing controls, right-aligned on the heading row. */
-    actions?: Snippet;
+    /** Optional trailing controls, right-aligned on the heading row. (Named
+     *  `tools`, not `actions`, so a page's snippet can still reach its imported
+     *  `actions` store inside the slot.) */
+    tools?: Snippet;
   }
-  let { children, actions }: Props = $props();
+  let { children, tools }: Props = $props();
 </script>
 
-<div class="section-head" class:has-actions={actions}>
+<div class="section-head" class:has-tools={tools}>
   <h3>{@render children()}</h3>
-  {#if actions}
-    <div class="actions">{@render actions()}</div>
+  {#if tools}
+    <div class="tools">{@render tools()}</div>
   {/if}
 </div>
 
@@ -39,7 +41,7 @@
     color: var(--muted);
     line-height: 1.4;
   }
-  .actions {
+  .tools {
     display: flex;
     align-items: center;
     gap: calc(var(--space) / 2);

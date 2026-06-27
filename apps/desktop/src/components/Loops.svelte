@@ -34,7 +34,7 @@
 
 <SectionHead>
   saved loops
-  {#snippet actions()}
+  {#snippet tools()}
     {#if $openSong}
       <button
         class="show-all"
