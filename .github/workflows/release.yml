@@ -12,19 +12,28 @@ jobs:
     # 24.04, not 22.04: the libspa-sys 0.10 bindings need PipeWire 1.0+ headers
     # (22.04's libspa is too old — missing spa_meta_region_is_valid etc.).
     runs-on: ubuntu-24.04
+    # mold cuts the link step (the desktop binary pulls in webkit/gtk); only the
+    # linker is affected, so it's a safe speedup for the release build too.
+    env:
+      RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libxdo-dev \
-            libayatana-appindicator3-dev libssl-dev \
-            librubberband-dev libpipewire-0.3-dev libspa-0.2-dev \
-            clang pkg-config build-essential
+      # Caches the apt .debs so the webkit/gtk/pipewire dev libs aren't
+      # re-downloaded every run. Bump `version` to invalidate the cache.
+      - name: System dependencies (cached)
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: >-
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libxdo-dev
+            libayatana-appindicator3-dev libssl-dev librubberband-dev
+            libpipewire-0.3-dev libspa-0.2-dev clang pkg-config build-essential
+          version: "1"
 
       - uses: dtolnay/rust-toolchain@stable
+
+      - name: Faster linking (mold)
+        uses: rui314/setup-mold@v1
 
       - uses: pnpm/action-setup@v4
         with:
