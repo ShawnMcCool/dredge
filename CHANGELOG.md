@@ -3,6 +3,16 @@
 All notable user-facing changes to dredge, newest first. Entries are written
 at release time by `scripts/ship release`.
 
+## v0.11.0 — 2026-06-28
+
+### Improved
+
+- **Hide control boxes you don't use.** Hover a box's header and click the × to take it off the stage; a **+** in the stage's bottom-right corner pops up a list of the hidden tools to bring any of them back. The boxes you keep stay where you put them.
+- **Collapse a box by tapping its header.** Tap a box's title bar to fold it down to just the strip, tap again to open it back up — no more aiming for a little caret. (The caret is gone.)
+- **See what you're dragging.** Reordering a box now shows its name trailing your cursor and a line marking exactly where it will drop, so it's clear what's moving and where it'll land.
+- **Tidied the control boxes.** "click" is now a compact vertical panel; an empty notes section shows just its header instead of a blank panel; the recordings span and input are compact dropdowns instead of full-width bars; and bass focus is a single toggle with the stem reset tucked beside it.
+- **The tuner powers itself.** It listens whenever it's expanded and stops when you collapse it — no power button. It starts collapsed, so it stays silent until you open it to tune.
+
 ## v0.10.0 — 2026-06-27
 
 Packaging and install only this release — no app changes (the reorderable/collapsible control boxes shipped in 0.9.0).
