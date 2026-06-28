@@ -29,9 +29,11 @@ export interface FlowRegion {
   hidden: BoxId[]; // removed from the stage entirely (restorable from the + tool menu)
 }
 
-/** First-run shape: canonical order, nothing collapsed, nothing hidden. */
+/** First-run shape: canonical order, nothing hidden, tuner collapsed. The tuner
+ *  listens whenever it's expanded, so it starts collapsed (and silent) until the
+ *  user opens it. */
 export function defaultFlow(): FlowRegion {
-  return { order: [...STAGE_BOXES], collapsed: [], hidden: [] };
+  return { order: [...STAGE_BOXES], collapsed: ["tuner"], hidden: [] };
 }
 
 /** Restrict an untrusted id list to the known box set, de-duped. */

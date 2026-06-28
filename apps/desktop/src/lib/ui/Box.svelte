@@ -26,10 +26,13 @@
     wide?: boolean;
     /** Right-aligned header controls. */
     tools?: Snippet;
+    /** Render the body, or just the header strip (e.g. a notes box with no note
+     *  yet). Distinct from collapse, which is the user's per-box toggle. */
+    showBody?: boolean;
     children: Snippet;
   }
 
-  let { id, label, dim = false, grow = true, wide = false, tools, children }: Props = $props();
+  let { id, label, dim = false, grow = true, wide = false, tools, showBody = true, children }: Props = $props();
 
   const flow = getStageFlow();
   const collapsed = $derived(flow.isCollapsed(id));
@@ -53,7 +56,7 @@
     <SurfaceHead {tools}>{heading}</SurfaceHead>
     <button class="hide-x" title="hide from stage" aria-label="hide from stage" onclick={() => flow.hide(id)}>×</button>
   </header>
-  {#if !collapsed}
+  {#if !collapsed && showBody}
     <div class="body">{@render children()}</div>
   {/if}
 </section>

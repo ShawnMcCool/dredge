@@ -14,12 +14,14 @@
     selection,
     currentLoop,
     type AudioDevice,
+    type RecordSpan,
   } from "../lib/stores";
   import { framesToMs, msToFrames } from "../lib/recording-math";
   import { cmd } from "../lib/ipc";
   import { traceErr } from "../lib/trace";
   import Box from "../lib/ui/Box.svelte";
   import Button from "../lib/ui/Button.svelte";
+  import Dropdown from "../lib/ui/Dropdown.svelte";
   import Fader from "../lib/ui/Fader.svelte";
 
   let devices = $state<AudioDevice[]>([]);
@@ -31,29 +33,52 @@
       })
       .catch((e) => traceErr("recordings", `device.inputs failed: ${e}`));
   });
+
+  const spanOptions = $derived([
+    { value: "song", label: "full song" },
+    { value: "playhead", label: "from playhead" },
+    { value: "selection", label: "selection", disabled: !$selection },
+    { value: "loop", label: "loop", disabled: !$currentLoop },
+  ]);
+  const inputOptions = $derived([
+    { value: "default", label: "default (follow devices)" },
+    ...devices.map((d) => ({ value: String(d.id), label: d.name })),
+  ]);
 </script>
 
 {#if $openSong}
   <Box id="recordings" wide>
-    <div class="bar">
-      <select bind:value={$recordSpan} disabled={$recordingActive} aria-label="recording span">
-        <option value="song">full song</option>
-        <option value="playhead">from playhead</option>
-        <option value="selection" disabled={!$selection}>selection</option>
-        <option value="loop" disabled={!$currentLoop}>loop</option>
-      </select>
-      <select bind:value={$recordInput} disabled={$recordingActive} aria-label="input device">
-        <option value="default">default (follow devices)</option>
-        {#each devices as d (d.id)}<option value={d.id}>{d.name}</option>{/each}
-      </select>
-      <Button
-        variant="toggle"
-        active={$recordArmed}
-        disabled={$recordingActive}
-        onclick={() => recordArmed.set(!$recordArmed)}
-      >
-        {$recordArmed ? "armed ✓" : "arm"}
-      </Button>
+    <div class="arm">
+      <label class="field">
+        <span class="flabel">span</span>
+        <Dropdown
+          value={$recordSpan}
+          options={spanOptions}
+          disabled={$recordingActive}
+          label="recording span"
+          onchange={(v) => recordSpan.set(v as RecordSpan)}
+        />
+      </label>
+      <label class="field">
+        <span class="flabel">input</span>
+        <Dropdown
+          value={$recordInput}
+          options={inputOptions}
+          disabled={$recordingActive}
+          label="input device"
+          onchange={(v) => recordInput.set(v)}
+        />
+      </label>
+      <div class="arm-row">
+        <Button
+          variant="toggle"
+          active={$recordArmed}
+          disabled={$recordingActive}
+          onclick={() => recordArmed.set(!$recordArmed)}
+        >
+          {$recordArmed ? "armed ✓" : "arm"}
+        </Button>
+      </div>
     </div>
     {#if $recordArmed && !$recordingActive}
       <p class="hint">record from the transport</p>
@@ -101,33 +126,27 @@
 {/if}
 
 <style>
-  .bar {
+  /* arm controls stacked vertically — each a small label over a popover select,
+     so the box isn't dominated by full-width native select bars */
+  .arm {
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
     gap: 8px;
-    align-items: center;
+    align-items: flex-start;
   }
-
-  select {
-    background: var(--bg);
-    color: var(--fg);
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    height: var(--control-h);
-    padding: 0 6px;
-    font: inherit;
-    font-size: 12px;
-    cursor: pointer;
-    /* Share the row and shrink with a native ellipsis instead of pushing the
-       record button off the edge. The device list is the greedy one. */
-    flex: 1 1 8em;
-    min-width: 0;
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 240px;
     max-width: 100%;
   }
-
-  select:disabled {
+  .flabel {
+    font-size: 11px;
     color: var(--muted);
-    cursor: default;
+  }
+  .arm-row {
+    margin-top: 2px;
   }
 
   .hint {

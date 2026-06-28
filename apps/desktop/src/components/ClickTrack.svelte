@@ -10,18 +10,20 @@
 </script>
 
 {#if $sectionClickAvailable}
-  <!-- few controls — lock to content width and lay the two settings out as one
-       aligned label→controls grid so the toggles line up. -->
+  <!-- few controls, laid out vertically so the box reads as a tall settings
+       panel rather than a short stub stretched to its neighbour's height. -->
   <Box id="click" grow={false}>
     <div class="settings">
-      <span class="lbl">count in</span>
-      <div class="ctl">
-        <button
-          class="toggle"
-          class:on={$countIn.enabled}
-          onclick={() => actions.setCountIn({ enabled: !$countIn.enabled })}
-          title="count in before playback">{$countIn.enabled ? "on" : "off"}</button
-        >
+      <div class="setting">
+        <div class="row">
+          <span class="lbl">count in</span>
+          <button
+            class="toggle"
+            class:on={$countIn.enabled}
+            onclick={() => actions.setCountIn({ enabled: !$countIn.enabled })}
+            title="count in before playback">{$countIn.enabled ? "on" : "off"}</button
+          >
+        </div>
         <span class="stepper" class:off={!$countIn.enabled} title="beats before playback">
           <button onclick={() => stepCount(-1)} aria-label="fewer count-in beats">−</button>
           <span class="pval mono">{countLabel}</span>
@@ -37,38 +39,43 @@
         </span>
       </div>
 
-      <span class="lbl">section</span>
-      <div class="ctl">
-        <button
-          class="toggle"
-          class:on={$sectionClick.enabled}
-          onclick={() => actions.setSectionClick(!$sectionClick.enabled)}
-          title="click every beat during marked sections">{$sectionClick.enabled ? "on" : "off"}</button
-        >
+      <div class="setting">
+        <div class="row">
+          <span class="lbl">section</span>
+          <button
+            class="toggle"
+            class:on={$sectionClick.enabled}
+            onclick={() => actions.setSectionClick(!$sectionClick.enabled)}
+            title="click every beat during marked sections">{$sectionClick.enabled ? "on" : "off"}</button
+          >
+        </div>
       </div>
     </div>
   </Box>
 {/if}
 
 <style>
-  /* label → controls, two rows that share a column so the toggles align */
   .settings {
-    display: grid;
-    grid-template-columns: auto auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  /* each setting: a label+toggle row, with any sub-controls stacked beneath */
+  .setting {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .row {
+    display: flex;
     align-items: center;
-    column-gap: 14px;
-    row-gap: 10px;
+    gap: 10px;
   }
   .lbl {
     color: var(--muted);
     font-size: 12px;
     white-space: nowrap;
-  }
-  .ctl {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-width: 0;
   }
 
   /* on/off pill — outline when off, accent when on (keeps the value visible
@@ -93,7 +100,12 @@
     color: var(--accent);
   }
 
-  /* − value + stepper; dims (but stays adjustable) while count-in is off */
+  /* count-in sub-controls, indented under the label; the stepper dims (but stays
+     adjustable) while count-in is off */
+  .stepper,
+  .modeline {
+    padding-left: 2px;
+  }
   .stepper {
     display: inline-flex;
     align-items: center;

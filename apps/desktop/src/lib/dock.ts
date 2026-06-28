@@ -201,7 +201,11 @@ export function reconcileWorkspace(ws: StoredWorkspace | null | undefined, allTa
   return {
     left: { layout: left, collapsed: !!ws?.left?.collapsed },
     right: { layout: right, collapsed: !!ws?.right?.collapsed },
-    stage: reconcileFlow((ws?.stage ?? {}) as { order?: unknown; collapsed?: unknown; hidden?: unknown }, STAGE_BOXES),
+    // an absent stage is first-run → the canonical default (tuner collapsed); a
+    // present one is reconciled, preserving the user's own collapse/hide state.
+    stage: ws?.stage
+      ? reconcileFlow(ws.stage as { order?: unknown; collapsed?: unknown; hidden?: unknown }, STAGE_BOXES)
+      : defaultFlow(),
   };
 }
 

@@ -27,21 +27,9 @@
 
 {#if $openSong}
   <Box id="isolation" grow={!hasStems}>
-    {#snippet tools()}
-      {#if hasStems}
-        <button
-          onclick={() => void actions.resetStemMix()}
-          title="reset stems — all faders to 100%, clear mute/solo"
-          aria-label="reset stems"
-        >
-          ⟲
-        </button>
-      {/if}
-    {/snippet}
-
-    <!-- tier 0: bass focus — always available, no separation needed -->
+    <!-- tier 0: bass focus — always available, no separation needed. The label
+         IS the toggle; the stem reset rides the empty space on its right. -->
     <div class="focus">
-      <span class="focus-label mono">bass focus</span>
       <Button
         variant="toggle"
         active={$bassFocus}
@@ -49,8 +37,18 @@
         title="bass focus — low-pass the mix so the bassline reads"
         aria-pressed={$bassFocus}
       >
-        {$bassFocus ? "on" : "off"}
+        bass focus
       </Button>
+      {#if hasStems}
+        <button
+          class="reset"
+          onclick={() => void actions.resetStemMix()}
+          title="reset stems — all faders to 100%, clear mute/solo"
+          aria-label="reset stems"
+        >
+          ⟲
+        </button>
+      {/if}
     </div>
 
     <div class="rule"></div>
@@ -113,12 +111,21 @@
   .focus {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 10px;
   }
-  .focus-label {
-    font-size: 11px;
-    letter-spacing: 0.05em;
+  /* stem reset — a quiet glyph riding the right end of the bass-focus row */
+  .reset {
+    background: none;
+    border: none;
     color: var(--muted);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    padding: 2px;
+  }
+  .reset:hover {
+    color: var(--fg);
   }
 
   .rule {

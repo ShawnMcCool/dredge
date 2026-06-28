@@ -2,10 +2,10 @@ import { describe, it, expect } from "vitest";
 import { STAGE_BOXES, BOX_LABELS, defaultFlow, reconcileFlow, moveBox, toggleCollapsed, hide, show } from "./stage";
 
 describe("defaultFlow", () => {
-  it("is the canonical order, nothing collapsed or hidden", () => {
+  it("is the canonical order, tuner collapsed, nothing hidden", () => {
     const f = defaultFlow();
     expect(f.order).toEqual([...STAGE_BOXES]);
-    expect(f.collapsed).toEqual([]);
+    expect(f.collapsed).toEqual(["tuner"]);
     expect(f.hidden).toEqual([]);
   });
 });

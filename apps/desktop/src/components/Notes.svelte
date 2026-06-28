@@ -149,7 +149,12 @@
 </script>
 
 {#if $openSong && spans.length > 0}
-  <Box id="notes" label={active ? `notes — ${active}` : undefined} wide>
+  <Box
+    id="notes"
+    label={active ? `notes — ${active}` : undefined}
+    wide
+    showBody={mode === "edit" || displayBlocks.length > 0 || $openSong.orphan_notes.length > 0}
+  >
     {#snippet tools()}
       {#if mode === "edit"}
         <button onclick={exitEdit} title="done editing — save & view" aria-label="done editing">done</button>

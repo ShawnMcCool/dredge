@@ -9,6 +9,7 @@
   import { asyncAction } from "../lib/async-action.svelte";
   import { hzToReading } from "../lib/tuner-math";
   import Box from "../lib/ui/Box.svelte";
+  import { getStageFlow } from "../lib/stage-flow.svelte";
   import MeterGauge from "./MeterGauge.svelte";
 
   const GATE = 0.5; // confidence below this = no steady pitch
@@ -24,6 +25,19 @@
   const voiced = $derived(!!r && r.confidence >= GATE && r.hz > 0);
   const reading = $derived(voiced ? hzToReading(r!.hz) : null);
   const inTune = $derived(!!reading && Math.abs(reading.cents) <= IN_TUNE_CENTS);
+
+  // The tuner listens whenever it's expanded; collapsing it stops listening. The
+  // collapse caret thus IS the power switch — no separate button, no idle empty
+  // state. Mirrors the box's collapse state (from the stage flow) onto the mic.
+  const flow = getStageFlow();
+  const collapsed = $derived(flow.isCollapsed("tuner"));
+  $effect(() => {
+    if (collapsed) {
+      if ($tunerOn) void act.run(() => actions.tunerPowerOff());
+    } else if (!$tunerOn) {
+      void act.run(() => actions.tunerPowerOn());
+    }
+  });
 
   // hold-to-lock: in tune continuously for LOCK_MS
   $effect(() => {
@@ -44,10 +58,6 @@
     return () => clearTimeout(t);
   });
 
-  function togglePower() {
-    return act.run(() => ($tunerOn ? actions.tunerPowerOff() : actions.tunerPowerOn()));
-  }
-
   function openGear() {
     gearOpen = !gearOpen;
     if (!gearOpen) return;
@@ -62,7 +72,9 @@
 
 <Box id="tuner" dim={!$tunerOn}>
   {#snippet tools()}
-    <button onclick={openGear} title="input device" aria-label="choose input">⚙</button>
+    {#if !collapsed}
+      <button onclick={openGear} title="input device" aria-label="choose input">⚙</button>
+    {/if}
   {/snippet}
 
   {#if gearOpen}
@@ -82,25 +94,14 @@
     {#if act.error}
       <div class="error">{act.error}</div>
     {:else}
-      <button
-        class="power"
-        class:on={$tunerOn}
-        onclick={togglePower}
-        title="power"
-        aria-label="tuner power"
-      >⏻</button>
-      {#if $tunerOn}
-        <MeterGauge
-          listening={!voiced}
-          note={reading?.note ?? ""}
-          octave={reading?.octave ?? 0}
-          cents={reading?.cents ?? 0}
-          {inTune}
-          {locked}
-        />
-      {:else}
-        <span class="hint">click to listen</span>
-      {/if}
+      <MeterGauge
+        listening={!voiced}
+        note={reading?.note ?? ""}
+        octave={reading?.octave ?? 0}
+        cents={reading?.cents ?? 0}
+        {inTune}
+        {locked}
+      />
     {/if}
   </div>
 </Box>
@@ -141,28 +142,6 @@
     justify-content: center;
     gap: 12px;
     padding: 6px 0;
-  }
-
-  .power {
-    border: none;
-    background: none;
-    color: var(--muted);
-    font-size: 30px;
-    line-height: 1;
-    padding: 4px;
-    cursor: pointer;
-  }
-  .power:hover {
-    color: var(--fg);
-  }
-  .power.on {
-    color: var(--accent);
-  }
-
-  .hint {
-    color: var(--muted);
-    font-style: italic;
-    font-size: 0.85rem;
   }
 
   .error {
