@@ -280,8 +280,16 @@
        (flex-grow) only ever lands on the last row — it eats that row's free
        space so the last row stays left-aligned. */
     justify-content: space-between;
-    gap: calc(var(--space) / 2);
-    padding: calc(var(--space) / 2) var(--space);
+    /* NO gaps: all spacing lives inside the buttons, so the bar's hit surface
+       is contiguous. WebKitGTK's hit-testing at fractional zoom (ui_scale
+       1.75) misaligns paint vs hit boxes by a few device pixels — with
+       inter-row gaps, that misalignment painted dead strips across the middle
+       tab rows. With zero gaps a rounding drift can only nudge WHICH tab a
+       pixel maps to, never land in dead space. Visuals are unchanged: tabs
+       have no background, and the padding/offsets below keep every glyph and
+       underline where the gapped layout had them. */
+    gap: 0;
+    padding: calc(var(--space) / 4) calc(var(--space) * 0.75);
     border-bottom: 1px solid var(--line);
     min-width: 0;
   }
@@ -301,7 +309,9 @@
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--muted);
-    padding: 5px 8px 7px;
+    /* old 5px 8px 7px padding + half the old 4px gap on every side — keeps
+       text positions identical while the buttons tile the bar edge-to-edge */
+    padding: 7px 10px 9px;
     cursor: pointer;
     line-height: 1;
     touch-action: none; /* pointer drag-to-reorder, not scroll */
@@ -311,9 +321,9 @@
   .tab::after {
     content: "";
     position: absolute;
-    left: 4px;
-    right: 4px;
-    bottom: 0;
+    left: 6px;
+    right: 6px;
+    bottom: 2px;
     height: 2px;
     border-radius: 1px;
     background: transparent;
