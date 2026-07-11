@@ -19,8 +19,15 @@ pub trait StemSeparator: Send + Sync {
     fn is_available(&self) -> bool;
 }
 
-/// Runs `demucs -n htdemucs -o <tmp> <audio>` and moves the stem WAVs demucs
-/// writes under `<tmp>/htdemucs/<track>/<stem>.wav` into place.
+/// The demucs model. The 6-stem variant separates piano and guitar as their
+/// own channels, which pulls piano's left hand OUT of the bass stem (the
+/// 4-stem models hear piano-driven ballads as bass). dredge keeps its
+/// 4-stem contract by folding the extras back into `other` after the run.
+const MODEL: &str = "htdemucs_6s";
+
+/// Runs `demucs -n htdemucs_6s -o <tmp> <audio>` and moves the stem WAVs
+/// demucs writes under `<tmp>/htdemucs_6s/<track>/<stem>.wav` into place,
+/// folding piano + guitar into `other`.
 pub struct DemucsSeparator {
     pub binary: String, // default "demucs"
 }
@@ -49,7 +56,7 @@ impl DemucsSeparator {
     fn command_args(audio: &Path, tmp: &Path) -> Vec<String> {
         vec![
             "-n".into(),
-            "htdemucs".into(),
+            MODEL.into(),
             "-o".into(),
             tmp.to_string_lossy().into_owned(),
             audio.to_string_lossy().into_owned(),
@@ -95,21 +102,25 @@ impl StemSeparator for DemucsSeparator {
             .file_stem()
             .and_then(|s| s.to_str())
             .ok_or("audio path has no file stem")?;
-        let src_dir = tmp.join("htdemucs").join(track);
+        let src_dir = tmp.join(MODEL).join(track);
         let mut out = Vec::with_capacity(STEM_NAMES.len());
         for name in STEM_NAMES {
-            let src = src_dir.join(format!("{name}.wav"));
             let dst = out_dir.join(format!("{name}.wav"));
-            if !src.is_file() {
-                return Err(format!(
-                    "demucs did not produce {}: {}",
-                    src.display(),
-                    stderr_tail(&stderr)
-                ));
+            if name == "other" {
+                fold_other_stems(&src_dir, &dst, &stderr)?;
+            } else {
+                let src = src_dir.join(format!("{name}.wav"));
+                if !src.is_file() {
+                    return Err(format!(
+                        "demucs did not produce {}: {}",
+                        src.display(),
+                        stderr_tail(&stderr)
+                    ));
+                }
+                std::fs::rename(&src, &dst)
+                    .map_err(|e| format!("cannot move {} into place: {e}", src.display()))?;
+                normalize_stem_to_48k(&dst)?;
             }
-            std::fs::rename(&src, &dst)
-                .map_err(|e| format!("cannot move {} into place: {e}", src.display()))?;
-            normalize_stem_to_48k(&dst)?;
             out.push(dst);
         }
         let _ = std::fs::remove_dir_all(&tmp);
@@ -190,6 +201,34 @@ pub(crate) fn rewrite_wav_48k(path: &Path, interleaved: &[f32]) -> Result<(), St
     std::fs::rename(&tmp, path).map_err(|e| format!("cannot replace {}: {e}", path.display()))
 }
 
+/// Fold the 6-stem model's piano + guitar into `other`: decode all three at
+/// the engine's 48 kHz, sum them samplewise, and write the result as the
+/// cache's other.wav. The whole point of running the 6-stem model is that
+/// bass is computed with piano pulled OUT of it; the fold keeps dredge's
+/// 4-stem contract intact. The sum is a subset of the original mixture, so
+/// it stays within normal amplitude.
+pub(crate) fn fold_other_stems(src_dir: &Path, dst: &Path, stderr: &str) -> Result<(), String> {
+    let mut sum: Vec<f32> = Vec::new();
+    for name in ["other", "piano", "guitar"] {
+        let src = src_dir.join(format!("{name}.wav"));
+        if !src.is_file() {
+            return Err(format!(
+                "demucs did not produce {}: {}",
+                src.display(),
+                stderr_tail(stderr)
+            ));
+        }
+        let buf = engine::decode::decode_file(&src).map_err(|e| e.to_string())?;
+        if sum.len() < buf.data.len() {
+            sum.resize(buf.data.len(), 0.0);
+        }
+        for (acc, s) in sum.iter_mut().zip(buf.data.iter()) {
+            *acc += s;
+        }
+    }
+    rewrite_wav_48k(dst, &sum)
+}
+
 /// One sinc pass at separation time, never again on open: if the WAV's
 /// header rate isn't 48 kHz (demucs writes 44.1 kHz), decode it (which
 /// resamples to 48 kHz) and rewrite it in place.
@@ -248,8 +287,34 @@ mod tests {
         let args = DemucsSeparator::command_args(Path::new("/songs/a.mp3"), Path::new("/tmp/out"));
         assert_eq!(
             args,
-            vec!["-n", "htdemucs", "-o", "/tmp/out", "/songs/a.mp3"]
+            vec!["-n", "htdemucs_6s", "-o", "/tmp/out", "/songs/a.mp3"]
         );
+    }
+
+    #[test]
+    fn fold_other_sums_piano_and_guitar_into_other() {
+        let dir = tempfile::tempdir().unwrap();
+        // three constant-amplitude 48 kHz stems: other 0.1, piano 0.2, guitar 0.3
+        for (name, amp) in [("other", 0.1f32), ("piano", 0.2), ("guitar", 0.3)] {
+            let samples = vec![amp; 4800];
+            engine::capture::write_wav(&dir.path().join(format!("{name}.wav")), &samples).unwrap();
+        }
+        let dst = dir.path().join("folded.wav");
+        fold_other_stems(dir.path(), &dst, "").unwrap();
+
+        let buf = engine::decode::decode_file(&dst).unwrap();
+        assert_eq!(buf.data.len(), 4800);
+        for s in &buf.data {
+            assert!((s - 0.6).abs() < 1e-3, "expected 0.6, got {s}");
+        }
+    }
+
+    #[test]
+    fn fold_other_errors_when_a_source_stem_is_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        engine::capture::write_wav(&dir.path().join("other.wav"), &vec![0.1f32; 480]).unwrap();
+        let err = fold_other_stems(dir.path(), &dir.path().join("folded.wav"), "boom").unwrap_err();
+        assert!(err.contains("piano.wav"), "error was: {err}");
     }
 
     #[test]
