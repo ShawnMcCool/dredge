@@ -136,10 +136,11 @@
     const blockContextMenu = (e: MouseEvent) => e.preventDefault();
     window.addEventListener("contextmenu", blockContextMenu);
     // WebKitGTK can desync the webview's render scale from its hit-test scale,
-    // drifting clicks (worst far from the top-left). Resizes/fullscreen are the
-    // known trigger, but it has struck without one — so re-force the zoom (see
-    // resyncZoom) whenever the window resizes, regains focus, or becomes
-    // visible again, debounced so a burst costs one resync.
+    // drifting clicks (worst far from the top-left). Re-force the zoom (see
+    // resyncZoom) when the window resizes (the known trigger) or becomes
+    // visible again, debounced so a burst costs one resync. Deliberately NOT
+    // on focus: a resync can repaint, and alt-tab is far too frequent to pay
+    // any visible cost for an occasional desync.
     //
     // CRITICAL: the resync's own zoom nudge changes the CSS viewport, which
     // fires `resize` — without the in-flight guard below that re-schedules the
@@ -160,14 +161,12 @@
       if (!document.hidden) scheduleZoomResync();
     };
     window.addEventListener("resize", scheduleZoomResync);
-    window.addEventListener("focus", scheduleZoomResync);
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       uninstall();
       void unlisten.then((f) => f());
       window.removeEventListener("contextmenu", blockContextMenu);
       window.removeEventListener("resize", scheduleZoomResync);
-      window.removeEventListener("focus", scheduleZoomResync);
       document.removeEventListener("visibilitychange", onVisible);
       clearTimeout(zoomResync);
     };

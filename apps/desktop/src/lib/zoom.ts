@@ -51,7 +51,10 @@ export async function initZoom(): Promise<void> {
  *  first so the restore is a real change that resyncs the two scales. */
 export async function resyncZoom(): Promise<void> {
   const wv = getCurrentWebview();
-  await wv.setZoom(current + 0.0001);
+  // fire the nudge and restore back-to-back WITHOUT awaiting the nudge: both
+  // land in webkit's main loop before it paints, so the intermediate zoom is
+  // never composited (awaiting the first call flashed the whole page twice)
+  void wv.setZoom(current + 0.0001);
   await wv.setZoom(current);
 }
 
