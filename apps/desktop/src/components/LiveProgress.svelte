@@ -1,6 +1,7 @@
 <script lang="ts">
   import { fmtElapsed } from "../lib/format";
   import { prepareState, workSample, vram, type PrepareStepState } from "../lib/stores";
+  import TraceMeter from "../lib/ui/TraceMeter.svelte";
 
   const STEPS = [
     { key: "analysis", label: "analyzing structure", op: "analysis", model: "SongFormer" },
@@ -44,55 +45,7 @@
   const pct = (v: number) => `${Math.round(v)}%`;
   const pctRange = (min: number, peak: number) => `${Math.round(min)}–${Math.round(peak)}%`;
   const gbRange = (min: number, peak: number) => `${gb(min)}–${gb(peak)}`;
-  // the capacity colours: neutral until a resource fills up — amber when busy,
-  // red near its limit. The gauge tint, not the trace, carries the meaning.
-  const lvl = (frac: number) => (frac >= 0.9 ? "hot" : frac >= 0.72 ? "warm" : "ok");
 </script>
-
-<!-- one meter: the run's history zoomed to its own min–max window (every pixel
-     is variation — the flat mass below the run's floor is cropped away), plus
-     a thin absolute capacity gauge on the right edge marking where that window
-     sits in 0..total, tinted by peak pressure. -->
-{#snippet trace(
-  label: string,
-  hist: number[],
-  total: number,
-  nowFmt: (v: number) => string,
-  rangeFmt: (min: number, peak: number) => string,
-  tall = false,
-)}
-  {#if hist.length >= 2}
-    {@const min = Math.min(...hist)}
-    {@const peak = Math.max(...hist)}
-    {@const cur = hist[hist.length - 1]}
-    {@const pad = (peak - min) * 0.12 + total * 0.003}
-    {@const lo = Math.max(0, min - pad)}
-    {@const hi = Math.min(total, peak + pad)}
-    {@const pts = hist.map((u, i) => `${i},${(100 - ((u - lo) / (hi - lo)) * 100).toFixed(2)}`).join(" ")}
-    <div class="meter" class:tall>
-      <span class="mlabel mono">{label}</span>
-      <span class="hist">
-        <svg class="trace" viewBox="0 0 {hist.length - 1} 100" preserveAspectRatio="none">
-          <polygon points="0,100 {pts} {hist.length - 1},100" />
-          <polyline points={pts} vector-effect="non-scaling-stroke" />
-        </svg>
-        <svg class="gauge {lvl(peak / total)}" viewBox="0 0 6 100" preserveAspectRatio="none">
-          <rect class="back" x="0" y="0" width="6" height="100" />
-          <rect
-            class="win"
-            x="0"
-            y={100 - (peak / total) * 100}
-            width="6"
-            height={Math.max(2, ((peak - min) / total) * 100)}
-          />
-        </svg>
-      </span>
-      <span class="vals mono"
-        ><span class="now {lvl(cur / total)}">{nowFmt(cur)}</span><span class="range">{rangeFmt(min, peak)}</span></span
-      >
-    </div>
-  {/if}
-{/snippet}
 
 {#if $prepareState}
   <section class="live">
@@ -121,15 +74,28 @@
            since those are the meters that move together during a phase -->
       <div class="meters">
         <div class="pair">
-          {@render trace("cpu", cpuH, CPU_SCALE, pct, pctRange)}
+          <TraceMeter label="cpu" hist={cpuH} total={CPU_SCALE} format={pct} formatRange={pctRange} />
           {#if $workSample.ram_total_mb != null}
-            {@render trace("ram", ramH, $workSample.ram_total_mb, (v) => `${gb(v)} / ${gbi($workSample!.ram_total_mb!)} GB`, gbRange)}
+            <TraceMeter
+              label="ram"
+              hist={ramH}
+              total={$workSample.ram_total_mb}
+              format={(v) => `${gb(v)} / ${gbi($workSample!.ram_total_mb!)} GB`}
+              formatRange={gbRange}
+            />
           {/if}
         </div>
         <div class="pair">
-          {@render trace("gpu", gpuH, 100, pct, pctRange)}
+          <TraceMeter label="gpu" hist={gpuH} total={100} format={pct} formatRange={pctRange} />
           {#if $vram && $vram.used.length}
-            {@render trace("vram", $vram.used, $vram.total, (v) => `${gb(v)} / ${gbi($vram!.total)} GB`, gbRange, true)}
+            <TraceMeter
+              label="vram"
+              hist={$vram.used}
+              total={$vram.total}
+              format={(v) => `${gb(v)} / ${gbi($vram!.total)} GB`}
+              formatRange={gbRange}
+              tall
+            />
           {/if}
         </div>
       </div>
@@ -156,27 +122,6 @@
 
   .meters { display: flex; flex-direction: column; gap: 16px; margin: 8px 0 4px 1.2em; min-width: 0; }
   .pair { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-  .meter { display: flex; align-items: center; gap: 8px; min-width: 0; }
-
-  .mlabel { font-size: 10px; color: var(--muted); width: 2.6em; flex: 0 0 auto; }
-
-  .hist { position: relative; flex: 1 1 auto; height: 34px; min-width: 0; background: var(--bg-raised); border-radius: 2px; overflow: hidden; }
-  /* vram is the headline metric while separating — it gets the tall box */
-  .meter.tall .hist { height: 44px; }
-  .trace { position: absolute; inset: 0; width: calc(100% - 7px); height: 100%; display: block; }
-  .trace polygon { fill: color-mix(in srgb, var(--meter) 45%, transparent); }
-  .trace polyline { fill: none; stroke: color-mix(in srgb, var(--fg) 75%, transparent); stroke-width: 1.2; }
-  .gauge { position: absolute; right: 0; top: 0; width: 6px; height: 100%; }
-  .gauge .back { fill: color-mix(in srgb, var(--line) 70%, transparent); }
-  .gauge.ok .win { fill: var(--meter); }
-  .gauge.warm .win { fill: var(--accent); }
-  .gauge.hot .win { fill: var(--miss); }
-
-  .vals { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.25; flex: 0 0 auto; min-width: 6.5em; }
-  .now { font-size: 10px; color: var(--fg); }
-  .now.warm { color: var(--accent); }
-  .now.hot { color: var(--miss); }
-  .range { font-size: 9px; color: var(--muted); }
 
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
   @media (prefers-reduced-motion: reduce) { .glyph.running { animation: none; } }
