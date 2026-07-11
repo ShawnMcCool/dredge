@@ -3,6 +3,18 @@
 All notable user-facing changes to dredge, newest first. Entries are written
 at release time by `scripts/ship release`.
 
+## v0.12.0 — 2026-07-11
+
+### New
+
+- **Rerun stem separation when it didn't happen.** A song that's analyzed but has no stems (a failed run, a bundle copied without them) now shows a "Separate stems" button right in the isolation box, and there's another one in settings under analysis. Previously that state was a dead end.
+- **The analyzing meters now show the whole run, not just the moment.** cpu, ram, gpu, and vram each draw their full history as a trace zoomed to the run's own range, so you can see the shape of the work — with a thin gauge on the right edge showing how close to the limit it got (it turns amber when busy, red near the ceiling). Meters are paired by what moves together: cpu with ram, gpu with vram.
+
+### Fixed
+
+- **Stem separation works when dredge is launched from the desktop.** dredge now finds demucs installed with `uv tool install` even when the desktop session's PATH doesn't include `~/.local/bin` — previously it claimed demucs wasn't installed and refused to run.
+- **The analyzing readout fits its box.** Error messages wrap as readable text instead of one word per line, and the resource meters no longer overlap their labels and numbers in a narrow box.
+
 ## v0.11.0 — 2026-06-28
 
 ### Improved
