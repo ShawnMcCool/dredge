@@ -70,46 +70,41 @@
         {:else if s === "cached"}
           <span class="muted mono">cached</span>
         {/if}
-        {#if $prepareState.errors[step.key]}
-          <span class="error">{$prepareState.errors[step.key]}</span>
-        {/if}
       </div>
+      {#if $prepareState.errors[step.key]}
+        <p class="error">{$prepareState.errors[step.key]}</p>
+      {/if}
     {/each}
 
     {#if $workSample}
+      <!-- one meter per row — the box is narrow (≤60ch), so side-by-side
+           columns starve the bars of width -->
       <div class="meters">
-        <!-- compute, left -->
-        <div class="col">
-          {@render meter("cpu", $workSample.cpu_pct, 800, cpu, `${Math.round($workSample.cpu_pct)}%`, cpu ? `${Math.round(cpu.min)}–${Math.round(cpu.max)}%` : "")}
-          {#if $workSample.gpu_util != null}
-            {@render meter("gpu", $workSample.gpu_util, 100, gpu, `${Math.round($workSample.gpu_util)}%`, gpu ? `${Math.round(gpu.min)}–${Math.round(gpu.max)}%` : "")}
-          {/if}
-        </div>
-
-        <!-- memory, right -->
-        <div class="col">
-          {#if $workSample.ram_total_mb != null}
-            {@render meter("ram", $workSample.ram_used_mb ?? 0, $workSample.ram_total_mb, ram, `${gb($workSample.ram_used_mb ?? 0)} / ${gbi($workSample.ram_total_mb)} GB`, ram ? `${gb(ram.min)}–${gb(ram.max)}` : "")}
-          {/if}
-          {#if $vram && $vram.used.length}
-            {@const peakFrac = $vram.peak / $vram.total}
-            <!-- vram ramps over a run → a tall neutral history sparkline; the peak
-                 guide line tints by capacity (amber/red), the min line is muted -->
-            <div class="meter tall">
-              <span class="mlabel mono">vram</span>
-              <span class="hist" title="VRAM over the run">
-                <svg viewBox="0 0 {$vram.used.length} 100" preserveAspectRatio="none">
-                  {#each $vram.used as u, i (i)}
-                    <rect x={i} y={100 - (u / $vram.total) * 100} width="1.05" height={(u / $vram.total) * 100} />
-                  {/each}
-                  <line class="hi {lvl(peakFrac)}" x1="0" x2={$vram.used.length} y1={100 - peakFrac * 100} y2={100 - peakFrac * 100} />
-                  <line class="lo" x1="0" x2={$vram.used.length} y1={100 - ($vram.min / $vram.total) * 100} y2={100 - ($vram.min / $vram.total) * 100} />
-                </svg>
-              </span>
-              <span class="vals mono"><span class="now {lvl($vram.used[$vram.used.length - 1] / $vram.total)}">{gb($vram.used[$vram.used.length - 1])} / {gbi($vram.total)} GB</span><span class="range">{gb($vram.min)}–{gb($vram.peak)}</span></span>
-            </div>
-          {/if}
-        </div>
+        {@render meter("cpu", $workSample.cpu_pct, 800, cpu, `${Math.round($workSample.cpu_pct)}%`, cpu ? `${Math.round(cpu.min)}–${Math.round(cpu.max)}%` : "")}
+        {#if $workSample.gpu_util != null}
+          {@render meter("gpu", $workSample.gpu_util, 100, gpu, `${Math.round($workSample.gpu_util)}%`, gpu ? `${Math.round(gpu.min)}–${Math.round(gpu.max)}%` : "")}
+        {/if}
+        {#if $workSample.ram_total_mb != null}
+          {@render meter("ram", $workSample.ram_used_mb ?? 0, $workSample.ram_total_mb, ram, `${gb($workSample.ram_used_mb ?? 0)} / ${gbi($workSample.ram_total_mb)} GB`, ram ? `${gb(ram.min)}–${gb(ram.max)}` : "")}
+        {/if}
+        {#if $vram && $vram.used.length}
+          {@const peakFrac = $vram.peak / $vram.total}
+          <!-- vram ramps over a run → a tall neutral history sparkline; the peak
+               guide line tints by capacity (amber/red), the min line is muted -->
+          <div class="meter tall">
+            <span class="mlabel mono">vram</span>
+            <span class="hist" title="VRAM over the run">
+              <svg viewBox="0 0 {$vram.used.length} 100" preserveAspectRatio="none">
+                {#each $vram.used as u, i (i)}
+                  <rect x={i} y={100 - (u / $vram.total) * 100} width="1.05" height={(u / $vram.total) * 100} />
+                {/each}
+                <line class="hi {lvl(peakFrac)}" x1="0" x2={$vram.used.length} y1={100 - peakFrac * 100} y2={100 - peakFrac * 100} />
+                <line class="lo" x1="0" x2={$vram.used.length} y1={100 - ($vram.min / $vram.total) * 100} y2={100 - ($vram.min / $vram.total) * 100} />
+              </svg>
+            </span>
+            <span class="vals mono"><span class="now {lvl($vram.used[$vram.used.length - 1] / $vram.total)}">{gb($vram.used[$vram.used.length - 1])} / {gbi($vram.total)} GB</span><span class="range">{gb($vram.min)}–{gb($vram.peak)}</span></span>
+          </div>
+        {/if}
       </div>
     {/if}
   </section>
@@ -123,16 +118,16 @@
   .glyph.running { color: var(--accent); animation: pulse 1s ease-in-out infinite; }
   .glyph.done { color: var(--solid); }
   .glyph.failed { color: var(--miss); }
-  .name { font-size: 13px; }
-  .model { font-size: 10px; color: var(--muted); }
+  .name { font-size: 13px; white-space: nowrap; }
+  .model { font-size: 10px; color: var(--muted); white-space: nowrap; }
   .stage { font-size: 11px; color: var(--accent); }
   .elapsed { margin-left: auto; font-size: 11px; color: var(--muted); }
   .muted { color: var(--muted); font-size: 11px; }
-  .error { color: var(--miss); font-size: 11px; }
+  /* a failure's message gets its own full-width line under the step, aligned
+     with the step name, so long install hints wrap as readable prose */
+  .error { color: var(--miss); font-size: 11px; line-height: 1.5; margin: 0 0 6px calc(1.2em + var(--space)); }
 
-  /* two halves: compute (cpu/gpu) left, memory (ram/vram) right */
-  .meters { display: flex; gap: 18px; align-items: center; margin: 8px 0 4px 1.2em; min-width: 0; }
-  .col { flex: 1; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .meters { display: flex; flex-direction: column; gap: 10px; margin: 8px 0 4px 1.2em; min-width: 0; }
   .meter { display: flex; align-items: center; gap: 8px; min-width: 0; }
 
   .mlabel { font-size: 10px; color: var(--muted); width: 2.6em; flex: 0 0 auto; }
