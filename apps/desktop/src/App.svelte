@@ -140,10 +140,21 @@
     // known trigger, but it has struck without one — so re-force the zoom (see
     // resyncZoom) whenever the window resizes, regains focus, or becomes
     // visible again, debounced so a burst costs one resync.
+    //
+    // CRITICAL: the resync's own zoom nudge changes the CSS viewport, which
+    // fires `resize` — without the in-flight guard below that re-schedules the
+    // resync forever (a ~150ms zoom oscillation that redraws the whole app).
     let zoomResync: ReturnType<typeof setTimeout> | undefined;
+    let resyncing = false;
     const scheduleZoomResync = () => {
+      if (resyncing) return; // ignore the resize echoes of our own nudge
       clearTimeout(zoomResync);
-      zoomResync = setTimeout(() => void resyncZoom(), 150);
+      zoomResync = setTimeout(() => {
+        resyncing = true;
+        void resyncZoom().finally(() => {
+          setTimeout(() => (resyncing = false), 250);
+        });
+      }, 150);
     };
     const onVisible = () => {
       if (!document.hidden) scheduleZoomResync();
