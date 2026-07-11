@@ -268,6 +268,48 @@ fn separate_force_reruns_over_cached_stems() {
 }
 
 #[test]
+fn separate_force_clears_cached_stems_before_running() {
+    struct AlwaysFails;
+    impl StemSeparator for AlwaysFails {
+        fn separate(
+            &self,
+            _audio: &std::path::Path,
+            _out_dir: &std::path::Path,
+            _force_cpu: bool,
+        ) -> Result<Vec<PathBuf>, String> {
+            Err("separator exploded".into())
+        }
+        fn is_available(&self) -> bool {
+            true
+        }
+    }
+
+    let mut ctx = setup(Arc::new(AlwaysFails));
+    // seed a cached set by hand
+    let cache = ctx.stems_cache();
+    std::fs::create_dir_all(&cache).unwrap();
+    for name in STEM_NAMES {
+        write_test_wav(&cache.join(format!("{name}.wav")));
+    }
+
+    let out = req(
+        &mut ctx.app,
+        "stems.separate",
+        json!({"song_id": ctx.song_id, "force": true}),
+    );
+    assert_eq!(out["state"], "running");
+    assert_eq!(wait_for_progress(&mut ctx.app)["state"], "failed");
+
+    // force cleared the old set up front — a failed rerun leaves no stems
+    for name in STEM_NAMES {
+        assert!(
+            !cache.join(format!("{name}.wav")).is_file(),
+            "{name}.wav survived a force clear"
+        );
+    }
+}
+
+#[test]
 fn separate_unavailable_errors_helpfully() {
     struct NeverAvailable;
     impl StemSeparator for NeverAvailable {

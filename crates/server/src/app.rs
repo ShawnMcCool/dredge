@@ -1310,9 +1310,10 @@ impl App {
         #[derive(Deserialize)]
         struct P {
             song_id: SongId,
-            /// Re-separate even when stems are cached. The old stems stay in
-            /// place until the new run succeeds (the results rename over them),
-            /// so a failed force-rerun never costs a working set.
+            /// Re-separate even when stems are cached: the old set is cleared
+            /// completely before the run starts, so the song holds either the
+            /// fresh separation or (after a failure) no stems at all — never a
+            /// stale mix of the two.
             #[serde(default)]
             force: bool,
         }
@@ -1321,7 +1322,11 @@ impl App {
         let cache = self
             .stems_cache_dir(p.song_id)
             .ok_or("song not in library")?;
-        if !p.force && Self::stems_cached(&cache) {
+        if p.force {
+            for name in STEM_NAMES {
+                let _ = std::fs::remove_file(cache.join(format!("{name}.wav")));
+            }
+        } else if Self::stems_cached(&cache) {
             return Ok(json!({"state": "cached"}));
         }
         {
