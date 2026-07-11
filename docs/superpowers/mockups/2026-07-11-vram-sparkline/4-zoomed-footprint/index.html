@@ -1,0 +1,57 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>vram — zoomed footprint + capacity gauge</title>
+<link rel="stylesheet" href="../shared.css" />
+<h1>4 · zoomed footprint + capacity gauge</h1>
+<p class="blurb">
+  Structural fix: the y-axis zooms to the run's own min–max window, so the
+  flat baseline mass that made the blob is cropped away and every pixel shows
+  variation. Absolute context moves into a thin capacity gauge on the right
+  edge — a vertical strip of the full 0–16&nbsp;GB with the zoom window marked.
+</p>
+<div id="rows"></div>
+<script src="../shared.js"></script>
+<script>
+  const NS = "http://www.w3.org/2000/svg";
+  rows((used, el, { min, peak }) => {
+    const n = used.length;
+    const pad = (peak - min) * 0.12 + 40;
+    const lo = Math.max(0, min - pad), hi = Math.min(TOTAL, peak + pad);
+    const y = (u) => 100 - ((u - lo) / (hi - lo)) * 100;
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", `0 0 ${n} 100`);
+    svg.setAttribute("preserveAspectRatio", "none");
+    svg.style.width = "calc(100% - 7px)";
+    const pts = used.map((u, i) => `${i},${y(u).toFixed(2)}`).join(" ");
+    const area = document.createElementNS(NS, "polygon");
+    area.setAttribute("points", `0,100 ${pts} ${n - 1},100`);
+    area.setAttribute("fill", "color-mix(in srgb, var(--meter) 45%, transparent)");
+    const line = document.createElementNS(NS, "polyline");
+    line.setAttribute("points", pts);
+    line.setAttribute("fill", "none");
+    line.setAttribute("stroke", "color-mix(in srgb, var(--fg) 75%, transparent)");
+    line.setAttribute("stroke-width", "1.2");
+    line.setAttribute("vector-effect", "non-scaling-stroke");
+    svg.append(area, line);
+    el.appendChild(svg);
+
+    // capacity gauge: full 0..TOTAL strip, zoom window marked, tinted by peak
+    const g = document.createElementNS(NS, "svg");
+    g.setAttribute("viewBox", "0 0 6 100");
+    g.setAttribute("preserveAspectRatio", "none");
+    Object.assign(g.style, { position: "absolute", right: 0, top: 0, width: "6px", height: "100%" });
+    const back = document.createElementNS(NS, "rect");
+    back.setAttribute("x", 0); back.setAttribute("y", 0);
+    back.setAttribute("width", 6); back.setAttribute("height", 100);
+    back.setAttribute("fill", "color-mix(in srgb, var(--line) 70%, transparent)");
+    const win = document.createElementNS(NS, "rect");
+    const f = peak / TOTAL;
+    win.setAttribute("x", 0);
+    win.setAttribute("y", 100 - (peak / TOTAL) * 100);
+    win.setAttribute("width", 6);
+    win.setAttribute("height", ((peak - min) / TOTAL) * 100 + 1);
+    win.setAttribute("fill", f >= 0.9 ? "var(--miss)" : f >= 0.72 ? "var(--accent)" : "var(--meter)");
+    g.append(back, win);
+    el.appendChild(g);
+  });
+</script>

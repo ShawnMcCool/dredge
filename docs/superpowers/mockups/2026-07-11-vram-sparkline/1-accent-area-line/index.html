@@ -1,0 +1,42 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>vram — accent area + line</title>
+<link rel="stylesheet" href="../shared.css" />
+<h1>1 · accent area + line</h1>
+<p class="blurb">
+  A classic sparkline: the usage trace is a bright accent line with a soft
+  accent fill under it. The line carries the shape; the fill just anchors it to
+  the floor. Peak keeps its guide, tinted by capacity.
+</p>
+<div id="rows"></div>
+<script src="../shared.js"></script>
+<script>
+  const NS = "http://www.w3.org/2000/svg";
+  rows((used, el, { peak }) => {
+    const n = used.length;
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", `0 0 ${n} 100`);
+    svg.setAttribute("preserveAspectRatio", "none");
+    const y = (u) => 100 - (u / TOTAL) * 100;
+    const pts = used.map((u, i) => `${i},${y(u).toFixed(2)}`).join(" ");
+    const area = document.createElementNS(NS, "polygon");
+    area.setAttribute("points", `0,100 ${pts} ${n - 1},100`);
+    area.setAttribute("fill", "color-mix(in srgb, var(--accent) 14%, transparent)");
+    const line = document.createElementNS(NS, "polyline");
+    line.setAttribute("points", pts);
+    line.setAttribute("fill", "none");
+    line.setAttribute("stroke", "var(--accent)");
+    line.setAttribute("stroke-width", "1.4");
+    line.setAttribute("vector-effect", "non-scaling-stroke");
+    const hi = document.createElementNS(NS, "line");
+    const f = peak / TOTAL;
+    hi.setAttribute("x1", 0); hi.setAttribute("x2", n);
+    hi.setAttribute("y1", y(peak)); hi.setAttribute("y2", y(peak));
+    hi.setAttribute("stroke", f >= 0.9 ? "var(--miss)" : f >= 0.72 ? "var(--accent)" : "color-mix(in srgb, var(--fg) 40%, transparent)");
+    hi.setAttribute("stroke-width", "1");
+    hi.setAttribute("stroke-dasharray", "3 3");
+    hi.setAttribute("vector-effect", "non-scaling-stroke");
+    svg.append(area, hi, line);
+    el.appendChild(svg);
+  });
+</script>

@@ -1,0 +1,36 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>vram — pressure-tinted bars</title>
+<link rel="stylesheet" href="../shared.css" />
+<h1>2 · pressure-tinted bars</h1>
+<p class="blurb">
+  Keeps the current bar geometry but lets color carry meaning: each bar tints
+  by how close that moment came to capacity — grey when comfortable, accent
+  when warm (&gt;72%), red when hot (&gt;90%). The blob becomes a pressure
+  heat-strip; a quiet run stays quiet grey on purpose.
+</p>
+<div id="rows"></div>
+<script src="../shared.js"></script>
+<script>
+  const NS = "http://www.w3.org/2000/svg";
+  rows((used, el) => {
+    const n = used.length;
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", `0 0 ${n} 100`);
+    svg.setAttribute("preserveAspectRatio", "none");
+    used.forEach((u, i) => {
+      const f = u / TOTAL;
+      const r = document.createElementNS(NS, "rect");
+      r.setAttribute("x", i);
+      r.setAttribute("y", 100 - f * 100);
+      r.setAttribute("width", 1.05);
+      r.setAttribute("height", f * 100);
+      r.setAttribute(
+        "fill",
+        f >= 0.9 ? "var(--miss)" : f >= 0.72 ? "color-mix(in srgb, var(--accent) 70%, var(--meter))" : "var(--meter)",
+      );
+      svg.appendChild(r);
+    });
+    el.appendChild(svg);
+  });
+</script>

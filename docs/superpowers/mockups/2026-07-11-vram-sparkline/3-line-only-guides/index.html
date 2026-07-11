@@ -1,0 +1,43 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>vram — line only + guides</title>
+<link rel="stylesheet" href="../shared.css" />
+<h1>3 · line only + guides</h1>
+<p class="blurb">
+  No fill at all: a thin foreground line traces usage over the raised box, with
+  a dotted muted min guide and a peak guide tinted by capacity. The emptiest,
+  most instrument-like treatment — closest to a scope trace.
+</p>
+<div id="rows"></div>
+<script src="../shared.js"></script>
+<script>
+  const NS = "http://www.w3.org/2000/svg";
+  rows((used, el, { min, peak }) => {
+    const n = used.length;
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", `0 0 ${n} 100`);
+    svg.setAttribute("preserveAspectRatio", "none");
+    const y = (u) => 100 - (u / TOTAL) * 100;
+    const mk = (yv, stroke, dash) => {
+      const l = document.createElementNS(NS, "line");
+      l.setAttribute("x1", 0); l.setAttribute("x2", n);
+      l.setAttribute("y1", yv); l.setAttribute("y2", yv);
+      l.setAttribute("stroke", stroke);
+      l.setAttribute("stroke-width", "1");
+      if (dash) l.setAttribute("stroke-dasharray", dash);
+      l.setAttribute("vector-effect", "non-scaling-stroke");
+      return l;
+    };
+    const f = peak / TOTAL;
+    svg.appendChild(mk(y(min), "color-mix(in srgb, var(--muted) 55%, transparent)", "2 4"));
+    svg.appendChild(mk(y(peak), f >= 0.9 ? "var(--miss)" : f >= 0.72 ? "var(--accent-dim)" : "color-mix(in srgb, var(--fg) 30%, transparent)", "2 4"));
+    const line = document.createElementNS(NS, "polyline");
+    line.setAttribute("points", used.map((u, i) => `${i},${y(u).toFixed(2)}`).join(" "));
+    line.setAttribute("fill", "none");
+    line.setAttribute("stroke", "color-mix(in srgb, var(--fg) 78%, transparent)");
+    line.setAttribute("stroke-width", "1.2");
+    line.setAttribute("vector-effect", "non-scaling-stroke");
+    svg.appendChild(line);
+    el.appendChild(svg);
+  });
+</script>
