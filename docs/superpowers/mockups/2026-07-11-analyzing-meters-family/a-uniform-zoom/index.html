@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>meters family — uniform zoom</title>
+<link rel="stylesheet" href="../shared.css" />
+<style>
+  #meters { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
+  .hist { height: 34px; }
+  .meter:last-child .hist { height: 44px; }
+</style>
+<h1>A · uniform zoom — every meter is a footprint trace</h1>
+<p class="blurb">
+  One anatomy, one scaling rule: all four meters render their run history
+  zoomed to its own working window, with the absolute position carried by the
+  capacity gauge on the right edge. One mental model everywhere; the readout
+  column keeps the exact numbers.
+</p>
+<div id="meters"></div>
+<script src="../shared.js"></script>
+<script>renderBlock(() => true);</script>

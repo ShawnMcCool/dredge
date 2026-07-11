@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>analyzing meters family — two scaling policies</title>
+<link rel="stylesheet" href="shared.css" />
+<style>
+  body { max-width: none; padding: 24px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  iframe { width: 100%; height: 520px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); }
+</style>
+<h1>analyzing meters as a family — direction 4 anatomy for all</h1>
+<p class="blurb">
+  Both variants give cpu/gpu/ram the vram treatment (history trace + right-edge
+  capacity gauge + numeric readout) so the block reads as one instrument. They
+  differ only in the scaling rule for the bounded percentage meters.
+</p>
+<div class="grid">
+  <iframe src="a-uniform-zoom/index.html"></iframe>
+  <iframe src="b-mixed-scale/index.html"></iframe>
+</div>

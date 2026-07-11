@@ -1,0 +1,20 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>meters family — mixed scale</title>
+<link rel="stylesheet" href="../shared.css" />
+<style>
+  #meters { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
+  .hist { height: 34px; }
+  .meter:last-child .hist { height: 44px; }
+</style>
+<h1>B · mixed scale — percentages stay absolute, memory zooms</h1>
+<p class="blurb">
+  Same anatomy for all four (trace + capacity gauge + readout), but two scaling
+  rules: cpu/gpu are bounded percentages, so their traces keep the absolute
+  0–max scale (line height = true utilization); ram/vram are wide absolute
+  ranges, so they zoom to their footprint window. Honest per-metric, at the
+  cost of two rules.
+</p>
+<div id="meters"></div>
+<script src="../shared.js"></script>
+<script>renderBlock((key) => key === "ram" || key === "vram");</script>
