@@ -135,20 +135,29 @@
     // resize) are driven by pointerdown, so this doesn't disturb them.
     const blockContextMenu = (e: MouseEvent) => e.preventDefault();
     window.addEventListener("contextmenu", blockContextMenu);
-    // A viewport resize (esp. fullscreen) can desync the webview's render scale
-    // from its hit-test scale, drifting clicks. Re-assert the zoom once the
-    // resize settles to resync them.
+    // WebKitGTK can desync the webview's render scale from its hit-test scale,
+    // drifting clicks (worst far from the top-left). Resizes/fullscreen are the
+    // known trigger, but it has struck without one — so re-force the zoom (see
+    // resyncZoom) whenever the window resizes, regains focus, or becomes
+    // visible again, debounced so a burst costs one resync.
     let zoomResync: ReturnType<typeof setTimeout> | undefined;
-    const onResize = () => {
+    const scheduleZoomResync = () => {
       clearTimeout(zoomResync);
       zoomResync = setTimeout(() => void resyncZoom(), 150);
     };
-    window.addEventListener("resize", onResize);
+    const onVisible = () => {
+      if (!document.hidden) scheduleZoomResync();
+    };
+    window.addEventListener("resize", scheduleZoomResync);
+    window.addEventListener("focus", scheduleZoomResync);
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       uninstall();
       void unlisten.then((f) => f());
       window.removeEventListener("contextmenu", blockContextMenu);
-      window.removeEventListener("resize", onResize);
+      window.removeEventListener("resize", scheduleZoomResync);
+      window.removeEventListener("focus", scheduleZoomResync);
+      document.removeEventListener("visibilitychange", onVisible);
       clearTimeout(zoomResync);
     };
   });
