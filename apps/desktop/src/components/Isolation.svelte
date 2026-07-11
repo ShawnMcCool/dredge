@@ -53,7 +53,10 @@
 
     <div class="rule"></div>
 
-    <!-- tier 1: separated stems, or the path to them -->
+    <!-- tier 1: separated stems, or the path to them. The analyzing readout
+         renders below whichever state is showing (LiveProgress self-gates on
+         prepareState), so a force re-separation of a song that still has
+         stems stays visible instead of hiding behind the faders. -->
     {#if hasStems}
       <div class="channels">
         {#each STEM_LABELS as label, i (label)}
@@ -92,7 +95,7 @@
         {/each}
       </div>
     {:else if analyzing}
-      <LiveProgress />
+      <!-- the readout below is the whole state while separating pre-stems -->
     {:else if $openSong.analysis}
       <!-- dead end: analyzed but no stems (failed run, deleted cache, copied
            bundle) — the only state that offers a rerun, so the happy path
@@ -107,6 +110,8 @@
         <Button accent onclick={() => void actions.prepare()}>Analyze track</Button>
       </div>
     {/if}
+
+    <LiveProgress />
 
     {#if $stemsError}<p class="error">{$stemsError}</p>{/if}
     {#if $analysisError}<p class="error">{$analysisError}</p>{/if}

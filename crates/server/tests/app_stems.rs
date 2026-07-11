@@ -233,6 +233,41 @@ fn gains_route_to_engine() {
 }
 
 #[test]
+fn separate_force_reruns_over_cached_stems() {
+    let mut ctx = setup(Arc::new(FakeSeparator));
+    req(
+        &mut ctx.app,
+        "stems.separate",
+        json!({"song_id": ctx.song_id}),
+    );
+    assert_eq!(wait_for_progress(&mut ctx.app)["state"], "done");
+
+    // without force the cache short-circuits
+    let out = req(
+        &mut ctx.app,
+        "stems.separate",
+        json!({"song_id": ctx.song_id}),
+    );
+    assert_eq!(out["state"], "cached");
+
+    // force ignores the cache and separates again
+    let out = req(
+        &mut ctx.app,
+        "stems.separate",
+        json!({"song_id": ctx.song_id, "force": true}),
+    );
+    assert_eq!(out["state"], "running");
+    assert_eq!(wait_for_progress(&mut ctx.app)["state"], "done");
+    let cache = ctx.stems_cache();
+    for name in STEM_NAMES {
+        assert!(
+            cache.join(format!("{name}.wav")).is_file(),
+            "missing {name}.wav after force rerun"
+        );
+    }
+}
+
+#[test]
 fn separate_unavailable_errors_helpfully() {
     struct NeverAvailable;
     impl StemSeparator for NeverAvailable {

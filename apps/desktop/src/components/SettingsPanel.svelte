@@ -242,9 +242,12 @@
   <div class="setting">
     <div class="text">
       <span class="name">stem separation</span>
-      <span class="desc">run separation for the open song · cached stems are kept</span>
+      <span class="desc">re-separate the open song · replaces its existing stems</span>
     </div>
-    <Button disabled={!$openSong || $prepareState !== null} onclick={() => void actions.prepare()}>
+    <Button
+      disabled={!$openSong || $prepareState !== null}
+      onclick={() => void actions.prepare({ forceStems: true })}
+    >
       separate stems
     </Button>
   </div>

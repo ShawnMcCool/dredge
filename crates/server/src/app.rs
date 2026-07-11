@@ -1310,13 +1310,18 @@ impl App {
         #[derive(Deserialize)]
         struct P {
             song_id: SongId,
+            /// Re-separate even when stems are cached. The old stems stay in
+            /// place until the new run succeeds (the results rename over them),
+            /// so a failed force-rerun never costs a working set.
+            #[serde(default)]
+            force: bool,
         }
         let p: P = from_params(p)?;
         let song = self.song_row(p.song_id)?;
         let cache = self
             .stems_cache_dir(p.song_id)
             .ok_or("song not in library")?;
-        if Self::stems_cached(&cache) {
+        if !p.force && Self::stems_cached(&cache) {
             return Ok(json!({"state": "cached"}));
         }
         {

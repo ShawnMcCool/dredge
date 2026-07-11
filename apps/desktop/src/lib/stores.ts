@@ -1441,7 +1441,7 @@ export const actions = {
    *  peaks ~8 GiB of VRAM). The modal mirrors prepareState; each step is
    *  resolved by its `*_progress` event or a `cached` short-circuit, and a
    *  failure never blocks the other step. */
-  async prepare(force = false): Promise<void> {
+  async prepare({ forceAnalysis = false, forceStems = false } = {}): Promise<void> {
     const open = get(openSong);
     if (!open || get(prepareState)) return;
     const id = open.song.id;
@@ -1482,10 +1482,10 @@ export const actions = {
       }
     };
 
-    // RE-PREPARE forces a fresh analysis (new SongFormer sections + a profile);
-    // stems are expensive, so they re-run only when not yet cached.
-    await run("analysis", "analysis.run", force ? { force: true } : {});
-    await run("stems", "stems.separate");
+    // Both steps are cached by default; each force flag invalidates its own
+    // cache (fresh SongFormer sections / re-separated stems) independently.
+    await run("analysis", "analysis.run", forceAnalysis ? { force: true } : {});
+    await run("stems", "stems.separate", forceStems ? { force: true } : {});
     prepareSongId = null;
 
     // refresh exactly as the scattered flows did: re-open auto-loads cached
