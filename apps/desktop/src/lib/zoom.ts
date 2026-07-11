@@ -33,6 +33,11 @@ export async function initZoom(): Promise<void> {
   if (valid(saved)) {
     current = saved;
     await getCurrentWebview().setZoom(current);
+    // the initial zoom lands while the webview surface is still settling,
+    // which can bake in the render/hit-test desync with no later trigger to
+    // heal it (no resize happens after launch) — force one resync once the
+    // surface has settled
+    setTimeout(() => void resyncZoom(), 1000);
     return;
   }
   // one-time migration: adopt the old localStorage zoom. The key stays put
