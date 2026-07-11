@@ -9,6 +9,8 @@
     GRID_SNAP_DEFAULT,
     gridSnap,
     LIBRARY_ROOT,
+    openSong,
+    prepareState,
     settings,
     UI_SCALE,
     WINDOW_DECORATIONS,
@@ -235,6 +237,16 @@
         cpu
       </Button>
     </div>
+  </div>
+
+  <div class="setting">
+    <div class="text">
+      <span class="name">stem separation</span>
+      <span class="desc">run separation for the open song · cached stems are kept</span>
+    </div>
+    <Button disabled={!$openSong || $prepareState !== null} onclick={() => void actions.prepare()}>
+      separate stems
+    </Button>
   </div>
 </section>
 

@@ -94,7 +94,13 @@
     {:else if analyzing}
       <LiveProgress />
     {:else if $openSong.analysis}
-      <p class="status mono">no stems for this track</p>
+      <!-- dead end: analyzed but no stems (failed run, deleted cache, copied
+           bundle) — the only state that offers a rerun, so the happy path
+           stays quiet -->
+      <div class="cta">
+        <span class="copy">no stems for this track</span>
+        <Button accent onclick={() => void actions.prepare()}>Separate stems</Button>
+      </div>
     {:else}
       <div class="cta">
         <span class="copy">separate into vocals / drums / bass / other to isolate parts</span>
@@ -171,11 +177,6 @@
     font-size: 11px;
     color: var(--muted);
     min-width: 0;
-  }
-
-  .status {
-    font-size: 11px;
-    color: var(--muted);
   }
 
   .error {
