@@ -26,7 +26,10 @@
 </script>
 
 {#if $openSong}
-  <Box id="isolation" grow={!hasStems}>
+  <!-- while a prepare run is live the box goes wide: the analyzing readout
+       (step rows + meter traces) needs a full row to breathe, not a 240px
+       share of one -->
+  <Box id="isolation" grow={!hasStems} wide={analyzing}>
     <!-- tier 0: bass focus — always available, no separation needed. The label
          IS the toggle; the stem reset rides the empty space on its right. -->
     <div class="focus">

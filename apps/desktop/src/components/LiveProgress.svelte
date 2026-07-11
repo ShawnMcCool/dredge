@@ -113,7 +113,7 @@
   .glyph.failed { color: var(--miss); }
   .name { font-size: 13px; white-space: nowrap; }
   .model { font-size: 10px; color: var(--muted); white-space: nowrap; }
-  .stage { font-size: 11px; color: var(--accent); }
+  .stage { font-size: 11px; color: var(--accent); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .elapsed { margin-left: auto; font-size: 11px; color: var(--muted); }
   .muted { color: var(--muted); font-size: 11px; }
   /* a failure's message gets its own full-width line under the step, aligned
