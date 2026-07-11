@@ -34,6 +34,17 @@ impl Default for DemucsSeparator {
 }
 
 impl DemucsSeparator {
+    /// The binary to spawn: the loose lookup's hit, or the bare name (letting
+    /// the OS do its own PATH search) when nothing was found.
+    fn resolved(&self) -> PathBuf {
+        resolve_binary(
+            &self.binary,
+            &std::env::var_os("PATH").unwrap_or_default(),
+            std::env::var_os("HOME").as_deref(),
+        )
+        .unwrap_or_else(|| PathBuf::from(&self.binary))
+    }
+
     /// Pure: the exact argv (after the binary) for one separation run.
     fn command_args(audio: &Path, tmp: &Path) -> Vec<String> {
         vec![
@@ -61,7 +72,8 @@ impl StemSeparator for DemucsSeparator {
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).map_err(|e| format!("cannot create tmp dir: {e}"))?;
 
-        let mut cmd = std::process::Command::new(&self.binary);
+        let bin = self.resolved();
+        let mut cmd = std::process::Command::new(&bin);
         cmd.args(Self::command_args(audio, &tmp));
         if force_cpu {
             cmd.env("CUDA_VISIBLE_DEVICES", "");
@@ -69,7 +81,7 @@ impl StemSeparator for DemucsSeparator {
         die_with_parent(&mut cmd);
         let output = cmd
             .output()
-            .map_err(|e| format!("failed to run {}: {e}", self.binary))?;
+            .map_err(|e| format!("failed to run {}: {e}", bin.display()))?;
         let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
         if !output.status.success() {
             return Err(format!(
@@ -105,8 +117,12 @@ impl StemSeparator for DemucsSeparator {
     }
 
     fn is_available(&self) -> bool {
-        let path = std::env::var_os("PATH").unwrap_or_default();
-        find_in_path(&self.binary, &path).is_some()
+        resolve_binary(
+            &self.binary,
+            &std::env::var_os("PATH").unwrap_or_default(),
+            std::env::var_os("HOME").as_deref(),
+        )
+        .is_some()
     }
 }
 
@@ -114,12 +130,26 @@ impl StemSeparator for DemucsSeparator {
 /// (a `PATH`-formatted OsStr). Pure in its inputs so tests don't have to
 /// mutate the process environment.
 pub(crate) fn find_in_path(binary: &str, path_var: &std::ffi::OsStr) -> Option<PathBuf> {
+    std::env::split_paths(path_var).find_map(|dir| executable_at(dir.join(binary)))
+}
+
+/// `find_in_path` plus one loose fallback: `$HOME/.local/bin`, where
+/// `uv tool install` and pipx put their shims. GUI-launched sessions often
+/// carry a PATH without it, and a "not installed" error against a tool that
+/// is installed is worse than a lookup that tries too hard.
+pub(crate) fn resolve_binary(
+    binary: &str,
+    path_var: &std::ffi::OsStr,
+    home: Option<&std::ffi::OsStr>,
+) -> Option<PathBuf> {
+    find_in_path(binary, path_var)
+        .or_else(|| executable_at(Path::new(home?).join(".local/bin").join(binary)))
+}
+
+fn executable_at(candidate: PathBuf) -> Option<PathBuf> {
     use std::os::unix::fs::PermissionsExt;
-    std::env::split_paths(path_var).find_map(|dir| {
-        let candidate = dir.join(binary);
-        let meta = std::fs::metadata(&candidate).ok()?;
-        (meta.is_file() && meta.permissions().mode() & 0o111 != 0).then_some(candidate)
-    })
+    let meta = std::fs::metadata(&candidate).ok()?;
+    (meta.is_file() && meta.permissions().mode() & 0o111 != 0).then_some(candidate)
 }
 
 /// Make a spawned child die (SIGKILL) when this process does, so quitting
@@ -239,6 +269,36 @@ mod tests {
         std::fs::write(&plain, "data").unwrap();
         std::fs::set_permissions(&plain, std::fs::Permissions::from_mode(0o644)).unwrap();
         assert_eq!(find_in_path("plain", &path_var), None);
+    }
+
+    #[test]
+    fn resolve_binary_falls_back_to_home_local_bin() {
+        use std::os::unix::fs::PermissionsExt;
+        let home = tempfile::tempdir().unwrap();
+        let local = home.path().join(".local/bin");
+        std::fs::create_dir_all(&local).unwrap();
+        let bin = local.join("demucs");
+        std::fs::write(&bin, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        // PATH doesn't have it (the GUI-session case) → the home fallback finds it
+        let empty = std::ffi::OsString::new();
+        assert_eq!(
+            resolve_binary("demucs", &empty, Some(home.path().as_os_str())),
+            Some(bin.clone())
+        );
+        // no home → no fallback
+        assert_eq!(resolve_binary("demucs", &empty, None), None);
+        // PATH hit wins over the fallback
+        let dir = tempfile::tempdir().unwrap();
+        let path_bin = dir.path().join("demucs");
+        std::fs::write(&path_bin, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&path_bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let path_var = std::env::join_paths([dir.path()]).unwrap();
+        assert_eq!(
+            resolve_binary("demucs", &path_var, Some(home.path().as_os_str())),
+            Some(path_bin)
+        );
     }
 
     #[test]
