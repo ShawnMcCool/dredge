@@ -3,6 +3,21 @@
 All notable user-facing changes to dredge, newest first. Entries are written
 at release time by `scripts/ship release`.
 
+## v0.13.0 — 2026-07-11
+
+### New
+
+- **Six stems instead of four.** Separation now uses the six-channel demucs model, so guitar and piano get their own faders alongside vocals, drums, bass, and other — each with mute and solo. The big win is for piano-heavy songs: with piano separated out, the bass stem stops swallowing the piano's left hand. Songs separated before this release show a "Separate stems" button — run it once per song to get the new stems.
+- **Redo a separation.** The "separate stems" button in settings now redoes the open song's separation from scratch: the old stems are cleared and demucs runs fresh. Useful when a separation came out bad or after a model upgrade like this one.
+
+### Improved
+
+- **The analyzing readout gets room to breathe.** While analysis or separation runs, the isolation box takes a full row, so the progress steps and resource meters render at a comfortable width instead of squeezing into a column. A re-separation is also visible now — previously a song that already had stems showed no progress at all.
+
+### Fixed
+
+- **Clicks landing in the wrong place.** On some systems the app's click targets could drift out of line with what's on screen (for example, only the top half of a tab responding). The app now forces its display and input scales back into sync whenever the window resizes, regains focus, or becomes visible again.
+
 ## v0.12.0 — 2026-07-11
 
 ### New
