@@ -755,7 +755,7 @@ mod tests {
                     },
                     mix: Mix {
                         bass_focus: false,
-                        stems: [0.0, 0.0, 1.0, 0.0],
+                        stems: [0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
                     },
                     speed: 1.0,
                     passes: 1,
@@ -799,7 +799,7 @@ mod tests {
         assert_eq!(r.id, saved.id);
         assert_eq!(r.name, "verse drill v2");
         assert_eq!(r.blocks.len(), 1);
-        assert_eq!(r.blocks[0].mix.stems, [0.0, 0.0, 1.0, 0.0]);
+        assert_eq!(r.blocks[0].mix.stems, [0.0, 0.0, 1.0, 0.0, 0.0, 0.0]);
 
         // Delete it.
         lib2_delete_check(lib_dir.path(), song.id, saved.id);

@@ -1419,7 +1419,7 @@ impl App {
     fn stems_gains(&mut self, p: Value) -> Result<Value, String> {
         #[derive(Deserialize)]
         struct P {
-            gains: [f32; 4],
+            gains: [f32; practice::model::STEM_COUNT],
         }
         let p: P = from_params(p)?;
         let open = self.open_song.as_ref().ok_or("no song open")?;
@@ -3665,7 +3665,7 @@ mod mix_tests {
             },
             stems: true,
         });
-        let gains = [0.0_f32, 1.0, 0.5, 0.25];
+        let gains = [0.0_f32, 1.0, 0.5, 0.25, 0.75, 0.1];
         let resp = app.dispatch(req("stems.gains", json!({ "gains": gains })));
         assert!(resp.ok, "got: {:?}", resp.error);
         assert_eq!(app.current_mix().stems, gains);
@@ -3687,7 +3687,7 @@ mod mix_tests {
         });
         let mix = Mix {
             bass_focus: true,
-            stems: [0.0, 1.0, 0.5, 0.25],
+            stems: [0.0, 1.0, 0.5, 0.25, 0.75, 0.1],
         };
         let resp = app.dispatch(req("mix.set", serde_json::to_value(mix).unwrap()));
         assert!(resp.ok, "got: {:?}", resp.error);
@@ -3702,7 +3702,10 @@ mod mix_tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(gain_cmds, vec![(0, 0.0), (1, 1.0), (2, 0.5), (3, 0.25)]);
+        assert_eq!(
+            gain_cmds,
+            vec![(0, 0.0), (1, 1.0), (2, 0.5), (3, 0.25), (4, 0.75), (5, 0.1)]
+        );
     }
 
     #[test]
@@ -3711,7 +3714,7 @@ mod mix_tests {
         // No open song → no stems → stem gains must not be sent, bass-focus still is.
         let mix = Mix {
             bass_focus: true,
-            stems: [0.2, 0.3, 0.4, 0.5],
+            stems: [0.2, 0.3, 0.4, 0.5, 0.6, 0.7],
         };
         let resp = app.dispatch(req("mix.set", serde_json::to_value(mix).unwrap()));
         assert!(resp.ok, "got: {:?}", resp.error);
@@ -3767,7 +3770,7 @@ mod routine_tests {
                     },
                     mix: Mix {
                         bass_focus: false,
-                        stems: [0.0, 0.0, 1.0, 0.0],
+                        stems: [0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
                     },
                     speed: 1.0,
                     passes: 1,

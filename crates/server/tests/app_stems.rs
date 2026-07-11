@@ -149,7 +149,7 @@ fn open_autoloads_cached_stems() {
     let opened = req(&mut ctx.app, "song.open", json!({"song_id": ctx.song_id}));
     assert_eq!(opened["stems"], true);
     let mock = ctx.mock.lock().unwrap();
-    assert_eq!(mock.loaded.as_ref().unwrap().stems.len(), 4);
+    assert_eq!(mock.loaded.as_ref().unwrap().stems.len(), STEM_NAMES.len());
 }
 
 /// Seed a pre-plan-13 stem cache entry: 1 s of stereo sine at 44.1 kHz.
@@ -193,7 +193,7 @@ fn open_lazy_upgrades_legacy_44k_cache_to_48k() {
             .unwrap()
             .stems
             .len(),
-        4
+        STEM_NAMES.len()
     );
     for name in STEM_NAMES {
         let path = cache.join(format!("{name}.wav"));
@@ -220,7 +220,7 @@ fn gains_route_to_engine() {
     req(
         &mut ctx.app,
         "stems.gains",
-        json!({"gains": [1.0, 1.0, 0.0, 1.0]}),
+        json!({"gains": [1.0, 1.0, 0.0, 1.0, 1.0, 1.0]}),
     );
 
     let sent = ctx.mock.lock().unwrap().sent.clone();
@@ -228,7 +228,7 @@ fn gains_route_to_engine() {
         .into_iter()
         .filter(|c| matches!(c, EngineCmd::SetStemGain { .. }))
         .collect();
-    assert_eq!(gains.len(), 4);
+    assert_eq!(gains.len(), STEM_NAMES.len());
     assert!(gains.contains(&EngineCmd::SetStemGain { idx: 2, gain: 0.0 }));
 }
 

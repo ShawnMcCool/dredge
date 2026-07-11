@@ -57,18 +57,40 @@ pub struct LoopRegion {
     pub kind: LoopKind,
 }
 
+/// The stem vocabulary — the demucs 6-stem model's channels, in the one fixed
+/// wire order shared by the engine's gain indices, `Mix.stems`, the stem cache
+/// file names, and the UI's fader row.
+pub const STEM_NAMES: [&str; 6] = ["vocals", "drums", "bass", "guitar", "piano", "other"];
+pub const STEM_COUNT: usize = STEM_NAMES.len();
+
 /// What you hear: the stem balance plus the bass-focus listening aid. The live
 /// isolation state is an instance of this; a routine block stores a snapshot of
 /// it. `stems` are the resolved "what you hear" gains (mute/solo already folded
-/// in), in the fixed order vocals/drums/bass/other — matching the engine's
-/// per-stem gain index and the export contract. Speed/pitch are not part of the
-/// mix; they live on the transport.
+/// in), in `STEM_NAMES` order — matching the engine's per-stem gain index and
+/// the export contract. Speed/pitch are not part of the mix; they live on the
+/// transport.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Mix {
     /// Bass-focus listening aid (low-pass / octave): on or off.
     pub bass_focus: bool,
-    /// Per-stem gains, 0.0..=1.0, order vocals/drums/bass/other.
-    pub stems: [f32; 4],
+    /// Per-stem gains, 0.0..=1.0, in `STEM_NAMES` order.
+    #[serde(deserialize_with = "stems_compat")]
+    pub stems: [f32; STEM_COUNT],
+}
+
+/// Accept stem-gain vectors of any stored length: mixes saved before the
+/// 6-stem vocabulary carry four gains, and the new channels default to full.
+/// Extra entries (a future shrink) are dropped rather than erroring.
+fn stems_compat<'de, D>(d: D) -> Result<[f32; STEM_COUNT], D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v: Vec<f32> = Vec::deserialize(d)?;
+    let mut out = [1.0; STEM_COUNT];
+    for (slot, g) in out.iter_mut().zip(v) {
+        *slot = g;
+    }
+    Ok(out)
 }
 
 impl Default for Mix {
@@ -76,7 +98,7 @@ impl Default for Mix {
     fn default() -> Self {
         Self {
             bass_focus: false,
-            stems: [1.0; 4],
+            stems: [1.0; STEM_COUNT],
         }
     }
 }
@@ -271,17 +293,24 @@ mod mix_tests {
     fn default_is_full_band_no_focus() {
         let m = Mix::default();
         assert!(!m.bass_focus);
-        assert_eq!(m.stems, [1.0; 4]);
+        assert_eq!(m.stems, [1.0; STEM_COUNT]);
     }
 
     #[test]
     fn round_trips_through_json() {
         let m = Mix {
             bass_focus: true,
-            stems: [0.0, 1.0, 0.5, 0.25],
+            stems: [0.0, 1.0, 0.5, 0.25, 0.75, 0.1],
         };
         let json = serde_json::to_string(&m).unwrap();
         let back: Mix = serde_json::from_str(&json).unwrap();
         assert_eq!(m, back);
+    }
+
+    #[test]
+    fn four_gain_mixes_from_before_six_stems_load_padded() {
+        let back: Mix =
+            serde_json::from_str(r#"{"bass_focus":false,"stems":[0.0,1.0,0.5,0.25]}"#).unwrap();
+        assert_eq!(back.stems, [0.0, 1.0, 0.5, 0.25, 1.0, 1.0]);
     }
 }

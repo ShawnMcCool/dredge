@@ -176,8 +176,9 @@ export interface OpenSong {
   recordings: Recording[];
 }
 
-/** Fixed stem order contract: vocals/drums/bass/other. */
-export const STEM_LABELS = ["VOCALS", "DRUMS", "BASS", "OTHER"] as const;
+/** Fixed stem order contract — mirrors `practice::model::STEM_NAMES`:
+ *  vocals/drums/bass/guitar/piano/other (the demucs 6-stem vocabulary). */
+export const STEM_LABELS = ["VOCALS", "DRUMS", "BASS", "GUITAR", "PIANO", "OTHER"] as const;
 export const BASS_STEM = 2;
 
 export interface Recording {
@@ -215,10 +216,11 @@ export interface StemMix {
 }
 
 function defaultStemMix(): StemMix {
+  const n = STEM_LABELS.length;
   return {
-    levels: [100, 100, 100, 100],
-    mutes: [false, false, false, false],
-    solos: [false, false, false, false],
+    levels: Array(n).fill(100),
+    mutes: Array(n).fill(false),
+    solos: Array(n).fill(false),
   };
 }
 
@@ -1582,7 +1584,8 @@ function applyRoutineMix(mix: Mix): void {
     const k = Math.min(1, (now - t0) / DUR);
     const levels = target.map((tl, i) => (start[i] ?? tl) + (tl - (start[i] ?? tl)) * k);
     // Routine mix is absolute gains — mute/solo are folded in, so clear them.
-    stemMix.set({ levels, mutes: [false, false, false, false], solos: [false, false, false, false] });
+    const off = Array(STEM_LABELS.length).fill(false);
+    stemMix.set({ levels, mutes: off, solos: [...off] });
     if (k < 1) routineMixRaf = requestAnimationFrame(tick);
   };
   routineMixRaf = requestAnimationFrame(tick);
