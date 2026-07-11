@@ -18,6 +18,13 @@
 
 ---
 
+> [!NOTE]
+> **Honest state of the project.** This has only ever been tried on two
+> computers, each running Arch Linux. Not having tested on other setups, I
+> don't know what assumptions are being made that might cause a break. Please
+> [report an issue](https://github.com/ShawnMcCool/dredge/issues) for anything
+> you'd like to see fixed.
+
 ## Features
 
 ### Basic
