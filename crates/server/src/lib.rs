@@ -3,6 +3,7 @@
 pub mod analysis;
 pub mod app;
 pub mod control;
+pub mod input_monitor;
 pub mod logging;
 mod profile;
 pub mod protocol;

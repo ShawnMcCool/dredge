@@ -57,7 +57,7 @@
   const SAMPLE_RATE = 48000;
   const LANE_H = 24; // section lane above the waveform
   const WAVE_H = 200;
-  const LAYER_LANE_H = 18; // height of each recording layer lane below the waveform
+  const LAYER_LANE_H = 30; // height of each recording layer lane below the waveform
   const EDGE_PX = 4; // loop-edge hit zone
   const CLICK_PX = 5; // below this a drag is a click → seek
   const SNAP_PX = 10; // grid-snap pull radius around a downbeat
@@ -524,10 +524,11 @@
       ctx.fillText(s.name, lx, LANE_H - 8, Math.max(x1 - lx - lpad, 0));
     }
 
-    // recording layer lanes — one thin lane per overdub, stacked beneath the
-    // waveform body, time-aligned to the same zoom/scroll. No per-sample peaks
-    // yet (v1): each lane renders as a labeled tinted block spanning its
-    // time extent. Muted recordings render at reduced opacity.
+    // recording layer lanes — one waveform lane per overdub, stacked beneath the
+    // waveform body, time-aligned to the same zoom/scroll. Each take draws its
+    // own min/max peaks (mirroring the main waveform), so a silent take reads as
+    // a flat line. Muted takes render dimmed. A take whose audio failed to
+    // decode (peaks null) draws a baseline so the lane still reads.
     ctx.setLineDash([]); // order-independent: don't inherit a dashed stroke
     for (let i = 0; i < recs.length; i++) {
       const r = recs[i];
@@ -537,20 +538,61 @@
       if (x1 < 0 || x0 > w) continue;
       const laneTop = LANE_H + WAVE_H + i * LAYER_LANE_H;
       const { fill, edge } = labelColor(r.name, baseHue);
-      ctx.globalAlpha = r.muted ? 0.35 : 0.85;
+      ctx.globalAlpha = r.muted ? 0.4 : 1;
+      // lane container: background + border (CSS space)
       ctx.fillStyle = c.bg;
       ctx.fillRect(x0, laneTop + 2, x1 - x0 - 1, LAYER_LANE_H - 4);
-      ctx.fillStyle = fill;
-      ctx.fillRect(x0, laneTop + 2, x1 - x0 - 1, LAYER_LANE_H - 4);
-      ctx.globalAlpha = r.muted ? 0.35 : 1;
       ctx.strokeStyle = edge;
       ctx.lineWidth = 1;
       ctx.strokeRect(x0 + 0.5, laneTop + 2.5, x1 - x0 - 2, LAYER_LANE_H - 5);
+
+      const p = r.peaks;
+      if (p && p.buckets.length) {
+        // waveform in device space (1px columns), same as the main wave. Bucket
+        // b covers this take's own frames [b·fpb, (b+1)·fpb); song time of that
+        // bucket is `start + b·fpb/SAMPLE_RATE`, so map each pixel back through
+        // `start`.
+        const perBucketTake = p.frames_per_bucket / SAMPLE_RATE;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        const midDev = (laneTop + LAYER_LANE_H / 2) * dpr;
+        const ampDev = (LAYER_LANE_H / 2 - 3) * dpr;
+        const dxStart = Math.max(0, Math.floor(x0 * dpr));
+        const dxEnd = Math.min(canvas.width, Math.ceil(x1 * dpr));
+        ctx.fillStyle = fill;
+        for (let dx = dxStart; dx < dxEnd; dx++) {
+          const t0 = xToSec(view, dx / dpr) - start;
+          const t1 = xToSec(view, (dx + 1) / dpr) - start;
+          const b0 = Math.max(Math.floor(t0 / perBucketTake), 0);
+          const b1 = Math.min(Math.floor(t1 / perBucketTake), p.buckets.length - 1);
+          let lo = Infinity;
+          let hi = -Infinity;
+          for (let b = b0; b <= b1; b++) {
+            const bucket = p.buckets[b];
+            if (!bucket) continue;
+            lo = Math.min(lo, bucket[0]);
+            hi = Math.max(hi, bucket[1]);
+          }
+          if (lo > hi) continue;
+          const y0 = midDev - hi * ampDev;
+          const y1 = midDev - lo * ampDev;
+          ctx.fillRect(dx, y0, 1, Math.max(y1 - y0, 1));
+        }
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // restore CSS space
+      } else {
+        // no peaks — a flat baseline so an undecodable take still shows a lane
+        ctx.strokeStyle = edge;
+        ctx.beginPath();
+        ctx.moveTo(x0 + 1, laneTop + LAYER_LANE_H / 2);
+        ctx.lineTo(x1 - 1, laneTop + LAYER_LANE_H / 2);
+        ctx.stroke();
+      }
+
+      // name caption over the lane, left-aligned
       ctx.fillStyle = c.fg;
       ctx.font = "10px " + c.mono;
       const llpad = 4;
       const llx = Math.min(Math.max(x0 + llpad, llpad), x1 - llpad);
-      ctx.fillText(r.name, llx, laneTop + LAYER_LANE_H - 5, Math.max(x1 - llx - llpad, 0));
+      ctx.fillText(r.name, llx, laneTop + LAYER_LANE_H - 4, Math.max(x1 - llx - llpad, 0));
       ctx.globalAlpha = 1;
     }
   }

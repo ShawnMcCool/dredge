@@ -10,6 +10,7 @@
     recordArmed,
     recordSpan,
     recordInput,
+    inputLevel,
     recordings,
     selection,
     currentLoop,
@@ -34,6 +35,18 @@
       .catch((e) => traceErr("recordings", `device.inputs failed: ${e}`));
   });
 
+  // Run the input-level monitor while armed and not recording, on the selected
+  // input. Cleanup stops it — so it also restarts when the input changes and
+  // stops on disarm / record / unmount. The recorder owns the device during an
+  // actual take (the backend stops the monitor at recording.start).
+  $effect(() => {
+    if ($recordArmed && !$recordingActive) {
+      const device = $recordInput;
+      void actions.startInputMonitor(device);
+      return () => void actions.stopInputMonitor();
+    }
+  });
+
   const spanOptions = $derived([
     { value: "song", label: "full song" },
     { value: "playhead", label: "from playhead" },
@@ -49,7 +62,11 @@
 {#if $openSong}
   <Box id="recordings" wide>
     <div class="arm">
-      <label class="field">
+      <!-- A plain <div>, not <label>: the Dropdown is a custom button widget,
+           and a wrapping <label> forwards an option click to its first labelable
+           descendant (the trigger), re-toggling the menu open in WebKitGTK. The
+           .flabel is a caption, not a form label. -->
+      <div class="field">
         <span class="flabel">span</span>
         <Dropdown
           value={$recordSpan}
@@ -58,8 +75,8 @@
           label="recording span"
           onchange={(v) => recordSpan.set(v as RecordSpan)}
         />
-      </label>
-      <label class="field">
+      </div>
+      <div class="field">
         <span class="flabel">input</span>
         <Dropdown
           value={$recordInput}
@@ -68,7 +85,7 @@
           label="input device"
           onchange={(v) => recordInput.set(v)}
         />
-      </label>
+      </div>
       <div class="arm-row">
         <Button
           variant="toggle"
@@ -81,7 +98,14 @@
       </div>
     </div>
     {#if $recordArmed && !$recordingActive}
-      <p class="hint">record from the transport</p>
+      <div class="meter" title="input level" aria-label="input level">
+        <div class="meter-bar" style="width: {Math.min(100, ($inputLevel?.peak ?? 0) * 100)}%"></div>
+      </div>
+      <p class="hint">
+        {($inputLevel?.peak ?? 0) < 0.001
+          ? "no input signal — check the input device"
+          : "record from the transport"}
+      </p>
     {/if}
 
     {#each $recordings as r (r.id)}
@@ -147,6 +171,22 @@
   }
   .arm-row {
     margin-top: 2px;
+  }
+
+  .meter {
+    width: 240px;
+    max-width: 100%;
+    height: 8px;
+    margin-top: 6px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .meter-bar {
+    height: 100%;
+    background: var(--accent);
+    transition: width 60ms linear;
   }
 
   .hint {

@@ -451,6 +451,10 @@ pub struct App {
     tuner: Box<dyn TunerControl>,
     tuner_tx: mpsc::Sender<TunerReading>,
     tuner_rx: mpsc::Receiver<TunerReading>,
+    /// Live input level readings for the record-arming meter; drained by `tick()`.
+    input_monitor: Box<dyn crate::input_monitor::InputMonitorControl>,
+    monitor_tx: mpsc::Sender<crate::input_monitor::InputLevel>,
+    monitor_rx: mpsc::Receiver<crate::input_monitor::InputLevel>,
     /// Input capture backend for overdub recording. Behind its own mutex so the
     /// blocking `calibrate_capture` can run via `dispatch_shared` without
     /// holding the App lock (which would stall the tick pump).
@@ -460,6 +464,10 @@ pub struct App {
     /// Decoded recording audio, keyed by id. A take's WAV is immutable, so a
     /// cached buffer is reused across edits — only a brand-new take decodes.
     layer_cache: std::collections::HashMap<RecordingId, Arc<engine::buffer::SongBuffer>>,
+    /// Per-take waveform peaks, keyed by id. Computed once from the decoded
+    /// buffer (a recomputable cache, never persisted — like the song's peaks)
+    /// and shipped to the frontend so each take draws as a real waveform lane.
+    layer_peaks: std::collections::HashMap<RecordingId, engine::peaks::Peaks>,
 }
 
 struct OpenSong {
@@ -511,6 +519,7 @@ impl App {
         let (profile_tx, profile_rx) = mpsc::channel();
         let (work_sample_tx, work_sample_rx) = mpsc::channel();
         let (tuner_tx, tuner_rx) = mpsc::channel();
+        let (monitor_tx, monitor_rx) = mpsc::channel();
         let root = Self::library_root(&store);
         let library = practice::library::Library::load(root.clone()).unwrap_or_else(|e| {
             eprintln!("dredge: library load failed at {}: {e}", root.display());
@@ -549,11 +558,15 @@ impl App {
             tuner: Box::new(RealTuner::default()),
             tuner_tx,
             tuner_rx,
+            input_monitor: Box::new(crate::input_monitor::RealInputMonitor::default()),
+            monitor_tx,
+            monitor_rx,
             recorder: Arc::new(Mutex::new(Box::new(
                 crate::recording::RealRecorder::default(),
             ))),
             pending_recording: None,
             layer_cache: std::collections::HashMap::new(),
+            layer_peaks: std::collections::HashMap::new(),
         };
         // Apply the saved output device if one was persisted. The Engine's
         // fallback handles a currently-absent device by reverting to default,
@@ -572,6 +585,15 @@ impl App {
     /// Swap the tuner (tests use `MockTuner`).
     pub fn set_tuner(&mut self, tuner: Box<dyn TunerControl>) {
         self.tuner = tuner;
+    }
+
+    /// Swap the input monitor (tests use `MockInputMonitor`).
+    #[cfg(test)]
+    pub fn set_input_monitor(
+        &mut self,
+        monitor: Box<dyn crate::input_monitor::InputMonitorControl>,
+    ) {
+        self.input_monitor = monitor;
     }
 
     /// Swap the recording backend (tests use `FakeRecorder`).
@@ -694,6 +716,11 @@ impl App {
                 self.tuner.stop();
                 Ok(Value::Null)
             }
+            "input.monitorStart" => self.input_monitor_start(p),
+            "input.monitorStop" => {
+                self.input_monitor.stop();
+                Ok(Value::Null)
+            }
             "stems.separate" => self.stems_separate(p),
             "stems.status" => self.stems_status(p),
             "stems.gains" => self.stems_gains(p),
@@ -713,13 +740,11 @@ impl App {
             "profiles.list" => self.profiles_list(p),
             "recording.start" => self.recording_start(p),
             "recording.stop" => self.recording_stop(p),
-            "recording.list" => serde_json::to_value(
-                self.open_song
-                    .as_ref()
-                    .map(|o| self.library.recordings(o.song.id))
-                    .unwrap_or_default(),
-            )
-            .err_str(),
+            "recording.list" => Ok(json!(self
+                .open_song
+                .as_ref()
+                .map(|o| self.recordings_view(o.song.id))
+                .unwrap_or_default())),
             "recording.rename" => self.recording_rename(p),
             "recording.delete" => self.recording_delete(p),
             "recording.setGain" => self.recording_set_gain(p),
@@ -1166,6 +1191,20 @@ impl App {
             if let Ok(data) = serde_json::to_value(reading) {
                 events.push(Event {
                     event: "tuner_pitch".into(),
+                    data,
+                });
+            }
+        }
+        // live input levels from the record-arming monitor. Coalesce to the most
+        // recent reading — a UI meter only needs the latest, not the backlog.
+        let mut level = None;
+        while let Ok(l) = self.monitor_rx.try_recv() {
+            level = Some(l);
+        }
+        if let Some(l) = level {
+            if let Ok(data) = serde_json::to_value(l) {
+                events.push(Event {
+                    event: "input_level".into(),
                     data,
                 });
             }
@@ -1682,6 +1721,19 @@ impl App {
         Ok(Value::Null)
     }
 
+    // --- input monitor -----------------------------------------------------
+
+    fn input_monitor_start(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            device_id: String,
+        }
+        let p: P = from_params(p)?;
+        self.input_monitor
+            .start(&p.device_id, self.monitor_tx.clone())?;
+        Ok(Value::Null)
+    }
+
     // --- recording ---------------------------------------------------------
 
     /// Read a stored frame count, or `None` when the setting is unset.
@@ -1736,6 +1788,31 @@ impl App {
         Ok(json!({ "source": "auto" }))
     }
 
+    /// A take's wire form: the persisted `Recording` flattened with its
+    /// (non-persisted) waveform peaks, so the frontend draws a real waveform
+    /// lane. `peaks` is null when the take's audio failed to decode.
+    fn recording_view(&self, r: &Recording) -> Value {
+        let mut v = serde_json::to_value(r).unwrap_or(Value::Null);
+        if let Value::Object(map) = &mut v {
+            let peaks = self
+                .layer_peaks
+                .get(&r.id)
+                .and_then(|p| serde_json::to_value(p).ok())
+                .unwrap_or(Value::Null);
+            map.insert("peaks".into(), peaks);
+        }
+        v
+    }
+
+    /// All takes for `song_id` as wire views (Recording + peaks).
+    fn recordings_view(&self, song_id: SongId) -> Vec<Value> {
+        self.library
+            .recordings(song_id)
+            .iter()
+            .map(|r| self.recording_view(r))
+            .collect()
+    }
+
     /// Rebuild the engine's layer set from the open song's recordings. A take
     /// whose WAV fails to decode is logged and skipped — never fails the caller.
     fn refresh_layers(&mut self) {
@@ -1773,6 +1850,12 @@ impl App {
                     }
                 }
             };
+            // Compute this take's waveform peaks once from the decoded buffer
+            // (a recomputable cache, never persisted); the frontend draws them
+            // as the take's waveform lane.
+            self.layer_peaks
+                .entry(r.id)
+                .or_insert_with(|| engine::peaks::compute_peaks(&samples));
             layers.push(engine::layers::Layer {
                 samples,
                 start_frame: r.anchor_frame - latency - r.nudge_frames,
@@ -1796,6 +1879,9 @@ impl App {
         if self.pending_recording.is_some() {
             return Err("already recording".into());
         }
+        // The recorder is about to open its own capture on this device; stop the
+        // arming meter first so two capture sessions don't fight for the input.
+        self.input_monitor.stop();
         let p: P = from_params(p)?;
         let open = self.open_song.as_ref().ok_or("no song open")?;
         let song_id = open.song.id;
@@ -1959,7 +2045,9 @@ impl App {
 
     fn recording_stop(&mut self, _p: Value) -> Result<Value, String> {
         let rec = self.finalize_recording()?;
-        let data = serde_json::to_value(&rec).err_str()?;
+        // `finalize_recording` ran `refresh_layers`, so the take's peaks are
+        // cached — ship them with the finished take so its lane draws at once.
+        let data = self.recording_view(&rec);
         let _ = self.job_tx.send(Event {
             event: "recording.finished".into(),
             data: data.clone(),
@@ -2045,6 +2133,7 @@ impl App {
             .ok_or_else(|| format!("recording not found: {}", p.id.0))?;
         let removed = recordings.remove(pos);
         self.layer_cache.remove(&removed.id);
+        self.layer_peaks.remove(&removed.id);
         // Best-effort WAV removal: a missing file shouldn't fail the command.
         if let Err(e) = std::fs::remove_file(dir.join(&removed.file)) {
             if e.kind() != std::io::ErrorKind::NotFound {
@@ -2215,7 +2304,7 @@ impl App {
         let song_id = song.id;
         self.audio.load(decoded.set);
         let (sections, orphan_notes) = self.sections_payload(song_id)?;
-        let out = json!({
+        let mut out = json!({
             "song": song,
             "sections": sections,
             "loops": self.library.list_loops(song_id),
@@ -2224,7 +2313,8 @@ impl App {
             "stems": decoded.stems,
             "analysis": self.library.get_analysis(song_id),
             "orphan_notes": orphan_notes,
-            "recordings": self.library.recordings(song_id),
+            // `recordings` is attached below, after `refresh_layers` computes
+            // this song's take peaks (the views need them).
         });
         self.open_song = Some(OpenSong {
             song,
@@ -2241,8 +2331,12 @@ impl App {
         // previous song can't be served as this song's same-id layer. The new
         // song re-decodes its own takes once via `refresh_layers`.
         self.layer_cache.clear();
+        self.layer_peaks.clear();
         // Attach this song's overdub layers (a reopened song restores its takes).
+        // This also computes each take's peaks into `layer_peaks`, so build the
+        // recordings views only after it runs.
         self.refresh_layers();
+        out["recordings"] = json!(self.recordings_view(song_id));
         self.push_count_in();
         self.push_section_click();
         Ok(out)
@@ -3170,6 +3264,54 @@ mod recording_tests {
         let dir = app.song_bundle_dir(song_id).unwrap();
         assert!(dir.join(&recs[0].file).exists(), "WAV should be written");
         assert_eq!(mock.lock().unwrap().layers_len, 1, "one layer pushed");
+
+        // The finished-take payload carries the take's waveform peaks so its
+        // lane draws immediately.
+        let peaks = &finished.data["peaks"];
+        assert!(peaks.is_object(), "finished take carries peaks: {peaks:?}");
+        assert!(
+            !peaks["buckets"].as_array().unwrap().is_empty(),
+            "peaks have buckets"
+        );
+    }
+
+    /// `recording.list` (and thus `song.open`) ships each take's non-persisted
+    /// waveform peaks alongside the persisted fields.
+    #[test]
+    fn recording_list_carries_peaks() {
+        let (_mock, mut app, _song_id, _lib) =
+            make_shared_mock_with_recorder(Box::new(FakeRecorder {
+                canned: vec![0.3f32; SAMPLE_RATE as usize * CHANNELS],
+                started: None,
+                stopped: false,
+                input_delay: 0,
+            }));
+        app.dispatch(Request {
+            id: 1,
+            cmd: "recording.start".into(),
+            params: json!({ "span": "song", "device_id": "0" }),
+        });
+        app.dispatch(Request {
+            id: 2,
+            cmd: "recording.stop".into(),
+            params: json!(null),
+        });
+
+        let listed = app.dispatch(Request {
+            id: 3,
+            cmd: "recording.list".into(),
+            params: json!(null),
+        });
+        assert!(listed.ok, "list failed: {:?}", listed.error);
+        let arr = listed.data.as_array().expect("list is an array");
+        assert_eq!(arr.len(), 1);
+        let peaks = &arr[0]["peaks"];
+        assert!(peaks.is_object(), "listed take carries peaks: {peaks:?}");
+        assert_eq!(
+            peaks["frames_per_bucket"],
+            json!(engine::peaks::FRAMES_PER_BUCKET),
+            "peaks use the standard bucket size"
+        );
     }
 
     /// AS-6: with `latency_source` unset (auto), finalizing a take writes the

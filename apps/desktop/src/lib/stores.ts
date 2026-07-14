@@ -191,6 +191,9 @@ export interface Recording {
   gain: number;
   muted: boolean;
   created_at: string;
+  /** Waveform peaks for this take's audio, or null if it failed to decode.
+   *  A recomputable cache computed server-side — not stored in the manifest. */
+  peaks: Peaks | null;
 }
 
 export interface CalibrationResult {
@@ -406,6 +409,10 @@ export const recordArmed = writable<boolean>(false);
 export const recordSpan = writable<RecordSpan>("playhead");
 /** Armed input: an `AudioDevice.id`, or "default" = follow the devices panel. */
 export const recordInput = writable<string>("default");
+/** Live input level (peak/RMS, linear 0..~1) from the record-arming monitor,
+ *  or null when the monitor is off. Drives the arming meter so a silent/dead
+ *  input is visible before a take is committed. */
+export const inputLevel = writable<{ peak: number; rms: number } | null>(null);
 /** Recording-latency status for the devices readout (both measurements + which is active). */
 export const latencyStatus = writable<LatencyStatus | null>(null);
 export const analysisError = writable<string | null>(null);
@@ -1394,6 +1401,25 @@ export const actions = {
     recordings.update((rs) => (rs.some((r) => r.id === rec.id) ? rs : [...rs, rec]));
   },
 
+  /** Start the input-level monitor on `deviceId` (the arming meter). Failures
+   *  are non-fatal — the meter just stays blank. */
+  async startInputMonitor(deviceId: string): Promise<void> {
+    try {
+      await cmd("input.monitorStart", { device_id: deviceId });
+    } catch (e) {
+      traceErr("recordings", `input.monitorStart failed: ${e}`);
+    }
+  },
+
+  async stopInputMonitor(): Promise<void> {
+    inputLevel.set(null);
+    try {
+      await cmd("input.monitorStop");
+    } catch (e) {
+      traceErr("recordings", `input.monitorStop failed: ${e}`);
+    }
+  },
+
   async deleteRecording(id: number): Promise<void> {
     await cmd("recording.delete", { id });
     recordings.update((rs) => rs.filter((r) => r.id !== id));
@@ -1688,6 +1714,9 @@ export async function initEvents(): Promise<() => void> {
         break;
       case "tuner_pitch":
         tunerReading.set(ev.data as TunerReading);
+        break;
+      case "input_level":
+        inputLevel.set(ev.data as { peak: number; rms: number });
         break;
       case "profile_run":
         actions.recordProfile(ev.data as ProfileRun);
