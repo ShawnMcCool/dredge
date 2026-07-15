@@ -103,6 +103,56 @@ impl Default for Mix {
     }
 }
 
+/// Saved per-song isolation-box state: the bass-focus toggle plus each stem's
+/// fader level, mute, and solo. Restored verbatim on `song.open`. Distinct from
+/// `Mix` (resolved gains) because it preserves the mute/solo toggles, not just
+/// the resulting sound. Stored as `Vec`s and normalized to `STEM_COUNT` on read
+/// so a state saved under an older stem vocabulary still loads.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Isolation {
+    #[serde(default)]
+    pub bass_focus: bool,
+    #[serde(default)]
+    pub levels: Vec<u8>,
+    #[serde(default)]
+    pub mutes: Vec<bool>,
+    #[serde(default)]
+    pub solos: Vec<bool>,
+}
+
+impl Default for Isolation {
+    /// Full band, no listening aid — a freshly opened song's isolation state.
+    fn default() -> Self {
+        Self {
+            bass_focus: false,
+            levels: vec![100; STEM_COUNT],
+            mutes: vec![false; STEM_COUNT],
+            solos: vec![false; STEM_COUNT],
+        }
+    }
+}
+
+impl Isolation {
+    /// Pad/truncate every vector to exactly `STEM_COUNT`: missing stems default
+    /// to full level, unmuted, unsoloed; extras are dropped.
+    pub fn normalized(&self) -> Isolation {
+        fn fit<T: Clone>(v: &[T], fill: T) -> Vec<T> {
+            let mut out = v.to_vec();
+            out.truncate(STEM_COUNT);
+            while out.len() < STEM_COUNT {
+                out.push(fill.clone());
+            }
+            out
+        }
+        Isolation {
+            bass_focus: self.bass_focus,
+            levels: fit(&self.levels, 100),
+            mutes: fit(&self.mutes, false),
+            solos: fit(&self.solos, false),
+        }
+    }
+}
+
 /// An overdub take: your own input recorded over one pass of a span, held as an
 /// additive layer. Audio lives at `<bundle>/recordings/<file>`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -312,5 +362,61 @@ mod mix_tests {
         let back: Mix =
             serde_json::from_str(r#"{"bass_focus":false,"stems":[0.0,1.0,0.5,0.25]}"#).unwrap();
         assert_eq!(back.stems, [0.0, 1.0, 0.5, 0.25, 1.0, 1.0]);
+    }
+}
+
+#[cfg(test)]
+mod isolation_tests {
+    use super::*;
+
+    #[test]
+    fn default_is_full_band_no_focus() {
+        let i = Isolation::default();
+        assert!(!i.bass_focus);
+        assert_eq!(i.normalized().levels, vec![100; STEM_COUNT]);
+        assert_eq!(i.normalized().mutes, vec![false; STEM_COUNT]);
+        assert_eq!(i.normalized().solos, vec![false; STEM_COUNT]);
+    }
+
+    #[test]
+    fn normalize_pads_short_to_stem_count() {
+        let i = Isolation {
+            bass_focus: true,
+            levels: vec![10, 20, 30, 40],
+            mutes: vec![true],
+            solos: vec![],
+        };
+        let n = i.normalized();
+        assert_eq!(n.levels, vec![10, 20, 30, 40, 100, 100]);
+        assert_eq!(n.mutes, vec![true, false, false, false, false, false]);
+        assert_eq!(n.solos, vec![false; STEM_COUNT]);
+        assert!(n.bass_focus);
+    }
+
+    #[test]
+    fn normalize_truncates_long_to_stem_count() {
+        let i = Isolation {
+            bass_focus: false,
+            levels: vec![1; STEM_COUNT + 3],
+            mutes: vec![true; STEM_COUNT + 2],
+            solos: vec![true; STEM_COUNT + 1],
+        };
+        let n = i.normalized();
+        assert_eq!(n.levels.len(), STEM_COUNT);
+        assert_eq!(n.mutes.len(), STEM_COUNT);
+        assert_eq!(n.solos.len(), STEM_COUNT);
+    }
+
+    #[test]
+    fn serde_round_trip() {
+        let i = Isolation {
+            bass_focus: true,
+            levels: vec![50; STEM_COUNT],
+            mutes: vec![false; STEM_COUNT],
+            solos: vec![true; STEM_COUNT],
+        };
+        let s = serde_json::to_string(&i).unwrap();
+        let back: Isolation = serde_json::from_str(&s).unwrap();
+        assert_eq!(i, back);
     }
 }
