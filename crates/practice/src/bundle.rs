@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::Result;
-use crate::model::{Analysis, LoopRegion, Recording, Routine, Section, SectionNote, Song};
+use crate::model::{Analysis, Isolation, LoopRegion, Recording, Routine, Section, SectionNote, Song};
 use serde::{Deserialize, Serialize};
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -38,6 +38,8 @@ pub struct BundleManifest {
     pub recordings: Vec<Recording>,
     #[serde(default)]
     pub routines: Vec<Routine>,
+    #[serde(default)]
+    pub isolation: Isolation,
 }
 
 // ── slug ───────────────────────────────────────────────────────────────────────
@@ -165,6 +167,7 @@ mod tests {
             analysis: None,
             recordings: vec![],
             routines: vec![],
+            isolation: Isolation::default(),
         }
     }
 

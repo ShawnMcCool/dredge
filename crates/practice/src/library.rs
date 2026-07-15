@@ -181,6 +181,7 @@ impl Library {
             analysis: None,
             recordings: vec![],
             routines: vec![],
+            isolation: Isolation::default(),
         };
         bundle::write_manifest(&dir, &manifest)?;
         self.entries.insert(song.id.0, Entry { dir, manifest });
@@ -452,6 +453,21 @@ impl Library {
         Self::persist(entry)
     }
 
+    // ── isolation ──────────────────────────────────────────────────────────────
+
+    pub fn set_isolation(&mut self, song_id: SongId, iso: Isolation) -> Result<()> {
+        let entry = self.entry_mut(song_id)?;
+        entry.manifest.isolation = iso;
+        Self::persist(entry)
+    }
+
+    pub fn get_isolation(&self, song_id: SongId) -> Isolation {
+        self.entries
+            .get(&song_id.0)
+            .map(|e| e.manifest.isolation.normalized())
+            .unwrap_or_default()
+    }
+
     // ── analysis ───────────────────────────────────────────────────────────────
 
     pub fn has_analysis(&self, song_id: SongId) -> bool {
@@ -572,6 +588,7 @@ mod tests {
                 analysis: None,
                 recordings: vec![],
                 routines: vec![],
+                isolation: Isolation::default(),
             };
             bundle::write_manifest(&bundle_dir, &manifest).unwrap();
         }
@@ -650,6 +667,7 @@ mod tests {
             analysis: None,
             recordings: vec![],
             routines: vec![],
+            isolation: Isolation::default(),
         };
         bundle::write_manifest(&bundle_dir, &manifest).unwrap();
 
@@ -975,5 +993,49 @@ mod tests {
         assert_eq!(lib.bundle_dir(song.id).unwrap(), path_before);
         assert!(dir.is_dir());
         assert_eq!(updated.path, dir.join("audio.flac").to_string_lossy());
+    }
+
+    #[test]
+    fn isolation_persists_and_reloads() {
+        let src_dir = tempfile::tempdir().unwrap();
+        let lib_dir = tempfile::tempdir().unwrap();
+        let audio_src = src_dir.path().join("orig.flac");
+        std::fs::write(&audio_src, b"X").unwrap();
+
+        let mut lib = Library::load(lib_dir.path().to_path_buf()).unwrap();
+        let song = lib
+            .create_song(&audio_src, "Iso", Some("Band"), "h", 1.0)
+            .unwrap();
+
+        let iso = Isolation {
+            bass_focus: true,
+            levels: vec![80, 0, 100, 100, 100, 50],
+            mutes: vec![false, true, false, false, false, false],
+            solos: vec![false, false, true, false, false, false],
+        };
+        lib.set_isolation(song.id, iso.clone()).unwrap();
+
+        // in-memory: normalized (already STEM_COUNT-long here, so identical)
+        assert_eq!(lib.get_isolation(song.id), iso.normalized());
+
+        // on disk: the manifest carries it verbatim
+        let dir = lib.bundle_dir(song.id).unwrap();
+        let m = bundle::read_manifest(&dir).unwrap();
+        assert_eq!(m.isolation, iso);
+    }
+
+    #[test]
+    fn isolation_defaults_when_absent() {
+        let src_dir = tempfile::tempdir().unwrap();
+        let lib_dir = tempfile::tempdir().unwrap();
+        let audio_src = src_dir.path().join("orig.flac");
+        std::fs::write(&audio_src, b"X").unwrap();
+
+        let mut lib = Library::load(lib_dir.path().to_path_buf()).unwrap();
+        let song = lib
+            .create_song(&audio_src, "Iso", Some("Band"), "h", 1.0)
+            .unwrap();
+
+        assert_eq!(lib.get_isolation(song.id), Isolation::default());
     }
 }
