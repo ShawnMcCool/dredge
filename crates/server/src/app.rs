@@ -672,6 +672,7 @@ impl App {
             "song.open" => self.song_open(p),
             "section.replace" => self.section_replace(p),
             "section.notes.set" => self.section_notes_set(p),
+            "isolation.set" => self.isolation_set(p),
             "section.click.set" => self.section_click_set(p),
             "sectionclick.set" => self.section_click_enable(p),
             "loop.create" => self.loop_create(p),
@@ -2312,6 +2313,7 @@ impl App {
             "peaks": decoded.peaks,
             "stems": decoded.stems,
             "analysis": self.library.get_analysis(song_id),
+            "isolation": self.library.get_isolation(song_id),
             "orphan_notes": orphan_notes,
             // `recordings` is attached below, after `refresh_layers` computes
             // this song's take peaks (the views need them).
@@ -2428,6 +2430,39 @@ impl App {
             .err_str()?;
         let (sections, orphan_notes) = self.sections_payload(song_id)?;
         Ok(json!({ "sections": sections, "orphan_notes": orphan_notes }))
+    }
+
+    /// Persist the open song's isolation-box state (bass focus + per-stem
+    /// levels/mutes/solos) into its bundle manifest. Pure persistence — the live
+    /// engine gains are already applied by `bass_focus` / `stems.gains`. The
+    /// `song_id` is passed explicitly so a debounced save that lands after a
+    /// song switch still writes the song it was captured for.
+    fn isolation_set(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            song_id: SongId,
+            #[serde(default)]
+            bass_focus: bool,
+            #[serde(default)]
+            levels: Vec<u8>,
+            #[serde(default)]
+            mutes: Vec<bool>,
+            #[serde(default)]
+            solos: Vec<bool>,
+        }
+        let p: P = from_params(p)?;
+        self.library
+            .set_isolation(
+                p.song_id,
+                practice::model::Isolation {
+                    bass_focus: p.bass_focus,
+                    levels: p.levels,
+                    mutes: p.mutes,
+                    solos: p.solos,
+                },
+            )
+            .err_str()?;
+        Ok(json!({ "ok": true }))
     }
 
     /// Persist a section layout and rename the dynamic loops. Shared by the
