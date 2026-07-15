@@ -1,8 +1,13 @@
 // Per-song isolation state: the saved wire shape for the isolation box (bass
 // focus + per-stem levels/mutes/solos) and the pure maps between it and the
-// live `StemMix` store. Mirrors `practice::model::Isolation`. Kept as its own
-// module so the maps are unit-testable without the Tauri seams in `stores.ts`.
-import { STEM_LABELS, type StemMix } from "./stores";
+// live `StemMix` store. Mirrors `practice::model::Isolation`. A leaf module
+// (type-only dependency on `stores.ts`) so the maps are unit-testable without
+// the Tauri seams and without a runtime import cycle.
+import type { StemMix } from "./stores";
+
+// The stem vocabulary's length — matches `STEM_LABELS` in `stores.ts` and
+// `STEM_COUNT`/`STEM_NAMES` in the Rust core (vocals/drums/bass/guitar/piano/other).
+const STEM_COUNT = 6;
 
 export interface Isolation {
   bass_focus: boolean;
@@ -13,8 +18,8 @@ export interface Isolation {
 
 /** Pad/truncate `v` to the stem count, filling missing entries with `fill`. */
 function fit<T>(v: T[], fill: T): T[] {
-  const out = v.slice(0, STEM_LABELS.length);
-  while (out.length < STEM_LABELS.length) out.push(fill);
+  const out = v.slice(0, STEM_COUNT);
+  while (out.length < STEM_COUNT) out.push(fill);
   return out;
 }
 

@@ -10,6 +10,7 @@ import { setActiveIn, setCollapsed, type RegionId, type Workspace } from "./dock
 import { migrateWorkspace } from "./workspace-migrate";
 import { defaultFlow } from "./stage";
 import { deriveLoopName } from "./loop-name";
+import { isolationToStemMix, stemMixToIsolation, type Isolation } from "./isolation";
 import { meterNumerator } from "./meter";
 import { tapTempo as computeTap, clampBpm, strongMask, type TapState } from "./metronome";
 import { resolveInputDevice } from "./devices";
@@ -174,6 +175,8 @@ export interface OpenSong {
   /** Notes whose label matches no current section. Never auto-deleted. */
   orphan_notes: OrphanNote[];
   recordings: Recording[];
+  /** Saved isolation-box state (bass focus + per-stem levels/mutes/solos). */
+  isolation: Isolation;
 }
 
 /** Fixed stem order contract — mirrors `practice::model::STEM_NAMES`:
@@ -567,6 +570,7 @@ let recallMuted = false;
 
 /** Debounce handle for the volume fader's settings write-through. */
 let volumeSaveTimer: ReturnType<typeof setTimeout> | undefined;
+let isolationSaveTimer: ReturnType<typeof setTimeout> | undefined;
 
 /** Tap-tempo accumulator for the metronome's tap action. */
 let tapState: TapState = { taps: [] };
@@ -772,7 +776,19 @@ export const actions = {
       selection.set(null);
       currentLoop.set(null);
       workingLoop.set(null);
-      stemMix.set(defaultStemMix());
+      // Restore the song's saved isolation state, then push it to the engine.
+      // Stem gains only mean anything once stems are loaded; bass focus applies
+      // either way and carries its octave-up pitch trick with it. Setting these
+      // here also clears any leak from the prior song (bassFocus / octaveUp were
+      // never reset on open before).
+      const focus = data.isolation.bass_focus;
+      stemMix.set(isolationToStemMix(data.isolation));
+      bassFocus.set(focus);
+      const p = get(pitch);
+      pitch.set({ ...p, octaveUp: focus });
+      if (data.stems) void cmd("stems.gains", { gains: actions.stemGainsVector(get(stemMix)) });
+      void cmd("bass_focus", { on: focus });
+      void cmd("pitch", { semitones: p.semitones, cents: p.cents, octave_up: focus });
       activeRoutine.set(null);
       stemsError.set(null);
       analysisError.set(null);
@@ -884,6 +900,7 @@ export const actions = {
     pitch.set({ ...p, octaveUp: on });
     await cmd("bass_focus", { on });
     await cmd("pitch", { semitones: p.semitones, cents: p.cents, octave_up: on });
+    this.persistIsolation();
   },
 
   async mute(on: boolean): Promise<void> {
@@ -1263,25 +1280,44 @@ export const actions = {
     await cmd("stems.gains", { gains: this.stemGainsVector(get(stemMix)) });
   },
 
+  /** Debounced save of the live isolation state (bass focus + stem mix) to the
+   *  open song's manifest. A fader drag thus writes once, when it settles —
+   *  not once per tick. The `song_id` is captured now so a save landing after
+   *  a song switch still writes the song it was edited on. */
+  persistIsolation(): void {
+    const open = get(openSong);
+    if (!open) return;
+    const song_id = open.song.id;
+    const iso = stemMixToIsolation(get(stemMix), get(bassFocus));
+    clearTimeout(isolationSaveTimer);
+    isolationSaveTimer = setTimeout(() => {
+      void cmd("isolation.set", { song_id, ...iso });
+    }, 350);
+  },
+
   async setStemLevel(idx: number, level: number): Promise<void> {
     stemMix.update((m) => ({ ...m, levels: m.levels.map((v, i) => (i === idx ? level : v)) }));
     await this.applyStemMix();
+    this.persistIsolation();
   },
 
   async toggleStemMute(idx: number): Promise<void> {
     stemMix.update((m) => ({ ...m, mutes: m.mutes.map((v, i) => (i === idx ? !v : v)) }));
     await this.applyStemMix();
+    this.persistIsolation();
   },
 
   async toggleStemSolo(idx: number): Promise<void> {
     stemMix.update((m) => ({ ...m, solos: m.solos.map((v, i) => (i === idx ? !v : v)) }));
     await this.applyStemMix();
+    this.persistIsolation();
   },
 
   /** Restore all faders to 100% and clear every mute/solo, in one engine call. */
   async resetStemMix(): Promise<void> {
     stemMix.set(defaultStemMix());
     await this.applyStemMix();
+    this.persistIsolation();
   },
 
   // --- routines ---
