@@ -1,7 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::Result;
-use crate::model::{Analysis, Isolation, LoopRegion, Recording, Routine, Section, SectionNote, Song};
+use crate::model::{
+    Analysis, Isolation, LoopRegion, Recording, Routine, Section, SectionNote, Song,
+};
 use serde::{Deserialize, Serialize};
 
 // ── Constants ──────────────────────────────────────────────────────────────────
