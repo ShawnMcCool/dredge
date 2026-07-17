@@ -419,6 +419,9 @@ pub struct App {
     /// bass-focus). Every isolation control mutates this; the routine scheduler
     /// applies whole snapshots of it. Reset to `Mix::default()` on song open.
     current_mix: Mix,
+    /// Slot of the last snapshot applied via activate/cycle — the cycle cursor.
+    /// Transient: reset on song open, never persisted.
+    snapshot_cursor: Option<u32>,
     /// The running practice routine, if any. Advances on engine loop-wrap events
     /// (`tick`), driving the loop region / mix / rate / count-in per block.
     active_routine: Option<crate::routine::RoutineRunner>,
@@ -540,6 +543,7 @@ impl App {
             separator,
             open_song: None,
             current_mix: Mix::default(),
+            snapshot_cursor: None,
             active_routine: None,
             last_position: None,
             job_tx,
@@ -676,6 +680,10 @@ impl App {
             "marker.set" => self.marker_set(p),
             "marker.clear" => self.marker_clear(p),
             "marker.play" => self.marker_play(p),
+            "isolation.snapshot.save" => self.snapshot_save(p),
+            "isolation.snapshot.activate" => self.snapshot_activate(p),
+            "isolation.snapshot.cycle" => self.snapshot_cycle().map(|()| Value::Null),
+            "isolation.snapshot.clear" => self.snapshot_clear(p),
             "section.click.set" => self.section_click_set(p),
             "sectionclick.set" => self.section_click_enable(p),
             "loop.create" => self.loop_create(p),
@@ -2318,6 +2326,7 @@ impl App {
             "analysis": self.library.get_analysis(song_id),
             "isolation": self.library.get_isolation(song_id),
             "markers": self.library.list_markers(song_id),
+            "snapshots": self.library.list_snapshots(song_id),
             "orphan_notes": orphan_notes,
             // `recordings` is attached below, after `refresh_layers` computes
             // this song's take peaks (the views need them).
@@ -2330,6 +2339,7 @@ impl App {
         // engine loads stems at unity and the UI resets its isolation stores to
         // match, so the canonical mix tracks that. Any prior routine run ends.
         self.current_mix = Mix::default();
+        self.snapshot_cursor = None;
         self.active_routine = None;
         // The layer cache only ever holds the open song's takes, and recording
         // ids are assigned per-song (each song's takes start at 1). Clearing on
@@ -2552,6 +2562,121 @@ impl App {
         self.audio.send(EngineCmd::SeekSecs(m.pos));
         self.audio.send(EngineCmd::Play);
         Ok(())
+    }
+
+    // --- isolation snapshots -------------------------------------------------
+
+    fn push_snapshots_event(&self, song_id: SongId) {
+        let _ = self.job_tx.send(Event {
+            event: "snapshots".into(),
+            data: json!({ "song_id": song_id, "snapshots": self.library.list_snapshots(song_id) }),
+        });
+    }
+
+    fn snapshot_save(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            #[serde(default)]
+            song_id: Option<SongId>,
+            slot: u32,
+            #[serde(default)]
+            name: Option<String>,
+            /// The UI passes its live fader state; socket clients may omit it
+            /// to snapshot the persisted isolation state instead.
+            #[serde(default)]
+            state: Option<practice::model::Isolation>,
+        }
+        let p: P = from_params(p)?;
+        let song_id = self.target_song(p.song_id)?;
+        let state = p
+            .state
+            .unwrap_or_else(|| self.library.get_isolation(song_id));
+        self.library
+            .save_snapshot(song_id, p.slot, p.name, state)
+            .err_str()?;
+        self.push_snapshots_event(song_id);
+        Ok(Value::Null)
+    }
+
+    fn snapshot_clear(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            #[serde(default)]
+            song_id: Option<SongId>,
+            slot: u32,
+        }
+        let p: P = from_params(p)?;
+        let song_id = self.target_song(p.song_id)?;
+        self.library.clear_snapshot(song_id, p.slot).err_str()?;
+        self.push_snapshots_event(song_id);
+        Ok(Value::Null)
+    }
+
+    fn snapshot_activate(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            #[serde(default)]
+            song_id: Option<SongId>,
+            slot: u32,
+        }
+        let p: P = from_params(p)?;
+        self.snapshot_activate_slot(p.song_id, p.slot)?;
+        Ok(Value::Null)
+    }
+
+    fn snapshot_activate_slot(&mut self, song_id: Option<SongId>, slot: u32) -> Result<(), String> {
+        let song_id = self.target_song(song_id)?;
+        if self.open_song.as_ref().map(|o| o.song.id) != Some(song_id) {
+            return Err("song not open".into());
+        }
+        let snap = self
+            .library
+            .snapshot(song_id, slot)
+            .ok_or_else(|| format!("no snapshot in slot {slot}"))?;
+        self.apply_snapshot(song_id, slot, snap.state)
+    }
+
+    /// Persist a snapshot's state as the live isolation, drive the engine with
+    /// its resolved mix, remember the cursor, and tell clients.
+    fn apply_snapshot(
+        &mut self,
+        song_id: SongId,
+        slot: u32,
+        state: practice::model::Isolation,
+    ) -> Result<(), String> {
+        let state = state.normalized();
+        self.library
+            .set_isolation(song_id, state.clone())
+            .err_str()?;
+        self.apply_mix(Mix {
+            bass_focus: state.bass_focus,
+            stems: state.resolve_gains(),
+        });
+        self.snapshot_cursor = Some(slot);
+        let _ = self.job_tx.send(Event {
+            event: "isolation".into(),
+            data: json!({ "song_id": song_id, "isolation": state, "slot": slot }),
+        });
+        Ok(())
+    }
+
+    /// Advance to the next occupied snapshot slot (wrapping). No snapshots →
+    /// silent no-op, so a mapped pedal button on a fresh song does nothing.
+    fn snapshot_cycle(&mut self) -> Result<(), String> {
+        let song_id = self.target_song(None)?;
+        let snaps = self.library.list_snapshots(song_id);
+        let Some(first) = snaps.first().cloned() else {
+            return Ok(());
+        };
+        let next = match self.snapshot_cursor {
+            Some(cur) => snaps
+                .iter()
+                .find(|s| s.slot > cur)
+                .cloned()
+                .unwrap_or(first),
+            None => first,
+        };
+        self.apply_snapshot(song_id, next.slot, next.state)
     }
 
     /// Persist a section layout and rename the dynamic loops. Shared by the
@@ -4363,5 +4488,115 @@ mod marker_cmd_tests {
         assert!(resp.ok, "got: {:?}", resp.error);
         assert_eq!(app.library.marker(song_id, 3), None);
         assert!(app.tick().iter().any(|e| e.event == "markers"));
+    }
+}
+
+#[cfg(test)]
+mod snapshot_cmd_tests {
+    use super::mix_tests::{make_shared_mock, seed_song};
+    use super::routine_tests::app_with_song;
+    use super::*;
+    use practice::model::Isolation;
+
+    fn req(cmd: &str, params: Value) -> Request {
+        Request {
+            id: 1,
+            cmd: cmd.into(),
+            params,
+        }
+    }
+
+    fn saved(app: &mut App, song_id: SongId, slot: u32, muted_stem: usize) {
+        let mut iso = Isolation::default();
+        iso.mutes[muted_stem] = true;
+        app.library.save_snapshot(song_id, slot, None, iso).unwrap();
+    }
+
+    #[test]
+    fn save_uses_provided_state_and_emits() {
+        let (mut app, song_id) = app_with_song();
+        let mut state = Isolation::default();
+        state.levels[0] = 10;
+        let resp = app.dispatch(req(
+            "isolation.snapshot.save",
+            json!({ "song_id": song_id, "slot": 1, "state": state }),
+        ));
+        assert!(resp.ok, "got: {:?}", resp.error);
+        assert_eq!(
+            app.library.snapshot(song_id, 1).unwrap().state.levels[0],
+            10
+        );
+        assert!(app.tick().iter().any(|e| e.event == "snapshots"));
+    }
+
+    #[test]
+    fn activate_applies_mix_persists_isolation_and_emits() {
+        let (mock, mut app) = make_shared_mock();
+        let song_id = seed_song(&mut app);
+        // Stem gains are only sent when the open song has stems (apply_mix guard).
+        app.open_song = Some(OpenSong {
+            song: app.library.song_by_id(song_id).unwrap(),
+            stems: true,
+        });
+        saved(&mut app, song_id, 2, 0); // vocals muted
+        let resp = app.dispatch(req("isolation.snapshot.activate", json!({ "slot": 2 })));
+        assert!(resp.ok, "got: {:?}", resp.error);
+        assert!(app.library.get_isolation(song_id).mutes[0]);
+        let sent_has_muted_gain = {
+            let sent = &mock.lock().unwrap().sent;
+            sent.iter()
+                .any(|c| matches!(c, EngineCmd::SetStemGain { idx: 0, gain } if *gain == 0.0))
+        };
+        assert!(sent_has_muted_gain);
+        let events = app.tick();
+        let ev = events
+            .iter()
+            .find(|e| e.event == "isolation")
+            .expect("isolation event");
+        assert_eq!(ev.data["slot"], 2);
+    }
+
+    #[test]
+    fn cycle_walks_occupied_slots_and_wraps() {
+        let (mut app, song_id) = app_with_song();
+        app.open_song = Some(OpenSong {
+            song: app.library.song_by_id(song_id).unwrap(),
+            stems: false,
+        });
+        saved(&mut app, song_id, 1, 0);
+        saved(&mut app, song_id, 4, 1);
+        for expected in [1u32, 4, 1] {
+            let resp = app.dispatch(req("isolation.snapshot.cycle", json!(null)));
+            assert!(resp.ok, "got: {:?}", resp.error);
+            assert_eq!(app.snapshot_cursor, Some(expected));
+        }
+    }
+
+    #[test]
+    fn cycle_with_no_snapshots_is_a_no_op() {
+        let (mut app, song_id) = app_with_song();
+        app.open_song = Some(OpenSong {
+            song: app.library.song_by_id(song_id).unwrap(),
+            stems: false,
+        });
+        let resp = app.dispatch(req("isolation.snapshot.cycle", json!(null)));
+        assert!(resp.ok);
+        assert_eq!(app.snapshot_cursor, None);
+    }
+
+    #[test]
+    fn activate_on_a_song_that_is_not_open_errors() {
+        // Mirrors marker_play_on_a_song_that_is_not_open_errors: activation
+        // drives the live engine, so a non-open target song must be rejected.
+        let (mut app, song_id) = app_with_song();
+        saved(&mut app, song_id, 1, 0);
+        let resp = app.dispatch(req(
+            "isolation.snapshot.activate",
+            json!({ "song_id": song_id, "slot": 1 }),
+        ));
+        assert!(
+            !resp.ok,
+            "isolation.snapshot.activate must require the target song to be open"
+        );
     }
 }
