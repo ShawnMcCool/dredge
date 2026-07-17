@@ -1085,11 +1085,10 @@ mod tests {
     // ── Task 1: markers ──
 
     /// A fresh library with one indexed song, for tests that don't care about
-    /// bundle placement. The backing tempdirs are dropped (and their on-disk
-    /// dirs removed) once this returns; that's fine — `Library::persist`
-    /// recreates the bundle dir on write via `create_dir_all`, and nothing
-    /// else on the system reuses the path in the meantime.
-    fn lib_with_song() -> (Library, SongId) {
+    /// bundle placement. Returns the backing `TempDir` guards alongside —
+    /// callers must hold them for the test's duration, or their on-disk dirs
+    /// get removed out from under the library (mirrors `isolation_persists_and_reloads`).
+    fn lib_with_song() -> (Library, SongId, tempfile::TempDir, tempfile::TempDir) {
         let src_dir = tempfile::tempdir().unwrap();
         let lib_dir = tempfile::tempdir().unwrap();
         let audio_src = src_dir.path().join("orig.flac");
@@ -1099,12 +1098,12 @@ mod tests {
         let song = lib
             .create_song(&audio_src, "Markers", Some("Band"), "h", 1.0)
             .unwrap();
-        (lib, song.id)
+        (lib, song.id, src_dir, lib_dir)
     }
 
     #[test]
     fn markers_set_overwrite_clear_and_sort() {
-        let (mut lib, song_id) = lib_with_song();
+        let (mut lib, song_id, _src_dir, _lib_dir) = lib_with_song();
         lib.set_marker(song_id, 3, 30.0).unwrap();
         lib.set_marker(song_id, 1, 10.0).unwrap();
         assert_eq!(
@@ -1119,5 +1118,10 @@ mod tests {
         assert_eq!(lib.list_markers(song_id).len(), 2);
         lib.clear_marker(song_id, 1).unwrap();
         assert!(lib.marker(song_id, 1).is_none());
+
+        // on disk: the manifest carries the surviving marker
+        let dir = lib.bundle_dir(song_id).unwrap();
+        let m = bundle::read_manifest(&dir).unwrap();
+        assert_eq!(m.markers, lib.list_markers(song_id));
     }
 }
