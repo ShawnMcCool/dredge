@@ -878,6 +878,12 @@
     } else if (!d.moved) {
       const cx = canvasX(e);
       const cy = canvasY(e);
+      // a plain click dismisses only the transient drag-selection box — the active
+      // loop (working or saved) is STICKY and never cleared by a click. Clicking a
+      // *visible* saved loop's body establishes that one as active; clicking empty
+      // space (or while only the active loop shows) leaves it be — just seeks. This
+      // applies whether or not the click also lands on a marker pip below.
+      selection.set(null);
       // marker pip beats the generic seek below — clicking a numbered flag
       // jumps to that saved position instead of wherever the click landed.
       const pip = hitMarkerPip(cx, cy);
@@ -885,11 +891,6 @@
         void placePlayhead(pip.pos);
         return;
       }
-      // a plain click dismisses only the transient drag-selection box — the active
-      // loop (working or saved) is STICKY and never cleared by a click. Clicking a
-      // *visible* saved loop's body establishes that one as active; clicking empty
-      // space (or while only the active loop shows) leaves it be — just seeks.
-      selection.set(null);
       const loop = get(allLoopsVisible) ? hitLoopBody(cx, cy) : null;
       if (loop) {
         workingLoop.set(null);
