@@ -86,3 +86,23 @@ export function hitLaneSpan(
   const sec = xToSec(view, x);
   return spans.find((s) => sec >= s.start && sec <= s.end) ?? null;
 }
+
+/** Marker pip box: a numbered flag hanging right of the marker stem. */
+export const MARKER_PIP_W = 12;
+export const MARKER_PIP_H = 14;
+
+/** Marker pip under a canvas point (its flag band, just below the lane). */
+export function hitMarkerPip(
+  view: View,
+  markers: { slot: number; pos: number }[],
+  x: number,
+  y: number,
+  laneTop: number,
+): { slot: number; pos: number } | null {
+  if (y < laneTop || y > laneTop + MARKER_PIP_H) return null;
+  for (const m of markers) {
+    const mx = secToX(view, m.pos);
+    if (x >= mx - 2 && x <= mx + MARKER_PIP_W) return m;
+  }
+  return null;
+}

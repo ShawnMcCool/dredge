@@ -29,9 +29,12 @@
     hitLaneSpan as hitLane,
     hitLoopBody as hitBody,
     hitLoopEdge as hitEdge,
+    hitMarkerPip as hitPip,
     laneSpans,
     nearestLoopEdge as nearestEdge,
     spanAtTime as spanAt,
+    MARKER_PIP_H,
+    MARKER_PIP_W,
     type LaneSpan,
     type LoopEdge,
   } from "../lib/waveform-hit";
@@ -457,6 +460,24 @@
       ctx.setLineDash([]);
     }
 
+    // marker pips — numbered pedal-marker flags hanging just below the section
+    // lane, drawn before the playhead so the playhead line stays on top when
+    // they coincide. save/restore: font/baseline here are its own, and the
+    // structure-lane text pass below relies on the canvas-default baseline.
+    ctx.save();
+    ctx.font = "8px " + c.mono;
+    ctx.textBaseline = "top";
+    for (const m of open.markers) {
+      const x = secToX(view, m.pos);
+      if (x < -MARKER_PIP_W || x > w + MARKER_PIP_W) continue;
+      ctx.fillStyle = c.accent;
+      ctx.fillRect(x, LANE_H, 1, MARKER_PIP_H); // stem
+      ctx.fillRect(x, LANE_H, MARKER_PIP_W, 10); // flag
+      ctx.fillStyle = c.bg;
+      ctx.fillText(String(m.slot), x + 3, LANE_H + 1);
+    }
+    ctx.restore();
+
     // playhead — 1 px white line (its own colour, not the accent, so it reads
     // apart from the loop/selection). Spans only the waveform body: it starts at
     // the bottom of the section-header lane and never runs up into it.
@@ -698,6 +719,12 @@
     return open ? hitLane(spansFor(open), view, x, y, LANE_H) : null;
   }
 
+  /** Marker pip under a canvas point (numbered flag, just below the lane). */
+  function hitMarkerPip(x: number, y: number): { slot: number; pos: number } | null {
+    const open = get(openSong);
+    return open ? hitPip(view, open.markers, x, y, LANE_H) : null;
+  }
+
   function onPointerDown(e: PointerEvent) {
     if (!get(openSong)) return;
     const x = canvasX(e);
@@ -850,12 +877,20 @@
       }
     } else if (!d.moved) {
       const cx = canvasX(e);
+      const cy = canvasY(e);
+      // marker pip beats the generic seek below — clicking a numbered flag
+      // jumps to that saved position instead of wherever the click landed.
+      const pip = hitMarkerPip(cx, cy);
+      if (pip) {
+        void placePlayhead(pip.pos);
+        return;
+      }
       // a plain click dismisses only the transient drag-selection box — the active
       // loop (working or saved) is STICKY and never cleared by a click. Clicking a
       // *visible* saved loop's body establishes that one as active; clicking empty
       // space (or while only the active loop shows) leaves it be — just seeks.
       selection.set(null);
-      const loop = get(allLoopsVisible) ? hitLoopBody(cx, canvasY(e)) : null;
+      const loop = get(allLoopsVisible) ? hitLoopBody(cx, cy) : null;
       if (loop) {
         workingLoop.set(null);
         currentLoop.set(loop);

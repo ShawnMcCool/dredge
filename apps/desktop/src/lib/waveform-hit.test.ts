@@ -4,6 +4,7 @@ import {
   hitLaneSpan,
   hitLoopBody,
   hitLoopEdge,
+  hitMarkerPip,
   laneSpans,
   nearestLoopEdge,
   spanAtTime,
@@ -91,6 +92,26 @@ describe("hitLaneSpan", () => {
   it("returns the span under the point inside the lane band", () => {
     // x=50 (sec 5), y in lane band
     expect(hitLaneSpan(spans, view, 50, 5, LANE_H)?.start).toBe(0);
+  });
+});
+
+describe("hitMarkerPip", () => {
+  const markers = [
+    { slot: 1, pos: 10 },
+    { slot: 2, pos: 50 },
+  ];
+
+  it("hits a pip within its box", () => {
+    // marker 2 at x=500; pip box extends right from the stem
+    expect(hitMarkerPip(view, markers, 503, 24 + 4, 24)?.slot).toBe(2);
+  });
+
+  it("misses outside the pip band", () => {
+    expect(hitMarkerPip(view, markers, 503, 80, 24)).toBeNull();
+  });
+
+  it("misses horizontally", () => {
+    expect(hitMarkerPip(view, markers, 300, 24 + 4, 24)).toBeNull();
   });
 });
 
