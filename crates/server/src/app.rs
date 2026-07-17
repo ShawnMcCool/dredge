@@ -424,6 +424,9 @@ pub struct App {
     /// that's since been cleared; `snapshot_cycle` doesn't validate it, it
     /// just advances past it to the next occupied slot.
     snapshot_cursor: Option<u32>,
+    /// Engine loop region as last commanded (loop.set / routine block), for the
+    /// pedal's restart action. The engine owns the truth; this mirrors it.
+    current_loop: Option<(f64, f64)>,
     /// The running practice routine, if any. Advances on engine loop-wrap events
     /// (`tick`), driving the loop region / mix / rate / count-in per block.
     active_routine: Option<crate::routine::RoutineRunner>,
@@ -546,6 +549,7 @@ impl App {
             open_song: None,
             current_mix: Mix::default(),
             snapshot_cursor: None,
+            current_loop: None,
             active_routine: None,
             last_position: None,
             job_tx,
@@ -686,6 +690,7 @@ impl App {
             "isolation.snapshot.activate" => self.snapshot_activate(p),
             "isolation.snapshot.cycle" => self.snapshot_cycle().map(|()| Value::Null),
             "isolation.snapshot.clear" => self.snapshot_clear(p),
+            "pedal.trigger" => self.pedal_trigger(p),
             "section.click.set" => self.section_click_set(p),
             "sectionclick.set" => self.section_click_enable(p),
             "loop.create" => self.loop_create(p),
@@ -704,7 +709,10 @@ impl App {
             "rate" => self.rate(p),
             "volume" => self.volume(p),
             "loop.set" => self.loop_set(p),
-            "loop.clear" => self.send_ok(EngineCmd::ClearLoop),
+            "loop.clear" => {
+                self.current_loop = None;
+                self.send_ok(EngineCmd::ClearLoop)
+            }
             "bass_focus" => self.bass_focus(p),
             "mix.get" => serde_json::to_value(self.current_mix()).err_str(),
             "mix.set" => self.mix_set(p),
@@ -877,6 +885,7 @@ impl App {
             end: f64,
         }
         let p: P = from_params(p)?;
+        self.current_loop = Some((p.start, p.end));
         self.send_ok(EngineCmd::SetLoopSecs {
             start: p.start,
             end: p.end,
@@ -2342,6 +2351,7 @@ impl App {
         // match, so the canonical mix tracks that. Any prior routine run ends.
         self.current_mix = Mix::default();
         self.snapshot_cursor = None;
+        self.current_loop = None;
         self.active_routine = None;
         // The layer cache only ever holds the open song's takes, and recording
         // ids are assigned per-song (each song's takes start at 1). Clearing on
@@ -2507,7 +2517,8 @@ impl App {
             pos: Option<f64>,
         }
         let p: P = from_params(p)?;
-        self.marker_set_slot(p.song_id, p.slot, p.pos)
+        self.marker_set_slot(p.song_id, p.slot, p.pos)?;
+        Ok(Value::Null)
     }
 
     fn marker_set_slot(
@@ -2515,12 +2526,12 @@ impl App {
         song_id: Option<SongId>,
         slot: u32,
         pos: Option<f64>,
-    ) -> Result<Value, String> {
+    ) -> Result<(), String> {
         let song_id = self.target_song(song_id)?;
         let pos = pos.unwrap_or_else(|| self.last_position.map(|p| p.0).unwrap_or(0.0));
         self.library.set_marker(song_id, slot, pos).err_str()?;
         self.push_markers_event(song_id);
-        Ok(Value::Null)
+        Ok(())
     }
 
     fn marker_clear(&mut self, p: Value) -> Result<Value, String> {
@@ -2684,6 +2695,58 @@ impl App {
             None => first,
         };
         self.apply_snapshot(song_id, next.slot, next.state)
+    }
+
+    // --- pedal --------------------------------------------------------------
+
+    fn pedal_trigger(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            trigger: String,
+        }
+        let p: P = from_params(p)?;
+        self.run_trigger(&p.trigger)?;
+        Ok(Value::Null)
+    }
+
+    /// Look a normalized MIDI trigger up in the pedal mapping and run its
+    /// action. Unmapped triggers are fine (Ok); a mapped action that can't run
+    /// (no marker in slot, no song open) is an error.
+    fn run_trigger(&mut self, trigger: &str) -> Result<(), String> {
+        let mapping = self
+            .store
+            .get_setting(crate::pedal::PEDAL_MAPPING_KEY)
+            .ok()
+            .flatten()
+            .map(|v| crate::pedal::parse_mapping(&v))
+            .unwrap_or_default();
+        let Some(b) = mapping.into_iter().find(|b| b.trigger == trigger) else {
+            return Ok(());
+        };
+        let slot = b
+            .slot
+            .ok_or_else(|| format!("pedal action {} needs a slot", b.action));
+        match b.action.as_str() {
+            "play_pause" => {
+                let playing = self.last_position.map(|p| p.2).unwrap_or(false);
+                self.audio.send(if playing {
+                    EngineCmd::Pause
+                } else {
+                    EngineCmd::Play
+                });
+                Ok(())
+            }
+            "restart_loop" => {
+                let start = self.current_loop.map(|(s, _)| s).unwrap_or(0.0);
+                self.audio.send(EngineCmd::SeekSecs(start));
+                Ok(())
+            }
+            "play_marker" => self.marker_play_slot(None, slot?),
+            "set_marker" => self.marker_set_slot(None, slot?, None),
+            "activate_snapshot" => self.snapshot_activate_slot(None, slot?),
+            "cycle_snapshots" => self.snapshot_cycle(),
+            other => Err(format!("unknown pedal action: {other}")),
+        }
     }
 
     /// Persist a section layout and rename the dynamic loops. Shared by the
@@ -3032,6 +3095,7 @@ impl App {
     /// passed by value (cloned out of the runner) to keep the borrow clean.
     fn apply_block(&mut self, song_id: SongId, block: &Block) {
         let start = self.lead_in_start(song_id, block);
+        self.current_loop = Some((start, block.span.end));
         self.audio.send(EngineCmd::SetLoopSecs {
             start,
             end: block.span.end,
@@ -4633,5 +4697,124 @@ mod snapshot_cmd_tests {
         ));
         assert!(resp.ok, "got: {:?}", resp.error);
         assert_eq!(app.library.snapshot(song_id, 1).unwrap().state, iso);
+    }
+}
+
+#[cfg(test)]
+mod pedal_trigger_tests {
+    use super::mix_tests::{make_shared_mock, seed_song};
+    use super::*;
+
+    fn req(cmd: &str, params: Value) -> Request {
+        Request {
+            id: 1,
+            cmd: cmd.into(),
+            params,
+        }
+    }
+
+    fn with_mapping(app: &mut App, mapping: Value) {
+        app.store
+            .set_setting(crate::pedal::PEDAL_MAPPING_KEY, &mapping)
+            .unwrap();
+    }
+
+    #[test]
+    fn play_pause_toggles_on_transport_state() {
+        let (mock, mut app) = make_shared_mock();
+        with_mapping(
+            &mut app,
+            json!([{ "trigger": "pc:0:0", "action": "play_pause" }]),
+        );
+        app.last_position = Some((0.0, 1.0, false, None)); // paused
+        let resp = app.dispatch(req("pedal.trigger", json!({ "trigger": "pc:0:0" })));
+        assert!(resp.ok, "got: {:?}", resp.error);
+        assert!(mock
+            .lock()
+            .unwrap()
+            .sent
+            .iter()
+            .any(|c| matches!(c, EngineCmd::Play)));
+
+        app.last_position = Some((5.0, 1.0, true, None)); // playing
+        app.dispatch(req("pedal.trigger", json!({ "trigger": "pc:0:0" })));
+        assert!(mock
+            .lock()
+            .unwrap()
+            .sent
+            .iter()
+            .any(|c| matches!(c, EngineCmd::Pause)));
+    }
+
+    #[test]
+    fn restart_loop_seeks_to_tracked_loop_start() {
+        let (mock, mut app) = make_shared_mock();
+        with_mapping(
+            &mut app,
+            json!([{ "trigger": "pc:0:1", "action": "restart_loop" }]),
+        );
+        app.dispatch(req("loop.set", json!({ "start": 8.0, "end": 16.0 })));
+        app.dispatch(req("pedal.trigger", json!({ "trigger": "pc:0:1" })));
+        assert!(mock
+            .lock()
+            .unwrap()
+            .sent
+            .iter()
+            .any(|c| matches!(c, EngineCmd::SeekSecs(s) if *s == 8.0)));
+        // loop.clear drops the tracked region -> restart seeks 0
+        app.dispatch(req("loop.clear", json!(null)));
+        mock.lock().unwrap().sent.clear();
+        app.dispatch(req("pedal.trigger", json!({ "trigger": "pc:0:1" })));
+        assert!(mock
+            .lock()
+            .unwrap()
+            .sent
+            .iter()
+            .any(|c| matches!(c, EngineCmd::SeekSecs(s) if *s == 0.0)));
+    }
+
+    #[test]
+    fn slot_actions_route_to_their_commands() {
+        let (mock, mut app) = make_shared_mock();
+        let song_id = seed_song(&mut app);
+        app.open_song = Some(OpenSong {
+            song: app.library.song_by_id(song_id).unwrap(),
+            stems: false,
+        });
+        app.library.set_marker(song_id, 3, 30.0).unwrap();
+        with_mapping(
+            &mut app,
+            json!([{ "trigger": "pc:0:2", "action": "play_marker", "slot": 3 }]),
+        );
+        let resp = app.dispatch(req("pedal.trigger", json!({ "trigger": "pc:0:2" })));
+        assert!(resp.ok, "got: {:?}", resp.error);
+        assert!(mock
+            .lock()
+            .unwrap()
+            .sent
+            .iter()
+            .any(|c| matches!(c, EngineCmd::SeekSecs(s) if *s == 30.0)));
+    }
+
+    #[test]
+    fn unmapped_trigger_is_a_no_op() {
+        let (_, mut app) = make_shared_mock();
+        let resp = app.dispatch(req("pedal.trigger", json!({ "trigger": "pc:0:9" })));
+        assert!(
+            resp.ok,
+            "unmapped triggers must not error: {:?}",
+            resp.error
+        );
+    }
+
+    #[test]
+    fn slot_action_without_slot_errors() {
+        let (_, mut app) = make_shared_mock();
+        with_mapping(
+            &mut app,
+            json!([{ "trigger": "pc:0:3", "action": "play_marker" }]),
+        );
+        let resp = app.dispatch(req("pedal.trigger", json!({ "trigger": "pc:0:3" })));
+        assert!(!resp.ok);
     }
 }
