@@ -821,6 +821,7 @@ export const actions = {
       void cmd("bass_focus", { on: focus });
       void cmd("pitch", { semitones: p.semitones, cents: p.cents, octave_up: focus });
       activeRoutine.set(null);
+      activeSnapshotSlot.set(null);
       stemsError.set(null);
       analysisError.set(null);
       recordings.set(data.recordings ?? []);
@@ -1846,6 +1847,9 @@ export async function initEvents(): Promise<() => void> {
         const d = ev.data as { song_id: number; isolation: Isolation; slot: number | null };
         const open = get(openSong);
         if (!open || open.song.id !== d.song_id) break;
+        // Cancel any pending debounced persist — it captured pre-snapshot state
+        // and would otherwise clobber what the server just applied and saved.
+        clearTimeout(isolationSaveTimer);
         stemMix.set(isolationToStemMix(d.isolation));
         bassFocus.set(d.isolation.bass_focus);
         activeSnapshotSlot.set(d.slot);
