@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::Result;
 use crate::model::{
-    Analysis, Isolation, LoopRegion, Recording, Routine, Section, SectionNote, Song,
+    Analysis, Isolation, LoopRegion, Marker, Recording, Routine, Section, SectionNote, Song,
 };
 use serde::{Deserialize, Serialize};
 
@@ -42,6 +42,8 @@ pub struct BundleManifest {
     pub routines: Vec<Routine>,
     #[serde(default)]
     pub isolation: Isolation,
+    #[serde(default)]
+    pub markers: Vec<Marker>,
 }
 
 // ── slug ───────────────────────────────────────────────────────────────────────
@@ -137,6 +139,7 @@ pub fn scan_library(root: &Path) -> Result<Vec<(PathBuf, BundleManifest)>> {
 mod tests {
     use super::*;
     use crate::model::{LoopId, LoopKind, SongId};
+    use serde_json::Value;
 
     // ── helpers ──
 
@@ -170,6 +173,7 @@ mod tests {
             recordings: vec![],
             routines: vec![],
             isolation: Isolation::default(),
+            markers: vec![],
         }
     }
 
@@ -304,5 +308,16 @@ mod tests {
         let missing = root.path().join("nonexistent");
         let found = scan_library(&missing).unwrap();
         assert!(found.is_empty());
+    }
+
+    // ── Task 1: markers ──
+
+    #[test]
+    fn manifest_without_markers_defaults_empty() {
+        let json = serde_json::to_value(sample_manifest()).unwrap();
+        let mut obj = json.as_object().unwrap().clone();
+        obj.remove("markers");
+        let m: BundleManifest = serde_json::from_value(Value::Object(obj)).unwrap();
+        assert!(m.markers.is_empty());
     }
 }

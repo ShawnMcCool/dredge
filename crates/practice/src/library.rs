@@ -182,6 +182,7 @@ impl Library {
             recordings: vec![],
             routines: vec![],
             isolation: Isolation::default(),
+            markers: vec![],
         };
         bundle::write_manifest(&dir, &manifest)?;
         self.entries.insert(song.id.0, Entry { dir, manifest });
@@ -468,6 +469,46 @@ impl Library {
             .unwrap_or_default()
     }
 
+    // ── markers ────────────────────────────────────────────────────────────────
+
+    pub fn list_markers(&self, song_id: SongId) -> Vec<Marker> {
+        self.entries
+            .get(&song_id.0)
+            .map(|e| e.manifest.markers.clone())
+            .unwrap_or_default()
+    }
+
+    pub fn marker(&self, song_id: SongId, slot: u32) -> Option<Marker> {
+        self.entries
+            .get(&song_id.0)?
+            .manifest
+            .markers
+            .iter()
+            .copied()
+            .find(|m| m.slot == slot)
+    }
+
+    /// Set (or overwrite) the marker in `slot`. Kept sorted by slot.
+    pub fn set_marker(&mut self, song_id: SongId, slot: u32, pos: f64) -> Result<Marker> {
+        let entry = self.entry_mut(song_id)?;
+        let m = Marker { slot, pos };
+        match entry.manifest.markers.iter_mut().find(|x| x.slot == slot) {
+            Some(x) => *x = m,
+            None => {
+                entry.manifest.markers.push(m);
+                entry.manifest.markers.sort_by_key(|x| x.slot);
+            }
+        }
+        Self::persist(entry)?;
+        Ok(m)
+    }
+
+    pub fn clear_marker(&mut self, song_id: SongId, slot: u32) -> Result<()> {
+        let entry = self.entry_mut(song_id)?;
+        entry.manifest.markers.retain(|m| m.slot != slot);
+        Self::persist(entry)
+    }
+
     // ── analysis ───────────────────────────────────────────────────────────────
 
     pub fn has_analysis(&self, song_id: SongId) -> bool {
@@ -589,6 +630,7 @@ mod tests {
                 recordings: vec![],
                 routines: vec![],
                 isolation: Isolation::default(),
+                markers: vec![],
             };
             bundle::write_manifest(&bundle_dir, &manifest).unwrap();
         }
@@ -668,6 +710,7 @@ mod tests {
             recordings: vec![],
             routines: vec![],
             isolation: Isolation::default(),
+            markers: vec![],
         };
         bundle::write_manifest(&bundle_dir, &manifest).unwrap();
 
@@ -1037,5 +1080,44 @@ mod tests {
             .unwrap();
 
         assert_eq!(lib.get_isolation(song.id), Isolation::default());
+    }
+
+    // ── Task 1: markers ──
+
+    /// A fresh library with one indexed song, for tests that don't care about
+    /// bundle placement. The backing tempdirs are dropped (and their on-disk
+    /// dirs removed) once this returns; that's fine — `Library::persist`
+    /// recreates the bundle dir on write via `create_dir_all`, and nothing
+    /// else on the system reuses the path in the meantime.
+    fn lib_with_song() -> (Library, SongId) {
+        let src_dir = tempfile::tempdir().unwrap();
+        let lib_dir = tempfile::tempdir().unwrap();
+        let audio_src = src_dir.path().join("orig.flac");
+        std::fs::write(&audio_src, b"X").unwrap();
+
+        let mut lib = Library::load(lib_dir.path().to_path_buf()).unwrap();
+        let song = lib
+            .create_song(&audio_src, "Markers", Some("Band"), "h", 1.0)
+            .unwrap();
+        (lib, song.id)
+    }
+
+    #[test]
+    fn markers_set_overwrite_clear_and_sort() {
+        let (mut lib, song_id) = lib_with_song();
+        lib.set_marker(song_id, 3, 30.0).unwrap();
+        lib.set_marker(song_id, 1, 10.0).unwrap();
+        assert_eq!(
+            lib.list_markers(song_id)
+                .iter()
+                .map(|m| m.slot)
+                .collect::<Vec<_>>(),
+            vec![1, 3]
+        );
+        lib.set_marker(song_id, 3, 33.0).unwrap(); // overwrite, not duplicate
+        assert_eq!(lib.marker(song_id, 3).unwrap().pos, 33.0);
+        assert_eq!(lib.list_markers(song_id).len(), 2);
+        lib.clear_marker(song_id, 1).unwrap();
+        assert!(lib.marker(song_id, 1).is_none());
     }
 }

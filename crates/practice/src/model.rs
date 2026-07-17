@@ -153,6 +153,15 @@ impl Isolation {
     }
 }
 
+/// A numbered per-song position marker (seconds). Slots are stable handles the
+/// global pedal mapping points at ("play from marker 2"); the number is the
+/// identity, not an ordering of creation.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Marker {
+    pub slot: u32,
+    pub pos: f64,
+}
+
 /// An overdub take: your own input recorded over one pass of a span, held as an
 /// additive layer. Audio lives at `<bundle>/recordings/<file>`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -418,5 +427,17 @@ mod isolation_tests {
         let s = serde_json::to_string(&i).unwrap();
         let back: Isolation = serde_json::from_str(&s).unwrap();
         assert_eq!(i, back);
+    }
+}
+
+#[cfg(test)]
+mod marker_tests {
+    use super::*;
+
+    #[test]
+    fn marker_round_trips() {
+        let m = Marker { slot: 2, pos: 92.5 };
+        let s = serde_json::to_string(&m).unwrap();
+        assert_eq!(serde_json::from_str::<Marker>(&s).unwrap(), m);
     }
 }
