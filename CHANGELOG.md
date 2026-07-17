@@ -3,6 +3,12 @@
 All notable user-facing changes to dredge, newest first. Entries are written
 at release time by `scripts/ship release`.
 
+## v0.14.1 — 2026-07-17
+
+### Fixed
+
+- **Downloads now build.** v0.14.0's Linux build was missing a required audio library on the build server, so its downloads never published. This release fixes the build — it includes everything listed under v0.14.0.
+
 ## v0.14.0 — 2026-07-17
 
 ### New
