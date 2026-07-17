@@ -105,9 +105,9 @@ an existing dispatcher command:
 
 Future actions are one registry entry each.
 
-**Learn flow.** The server pushes `midi.event {trigger}` to clients on every
-incoming pedal event (footswitch rates are trivial). The UI's learn button
-arms itself and takes the next event. No server-side learn state.
+**Learn flow.** The server pushes a `midi` event (`{trigger}`) to clients on
+every incoming pedal event (footswitch rates are trivial). The UI's learn
+button arms itself and takes the next event. No server-side learn state.
 
 **UI.** New **pedal tab** in the dock (`TAB_VIEWS` in `App.svelte`):
 connected-device status, mapping rows (trigger chip · action picker · param
