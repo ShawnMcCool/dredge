@@ -70,7 +70,14 @@ impl Stretcher {
 
     /// Pull up to out.len()/2 frames, interleaved; returns frames written.
     pub fn pull(&mut self, out: &mut [f32]) -> usize {
-        let want = (out.len() / CHANNELS).min(BLOCK_FRAMES);
+        // Never ask RB to retrieve more than it has buffered: on the pause
+        // fade-out the pipeline pulls without feeding, and an over-request makes
+        // librubberband's internal ring buffer log "N requested, only M
+        // available" to stderr. Clamping is a no-op during normal playback,
+        // where the feed loop guarantees available() >= the block.
+        let want = (out.len() / CHANNELS)
+            .min(BLOCK_FRAMES)
+            .min(self.available());
         if want == 0 {
             return 0;
         }
