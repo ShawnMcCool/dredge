@@ -552,7 +552,13 @@ export const loopsOpen = writable(false);
 
 // --- prepare flow -----------------------------------------------------------
 
-export type PrepareStepState = "pending" | "running" | "done" | "failed" | "cached";
+export type PrepareStepState =
+  | "pending"
+  | "running"
+  | "done"
+  | "failed"
+  | "cached"
+  | "cancelled";
 
 export interface PrepareState {
   open: boolean;
@@ -571,6 +577,8 @@ type ProgressReport = { song_id: number; state: string; error?: string };
  *  is then handled by prepare's own refresh instead of the default branch. */
 const prepareWaiters: Partial<Record<PrepareStep, (r: ProgressReport) => void>> = {};
 let prepareSongId: number | null = null;
+/** Set by `cancelPrepare()`; `prepare()` reads it to skip later steps. */
+let prepareCancelled = false;
 
 function setPrepareStep(step: PrepareStep, state: PrepareStepState, error?: string): void {
   prepareState.update((s) =>
@@ -1567,6 +1575,7 @@ export const actions = {
     if (!open || get(prepareState)) return;
     const id = open.song.id;
     prepareSongId = id;
+    prepareCancelled = false;
     prepareState.set({
       open: true,
       song_id: id,
@@ -1595,6 +1604,7 @@ export const actions = {
         }
         const r = await report;
         if (r.state === "done") setPrepareStep(step, "done");
+        else if (r.state === "cancelled") setPrepareStep(step, "cancelled");
         else setPrepareStep(step, "failed", r.error ?? `${step} failed`);
       } catch (e) {
         // shown verbatim: install/setup hints ride on the error message
@@ -1604,19 +1614,28 @@ export const actions = {
     };
 
     // Both steps are cached by default; each force flag invalidates its own
-    // cache (fresh SongFormer sections / re-separated stems) independently.
+    // cache (fresh SongFormer sections / re-separated stems) independently. A
+    // stop during analysis skips the stems step entirely.
     await run("analysis", "analysis.run", forceAnalysis ? { force: true } : {});
-    await run("stems", "stems.separate", forceStems ? { force: true } : {});
+    if (!prepareCancelled) {
+      await run("stems", "stems.separate", forceStems ? { force: true } : {});
+    }
     prepareSongId = null;
 
     // refresh exactly as the scattered flows did: re-open auto-loads cached
-    // stems + analysis, loadAnalysis surfaces the section suggestions
+    // stems + analysis, loadAnalysis surfaces the section suggestions. A step
+    // that finished before the stop keeps its result, so this still runs.
     if (get(openSong)?.song.id === id) {
       await this.openSong(id);
       const s = get(prepareState);
       if (s && (s.steps.analysis === "done" || s.steps.analysis === "cached")) {
         await this.loadAnalysis(id);
       }
+    }
+    // a stop closes the modal straight away — nothing to linger over
+    if (prepareCancelled) {
+      this.closePrepare();
+      return;
     }
     const s = get(prepareState);
     const ok = (st: PrepareStepState) => st === "done" || st === "cached";
@@ -1625,6 +1644,14 @@ export const actions = {
       setTimeout(() => { prepareState.set(null); workSample.set(null); vram.set(null); }, 1500);
     }
     // failures leave the modal open with its close button
+  },
+
+  /** Stop the in-flight prepare: skip any later step and kill the running
+   *  subprocess server-side. Completed steps keep their results. */
+  cancelPrepare(): void {
+    if (prepareSongId == null) return;
+    prepareCancelled = true;
+    void cmd("prepare.cancel", { song_id: prepareSongId });
   },
 
   closePrepare(): void {

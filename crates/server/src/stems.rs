@@ -9,12 +9,14 @@ pub use practice::model::STEM_NAMES;
 
 pub trait StemSeparator: Send + Sync {
     /// Blocking; writes `<out_dir>/<stem>.wav` for every stem, returns
-    /// their paths in STEM_NAMES order.
+    /// their paths in STEM_NAMES order. `cancel` can kill the subprocess
+    /// mid-run (returns `Err("cancelled")`).
     fn separate(
         &self,
         audio: &Path,
         out_dir: &Path,
         force_cpu: bool,
+        cancel: &crate::proc::CancelToken,
     ) -> Result<Vec<PathBuf>, String>;
     fn is_available(&self) -> bool;
 }
@@ -69,6 +71,7 @@ impl StemSeparator for DemucsSeparator {
         audio: &Path,
         out_dir: &Path,
         force_cpu: bool,
+        cancel: &crate::proc::CancelToken,
     ) -> Result<Vec<PathBuf>, String> {
         std::fs::create_dir_all(out_dir)
             .map_err(|e| format!("cannot create {}: {e}", out_dir.display()))?;
@@ -84,10 +87,13 @@ impl StemSeparator for DemucsSeparator {
         if force_cpu {
             cmd.env("CUDA_VISIBLE_DEVICES", "");
         }
-        die_with_parent(&mut cmd);
-        let output = cmd
-            .output()
-            .map_err(|e| format!("failed to run {}: {e}", bin.display()))?;
+        let output = match crate::proc::run_cancellable(cmd, cancel) {
+            crate::proc::Outcome::Done(o) => o,
+            crate::proc::Outcome::Cancelled => return Err("cancelled".into()),
+            crate::proc::Outcome::Err(e) => {
+                return Err(format!("failed to run {}: {e}", bin.display()))
+            }
+        };
         let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
         if !output.status.success() {
             return Err(format!(
@@ -225,6 +231,7 @@ impl StemSeparator for FakeSeparator {
         audio: &Path,
         out_dir: &Path,
         _force_cpu: bool,
+        _cancel: &crate::proc::CancelToken,
     ) -> Result<Vec<PathBuf>, String> {
         let buf = engine::decode::decode_file(audio).map_err(|e| e.to_string())?;
         std::fs::create_dir_all(out_dir).map_err(|e| e.to_string())?;
@@ -362,7 +369,12 @@ mod tests {
         // force_cpu=true → env present → stub exits 9 (not 7); separate returns Err
         // whose message contains the exit code, proving the env was set.
         let err = sep
-            .separate(Path::new("/tmp/a.mp3"), &out, true)
+            .separate(
+                Path::new("/tmp/a.mp3"),
+                &out,
+                true,
+                &crate::proc::CancelToken::default(),
+            )
             .unwrap_err();
         assert!(err.contains("9"), "force_cpu must set the env: {err}");
     }
@@ -381,7 +393,9 @@ mod tests {
         engine::capture::write_wav(&src, &samples).unwrap();
 
         let out_dir = dir.path().join("stems");
-        let paths = FakeSeparator.separate(&src, &out_dir, false).unwrap();
+        let paths = FakeSeparator
+            .separate(&src, &out_dir, false, &crate::proc::CancelToken::default())
+            .unwrap();
         assert_eq!(paths.len(), STEM_NAMES.len());
 
         let rms = |data: &[f32]| -> f64 {

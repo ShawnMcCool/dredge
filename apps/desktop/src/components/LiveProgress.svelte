@@ -1,6 +1,7 @@
 <script lang="ts">
   import { fmtElapsed } from "../lib/format";
-  import { prepareState, workSample, vram, type PrepareStepState } from "../lib/stores";
+  import { actions, prepareState, workSample, vram, type PrepareStepState } from "../lib/stores";
+  import Button from "../lib/ui/Button.svelte";
   import TraceMeter from "../lib/ui/TraceMeter.svelte";
 
   const STEPS = [
@@ -9,8 +10,17 @@
   ] as const;
 
   const GLYPHS: Record<PrepareStepState, string> = {
-    pending: "·", running: "◌", done: "✓", cached: "✓", failed: "✗",
+    pending: "·", running: "◌", done: "✓", cached: "✓", failed: "✗", cancelled: "⊘",
   };
+
+  // A run in flight can be stopped; a run that ended on a failure needs a way
+  // out (the modal blocks the CTA underneath until it clears).
+  let running = $derived(
+    $prepareState != null && STEPS.some((s) => $prepareState!.steps[s.key] === "running"),
+  );
+  let failed = $derived(
+    $prepareState != null && STEPS.some((s) => $prepareState!.steps[s.key] === "failed"),
+  );
 
   // Per-metric run history. workSample is instantaneous, so we accumulate here;
   // the component unmounts when prepareState clears between runs, so these
@@ -54,7 +64,7 @@
       {@const s = $prepareState.steps[step.key]}
       {@const active = $workSample && $workSample.op === step.op && s === "running"}
       <div class="step">
-        <span class="glyph mono" class:running={s === "running"} class:done={s === "done" || s === "cached"} class:failed={s === "failed"}>{GLYPHS[s]}</span>
+        <span class="glyph mono" class:running={s === "running"} class:done={s === "done" || s === "cached"} class:failed={s === "failed"} class:cancelled={s === "cancelled"}>{GLYPHS[s]}</span>
         <span class="name">{step.label}</span>
         <span class="model mono">· {step.model}</span>
         {#if active}
@@ -100,6 +110,16 @@
         </div>
       </div>
     {/if}
+
+    {#if running}
+      <div class="actions">
+        <Button variant="chip" onclick={() => actions.cancelPrepare()}>Stop</Button>
+      </div>
+    {:else if failed}
+      <div class="actions">
+        <Button variant="chip" onclick={() => actions.closePrepare()}>Close</Button>
+      </div>
+    {/if}
   </section>
 {/if}
 
@@ -111,6 +131,7 @@
   .glyph.running { color: var(--accent); animation: pulse 1s ease-in-out infinite; }
   .glyph.done { color: var(--solid); }
   .glyph.failed { color: var(--miss); }
+  .glyph.cancelled { color: var(--muted); }
   .name { font-size: 13px; white-space: nowrap; }
   .model { font-size: 10px; color: var(--muted); white-space: nowrap; }
   .stage { font-size: 11px; color: var(--accent); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -119,6 +140,8 @@
   /* a failure's message gets its own full-width line under the step, aligned
      with the step name, so long install hints wrap as readable prose */
   .error { color: var(--miss); font-size: 11px; line-height: 1.5; margin: 0 0 6px calc(1.2em + var(--space)); }
+
+  .actions { display: flex; justify-content: flex-end; margin-top: var(--space); }
 
   .meters { display: flex; flex-direction: column; gap: 16px; margin: 8px 0 4px 1.2em; min-width: 0; }
   .pair { display: flex; flex-direction: column; gap: 8px; min-width: 0; }

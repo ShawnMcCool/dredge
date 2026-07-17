@@ -1,5 +1,6 @@
 use crate::analysis::Analyzer;
 use crate::control::AudioControl;
+use crate::proc::CancelToken;
 use crate::protocol::{Event, Request, Response};
 use crate::sampler::{SharedWork, WorkReporter, WorkSample};
 use crate::stems::{StemSeparator, STEM_NAMES};
@@ -15,10 +16,18 @@ use practice::notes::NotesDoc;
 use practice::store::Store;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
+
+/// What a finished analysis worker hands back to `tick`. `Cancelled` is distinct
+/// from `Failed` so a user stop is neither cached nor surfaced as an error.
+enum AnalysisOutcome {
+    Done(Analysis),
+    Failed(String),
+    Cancelled,
+}
 
 /// Map any displayable error onto the protocol's String error channel.
 trait ErrStr<T> {
@@ -434,18 +443,20 @@ pub struct App {
     /// Background-job events (stem separation); drained by `tick()`.
     job_tx: mpsc::Sender<Event>,
     job_rx: mpsc::Receiver<Event>,
-    /// Song ids with a separation thread in flight.
-    separating: Arc<Mutex<HashSet<i64>>>,
+    /// Song ids with a separation thread in flight, each with the token that
+    /// stops it (`prepare.cancel`).
+    separating: Arc<Mutex<HashMap<i64, CancelToken>>>,
     /// Set true to ask the in-flight export render to stop. One export at a
     /// time: a new `export.start` replaces (and cancels) any prior one.
     export_cancel: Arc<AtomicBool>,
     analyzer: Arc<dyn Analyzer>,
     /// Finished analyses; drained by `tick()`, which persists them (the
     /// store lives on this thread) and emits `analysis_progress`.
-    analysis_tx: mpsc::Sender<(SongId, Result<Analysis, String>)>,
-    analysis_rx: mpsc::Receiver<(SongId, Result<Analysis, String>)>,
-    /// Song ids with an analysis thread in flight (main thread only).
-    analyzing: HashSet<i64>,
+    analysis_tx: mpsc::Sender<(SongId, AnalysisOutcome)>,
+    analysis_rx: mpsc::Receiver<(SongId, AnalysisOutcome)>,
+    /// Song ids with an analysis thread in flight (main thread only), each with
+    /// the token that stops it (`prepare.cancel`).
+    analyzing: HashMap<i64, CancelToken>,
     /// Finished profiling runs; drained by `tick()`, persisted, emitted as
     /// `profile_run`.
     profile_tx: mpsc::Sender<ProfileRun>,
@@ -560,12 +571,12 @@ impl App {
             last_position: None,
             job_tx,
             job_rx,
-            separating: Arc::new(Mutex::new(HashSet::new())),
+            separating: Arc::new(Mutex::new(HashMap::new())),
             export_cancel: Arc::new(AtomicBool::new(false)),
             analyzer: Arc::new(crate::analysis::ScriptAnalyzer::default()),
             analysis_tx,
             analysis_rx,
-            analyzing: HashSet::new(),
+            analyzing: HashMap::new(),
             profile_tx,
             profile_rx,
             work_state: std::sync::Arc::new(std::sync::Mutex::new(None)),
@@ -775,6 +786,7 @@ impl App {
             "analysis.run" => self.analysis_run(p),
             "analysis.status" => self.analysis_status(p),
             "analysis.get" => self.analysis_get(p),
+            "prepare.cancel" => self.prepare_cancel(p),
             "settings.get_all" => self.settings_get_all(),
             "settings.set" => self.settings_set(p),
             "profiles.list" => self.profiles_list(p),
@@ -1169,10 +1181,14 @@ impl App {
             events.push(ev);
         }
         // finished analyses: persist here (the store is not Sync) and report
-        while let Ok((song_id, result)) = self.analysis_rx.try_recv() {
+        while let Ok((song_id, outcome)) = self.analysis_rx.try_recv() {
             self.analyzing.remove(&song_id.0);
-            let data = match result {
-                Ok(a) => match self.library.save_analysis(song_id, &a) {
+            let data = match outcome {
+                // a user stop: no cache write, no error surfaced
+                AnalysisOutcome::Cancelled => {
+                    json!({"song_id": song_id, "state": "cancelled"})
+                }
+                AnalysisOutcome::Done(a) => match self.library.save_analysis(song_id, &a) {
                     Ok(()) => {
                         // commit the model's section layout as real sections so
                         // structure + loop names are correct with no manual save.
@@ -1198,7 +1214,9 @@ impl App {
                         json!({"song_id": song_id, "state": "failed", "error": e.to_string()})
                     }
                 },
-                Err(e) => json!({"song_id": song_id, "state": "failed", "error": e}),
+                AnalysisOutcome::Failed(e) => {
+                    json!({"song_id": song_id, "state": "failed", "error": e})
+                }
             };
             events.push(Event {
                 event: "analysis_progress".into(),
@@ -1421,9 +1439,10 @@ impl App {
         } else if Self::stems_cached(&cache) {
             return Ok(json!({"state": "cached"}));
         }
+        let cancel = CancelToken::default();
         {
             let mut running = self.separating.lock().unwrap();
-            if running.contains(&p.song_id.0) {
+            if running.contains_key(&p.song_id.0) {
                 // refuse double-start: the existing job keeps running
                 return Ok(json!({"state": "running"}));
             }
@@ -1434,7 +1453,7 @@ impl App {
                         .into(),
                 );
             }
-            running.insert(p.song_id.0);
+            running.insert(p.song_id.0, cancel.clone());
         }
         let separator = self.separator.clone();
         let tx = self.job_tx.clone();
@@ -1460,14 +1479,15 @@ impl App {
             // ends.
             let prepared = timer.stage("decode", || canonical_wav_for_tools(&audio_path));
             let result = match &prepared {
-                Ok((_dir, wav)) => {
-                    timer.stage("demucs", || separator.separate(wav, &cache, force_cpu))
-                }
+                Ok((_dir, wav)) => timer.stage("demucs", || {
+                    separator.separate(wav, &cache, force_cpu, &cancel)
+                }),
                 Err(e) => Err(e.clone()),
             };
             let m = reporter.maxes();
             reporter.end();
             separating.lock().unwrap().remove(&song_id.0);
+            let cancelled = cancel.is_cancelled();
             let err = result.as_ref().err().cloned();
             let mut run = timer.finish(result.is_ok(), err.clone(), Some(device), None);
             if let Some((cpu, gpu, vram_used, vram_total)) = m {
@@ -1476,15 +1496,23 @@ impl App {
                 run.max_vram_used_mb = vram_used;
                 run.vram_total_mb = vram_total;
             }
-            let data = match result {
-                Ok(_) => json!({"song_id": song_id, "state": "done"}),
-                Err(e) => json!({"song_id": song_id, "state": "failed", "error": e}),
+            let data = if cancelled {
+                // a user stop: killed mid-run, no partial cache written
+                json!({"song_id": song_id, "state": "cancelled"})
+            } else {
+                match result {
+                    Ok(_) => json!({"song_id": song_id, "state": "done"}),
+                    Err(e) => json!({"song_id": song_id, "state": "failed", "error": e}),
+                }
             };
             let _ = tx.send(Event {
                 event: "stems_progress".into(),
                 data,
             });
-            let _ = profile_tx.send(run);
+            // a cancelled run isn't a real completion — keep it out of profiling
+            if !cancelled {
+                let _ = profile_tx.send(run);
+            }
         });
         Ok(json!({"state": "running"}))
     }
@@ -1498,7 +1526,7 @@ impl App {
         let cache = self
             .stems_cache_dir(p.song_id)
             .ok_or("song not in library")?;
-        let state = if self.separating.lock().unwrap().contains(&p.song_id.0) {
+        let state = if self.separating.lock().unwrap().contains_key(&p.song_id.0) {
             "running"
         } else if Self::stems_cached(&cache) {
             "cached"
@@ -1674,7 +1702,7 @@ impl App {
         if !p.force && self.library.has_analysis(p.song_id) {
             return Ok(json!({"state": "cached"}));
         }
-        if self.analyzing.contains(&p.song_id.0) {
+        if self.analyzing.contains_key(&p.song_id.0) {
             // refuse double-start: the existing job keeps running
             return Ok(json!({"state": "running"}));
         }
@@ -1684,7 +1712,8 @@ impl App {
                     .into(),
             );
         }
-        self.analyzing.insert(p.song_id.0);
+        let cancel = CancelToken::default();
+        self.analyzing.insert(p.song_id.0, cancel.clone());
         let analyzer = self.analyzer.clone();
         let tx = self.analysis_tx.clone();
         let profile_tx = self.profile_tx.clone();
@@ -1717,11 +1746,13 @@ impl App {
                     &device_setting,
                     &mut timer,
                     &reporter,
+                    &cancel,
                 ),
                 Err(e) => (Err(e.clone()), None),
             };
             let m = reporter.maxes();
             reporter.end();
+            let cancelled = cancel.is_cancelled();
             let engine = result.as_ref().ok().map(|a| a.engine.clone());
             let err = result.as_ref().err().cloned();
             let mut run = timer.finish(result.is_ok(), err, device, engine);
@@ -1731,8 +1762,19 @@ impl App {
                 run.max_vram_used_mb = vram_used;
                 run.vram_total_mb = vram_total;
             }
-            let _ = tx.send((song_id, result));
-            let _ = profile_tx.send(run);
+            let outcome = if cancelled {
+                AnalysisOutcome::Cancelled
+            } else {
+                match result {
+                    Ok(a) => AnalysisOutcome::Done(a),
+                    Err(e) => AnalysisOutcome::Failed(e),
+                }
+            };
+            let _ = tx.send((song_id, outcome));
+            // a cancelled run isn't a real completion — keep it out of profiling
+            if !cancelled {
+                let _ = profile_tx.send(run);
+            }
         });
         Ok(json!({"state": "running"}))
     }
@@ -1743,7 +1785,7 @@ impl App {
             song_id: SongId,
         }
         let p: P = from_params(p)?;
-        let state = if self.analyzing.contains(&p.song_id.0) {
+        let state = if self.analyzing.contains_key(&p.song_id.0) {
             "running"
         } else if self.library.has_analysis(p.song_id) {
             "cached"
@@ -1760,6 +1802,28 @@ impl App {
         }
         let p: P = from_params(p)?;
         serde_json::to_value(self.library.get_analysis(p.song_id)).err_str()
+    }
+
+    /// Stop the in-flight prepare work for a song: cancel whichever of analysis
+    /// / stem separation is running (kills the subprocess group). The worker
+    /// threads emit a `cancelled` progress event and skip caching. Safe to call
+    /// when nothing is running — reports whether anything was hit.
+    fn prepare_cancel(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            song_id: SongId,
+        }
+        let p: P = from_params(p)?;
+        let mut hit = false;
+        if let Some(token) = self.analyzing.get(&p.song_id.0) {
+            token.cancel();
+            hit = true;
+        }
+        if let Some(token) = self.separating.lock().unwrap().get(&p.song_id.0) {
+            token.cancel();
+            hit = true;
+        }
+        Ok(json!({ "cancelled": hit }))
     }
 
     // --- tuner -------------------------------------------------------------
@@ -2230,8 +2294,8 @@ impl App {
         // captured the old path up front and writes into it from another
         // thread. Moving the dir under it would silently lose its output, so
         // refuse.
-        if self.analyzing.contains(&p.song_id.0)
-            || self.separating.lock().unwrap().contains(&p.song_id.0)
+        if self.analyzing.contains_key(&p.song_id.0)
+            || self.separating.lock().unwrap().contains_key(&p.song_id.0)
         {
             return Err("can't rename while stems or analysis are running for this song".into());
         }
@@ -3278,7 +3342,7 @@ mod rename_tests {
 
         // A stems/analysis job for this song captured the old path; renaming
         // would move the dir under it. The guard must refuse.
-        app.analyzing.insert(song.id.0);
+        app.analyzing.insert(song.id.0, CancelToken::default());
         let err = app
             .update_apply(json!({ "song_id": song.id, "title": "New", "artist": "X" }))
             .unwrap_err();

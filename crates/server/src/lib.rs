@@ -7,6 +7,7 @@ pub mod input_monitor;
 pub mod logging;
 pub mod midi;
 pub mod pedal;
+pub mod proc;
 mod profile;
 pub mod protocol;
 pub mod recording;

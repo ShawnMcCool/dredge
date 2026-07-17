@@ -80,6 +80,7 @@ impl Analyzer for DeviceAwareAnalyzer {
         &self,
         _a: &std::path::Path,
         force_cpu: bool,
+        _cancel: &server::proc::CancelToken,
     ) -> Result<practice::model::Analysis, String> {
         let mut x = fake_analysis();
         x.engine = if force_cpu {

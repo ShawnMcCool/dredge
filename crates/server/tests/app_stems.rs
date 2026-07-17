@@ -276,6 +276,7 @@ fn separate_force_clears_cached_stems_before_running() {
             _audio: &std::path::Path,
             _out_dir: &std::path::Path,
             _force_cpu: bool,
+            _cancel: &server::proc::CancelToken,
         ) -> Result<Vec<PathBuf>, String> {
             Err("separator exploded".into())
         }
@@ -318,6 +319,7 @@ fn separate_unavailable_errors_helpfully() {
             _audio: &std::path::Path,
             _out_dir: &std::path::Path,
             _force_cpu: bool,
+            _cancel: &server::proc::CancelToken,
         ) -> Result<Vec<PathBuf>, String> {
             Err("unreachable".into())
         }

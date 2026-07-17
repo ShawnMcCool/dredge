@@ -12,7 +12,13 @@ pub trait Analyzer: Send + Sync {
     /// Blocking; runs the full analysis pipeline on one audio file.
     /// When `force_cpu` is true the subprocess is started with
     /// `CUDA_VISIBLE_DEVICES=""` so auto-detection falls back to CPU.
-    fn analyze(&self, audio: &Path, force_cpu: bool) -> Result<Analysis, String>;
+    /// `cancel` can kill the subprocess mid-run (returns `Err("cancelled")`).
+    fn analyze(
+        &self,
+        audio: &Path,
+        force_cpu: bool,
+        cancel: &crate::proc::CancelToken,
+    ) -> Result<Analysis, String>;
     fn is_available(&self) -> bool;
 }
 
@@ -64,7 +70,12 @@ fn resolve_script() -> Option<PathBuf> {
 }
 
 impl Analyzer for ScriptAnalyzer {
-    fn analyze(&self, audio: &Path, force_cpu: bool) -> Result<Analysis, String> {
+    fn analyze(
+        &self,
+        audio: &Path,
+        force_cpu: bool,
+        cancel: &crate::proc::CancelToken,
+    ) -> Result<Analysis, String> {
         let script = self.script.as_ref().ok_or(
             "analysis script not found — expected <repo>/scripts/analyze (or set $DREDGE_ANALYZE)",
         )?;
@@ -73,10 +84,13 @@ impl Analyzer for ScriptAnalyzer {
         if force_cpu {
             cmd.env("CUDA_VISIBLE_DEVICES", "");
         }
-        crate::stems::die_with_parent(&mut cmd);
-        let output = cmd
-            .output()
-            .map_err(|e| format!("failed to run {}: {e}", script.display()))?;
+        let output = match crate::proc::run_cancellable(cmd, cancel) {
+            crate::proc::Outcome::Done(o) => o,
+            crate::proc::Outcome::Cancelled => return Err("cancelled".into()),
+            crate::proc::Outcome::Err(e) => {
+                return Err(format!("failed to run {}: {e}", script.display()))
+            }
+        };
         let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
         if !output.status.success() {
             return Err(format!(
@@ -124,7 +138,12 @@ pub fn fake_analysis() -> Analysis {
 }
 
 impl Analyzer for FakeAnalyzer {
-    fn analyze(&self, _audio: &Path, _force_cpu: bool) -> Result<Analysis, String> {
+    fn analyze(
+        &self,
+        _audio: &Path,
+        _force_cpu: bool,
+        _cancel: &crate::proc::CancelToken,
+    ) -> Result<Analysis, String> {
         Ok(fake_analysis())
     }
 
@@ -142,19 +161,22 @@ pub fn analyze_with_recovery(
     device_setting: &str,
     timer: &mut crate::profile::Timer,
     reporter: &crate::sampler::WorkReporter,
+    cancel: &crate::proc::CancelToken,
 ) -> (Result<Analysis, String>, Option<String>) {
     if device_setting == "cpu" {
-        let r = timer.stage("analyze", || analyzer.analyze(audio, true));
+        let r = timer.stage("analyze", || analyzer.analyze(audio, true, cancel));
         return (r, Some("cpu".into()));
     }
     // auto: GPU first
-    let r = timer.stage("analyze (gpu)", || analyzer.analyze(audio, false));
+    let r = timer.stage("analyze (gpu)", || analyzer.analyze(audio, false, cancel));
     match &r {
         Ok(a) if a.engine == "songformer" => (r, Some("gpu".into())),
+        // A stop during the GPU attempt must not spawn the CPU retry.
+        Ok(_) if cancel.is_cancelled() => (r, None),
         Ok(_) if songformer_venv_present() => {
             timer.note_last("songformer fell back; retrying on cpu");
             reporter.stage("CPU recovery");
-            let r2 = timer.stage("analyze (cpu)", || analyzer.analyze(audio, true));
+            let r2 = timer.stage("analyze (cpu)", || analyzer.analyze(audio, true, cancel));
             match &r2 {
                 Ok(a2) if a2.engine == "songformer" => (r2, Some("cpu".into())),
                 _ => (r2, None),
@@ -203,7 +225,11 @@ echo '{"bpm": 98.2, "beats": [0.61, 1.22], "downbeats": [0.61],
        "engine": "beat_this+novelty"}'"#,
         );
         let a = ScriptAnalyzer::with_script(script)
-            .analyze(Path::new("/tmp/x.mp3"), false)
+            .analyze(
+                Path::new("/tmp/x.mp3"),
+                false,
+                &crate::proc::CancelToken::default(),
+            )
             .unwrap();
         assert_eq!(a.bpm, Some(98.2));
         assert_eq!(a.beats, vec![0.61, 1.22]);
@@ -217,7 +243,11 @@ echo '{"bpm": 98.2, "beats": [0.61, 1.22], "downbeats": [0.61],
         let dir = tempfile::tempdir().unwrap();
         let script = stub_script(dir.path(), "echo 'cuda exploded' >&2\nexit 3");
         let err = ScriptAnalyzer::with_script(script)
-            .analyze(Path::new("/tmp/x.mp3"), false)
+            .analyze(
+                Path::new("/tmp/x.mp3"),
+                false,
+                &crate::proc::CancelToken::default(),
+            )
             .unwrap_err();
         assert!(err.contains("cuda exploded"), "err: {err}");
     }
@@ -233,12 +263,17 @@ elif [ -z "$CUDA_VISIBLE_DEVICES" ]; then ENG=cpu; else ENG=gpu; fi
 echo "{\"bpm\":1.0,\"beats\":[],\"downbeats\":[],\"sections\":[],\"engine\":\"$ENG\"}""#,
         );
         let a = ScriptAnalyzer::with_script(script);
+        let tok = crate::proc::CancelToken::default();
         assert_eq!(
-            a.analyze(Path::new("/tmp/x.mp3"), true).unwrap().engine,
+            a.analyze(Path::new("/tmp/x.mp3"), true, &tok)
+                .unwrap()
+                .engine,
             "cpu"
         );
         assert_eq!(
-            a.analyze(Path::new("/tmp/x.mp3"), false).unwrap().engine,
+            a.analyze(Path::new("/tmp/x.mp3"), false, &tok)
+                .unwrap()
+                .engine,
             "unset"
         );
     }
@@ -247,6 +282,12 @@ echo "{\"bpm\":1.0,\"beats\":[],\"downbeats\":[],\"sections\":[],\"engine\":\"$E
     fn unavailable_without_a_script() {
         let a = ScriptAnalyzer { script: None };
         assert!(!a.is_available());
-        assert!(a.analyze(Path::new("/tmp/x.mp3"), false).is_err());
+        assert!(a
+            .analyze(
+                Path::new("/tmp/x.mp3"),
+                false,
+                &crate::proc::CancelToken::default()
+            )
+            .is_err());
     }
 }

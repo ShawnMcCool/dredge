@@ -152,6 +152,84 @@ fn force_reruns_past_the_cache() {
 }
 
 #[test]
+fn prepare_cancel_stops_a_running_analysis_without_caching() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    // Blocks in analyze() until the cancel token fires, standing in for a
+    // subprocess killed mid-run. `entered` lets the test wait until the job is
+    // actually in the analyzer before cancelling.
+    struct BlockingAnalyzer {
+        entered: Arc<AtomicBool>,
+    }
+    impl Analyzer for BlockingAnalyzer {
+        fn analyze(
+            &self,
+            _audio: &std::path::Path,
+            _force_cpu: bool,
+            cancel: &server::proc::CancelToken,
+        ) -> Result<practice::model::Analysis, String> {
+            self.entered.store(true, Ordering::SeqCst);
+            while !cancel.is_cancelled() {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Err("cancelled".into())
+        }
+        fn is_available(&self) -> bool {
+            true
+        }
+    }
+
+    let entered = Arc::new(AtomicBool::new(false));
+    let mut ctx = setup(Arc::new(BlockingAnalyzer {
+        entered: entered.clone(),
+    }));
+
+    let out = req(
+        &mut ctx.app,
+        "analysis.run",
+        json!({"song_id": ctx.song_id}),
+    );
+    assert_eq!(out["state"], "running");
+
+    // wait until the analyzer thread is actually running
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !entered.load(Ordering::SeqCst) {
+        assert!(Instant::now() < deadline, "analyzer never started");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+
+    let cancelled = req(
+        &mut ctx.app,
+        "prepare.cancel",
+        json!({"song_id": ctx.song_id}),
+    );
+    assert_eq!(cancelled["cancelled"], true);
+
+    let progress = wait_for_progress(&mut ctx.app);
+    assert_eq!(progress["state"], "cancelled");
+    assert_eq!(progress["song_id"], ctx.song_id);
+
+    // nothing cached, and the song is analyzable again
+    let status = req(
+        &mut ctx.app,
+        "analysis.status",
+        json!({"song_id": ctx.song_id}),
+    );
+    assert_eq!(status["state"], "none");
+}
+
+#[test]
+fn prepare_cancel_is_a_noop_when_nothing_runs() {
+    let mut ctx = setup(Arc::new(FakeAnalyzer));
+    let out = req(
+        &mut ctx.app,
+        "prepare.cancel",
+        json!({"song_id": ctx.song_id}),
+    );
+    assert_eq!(out["cancelled"], false);
+}
+
+#[test]
 fn failures_are_reported_not_cached() {
     struct FailingAnalyzer;
     impl Analyzer for FailingAnalyzer {
@@ -159,6 +237,7 @@ fn failures_are_reported_not_cached() {
             &self,
             _audio: &std::path::Path,
             _force_cpu: bool,
+            _cancel: &server::proc::CancelToken,
         ) -> Result<practice::model::Analysis, String> {
             Err("model exploded".into())
         }
@@ -192,6 +271,7 @@ fn run_unavailable_errors_helpfully() {
             &self,
             _audio: &std::path::Path,
             _force_cpu: bool,
+            _cancel: &server::proc::CancelToken,
         ) -> Result<practice::model::Analysis, String> {
             Err("unreachable".into())
         }
