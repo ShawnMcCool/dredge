@@ -83,7 +83,10 @@
   }
 
   function removeRow(i: number): void {
-    if (learning === i) learning = null;
+    if (learning !== null) {
+      if (i === learning) learning = null;
+      else if (i < learning) learning -= 1;
+    }
     void act.run(() => actions.setPedalMapping(rows.filter((_, idx) => idx !== i)));
   }
 
