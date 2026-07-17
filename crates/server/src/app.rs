@@ -673,6 +673,9 @@ impl App {
             "section.replace" => self.section_replace(p),
             "section.notes.set" => self.section_notes_set(p),
             "isolation.set" => self.isolation_set(p),
+            "marker.set" => self.marker_set(p),
+            "marker.clear" => self.marker_clear(p),
+            "marker.play" => self.marker_play(p),
             "section.click.set" => self.section_click_set(p),
             "sectionclick.set" => self.section_click_enable(p),
             "loop.create" => self.loop_create(p),
@@ -2314,6 +2317,7 @@ impl App {
             "stems": decoded.stems,
             "analysis": self.library.get_analysis(song_id),
             "isolation": self.library.get_isolation(song_id),
+            "markers": self.library.list_markers(song_id),
             "orphan_notes": orphan_notes,
             // `recordings` is attached below, after `refresh_layers` computes
             // this song's take peaks (the views need them).
@@ -2463,6 +2467,85 @@ impl App {
             )
             .err_str()?;
         Ok(json!({ "ok": true }))
+    }
+
+    // --- markers ------------------------------------------------------------
+
+    /// Resolve the target song: explicit id, else the open song.
+    fn target_song(&self, explicit: Option<SongId>) -> Result<SongId, String> {
+        explicit
+            .or_else(|| self.open_song.as_ref().map(|o| o.song.id))
+            .ok_or_else(|| "no song open".to_owned())
+    }
+
+    fn push_markers_event(&self, song_id: SongId) {
+        let _ = self.job_tx.send(Event {
+            event: "markers".into(),
+            data: json!({ "song_id": song_id, "markers": self.library.list_markers(song_id) }),
+        });
+    }
+
+    fn marker_set(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            #[serde(default)]
+            song_id: Option<SongId>,
+            slot: u32,
+            #[serde(default)]
+            pos: Option<f64>,
+        }
+        let p: P = from_params(p)?;
+        self.marker_set_slot(p.song_id, p.slot, p.pos)
+    }
+
+    fn marker_set_slot(
+        &mut self,
+        song_id: Option<SongId>,
+        slot: u32,
+        pos: Option<f64>,
+    ) -> Result<Value, String> {
+        let song_id = self.target_song(song_id)?;
+        let pos = pos.unwrap_or_else(|| self.last_position.map(|p| p.0).unwrap_or(0.0));
+        self.library.set_marker(song_id, slot, pos).err_str()?;
+        self.push_markers_event(song_id);
+        Ok(Value::Null)
+    }
+
+    fn marker_clear(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            #[serde(default)]
+            song_id: Option<SongId>,
+            slot: u32,
+        }
+        let p: P = from_params(p)?;
+        let song_id = self.target_song(p.song_id)?;
+        self.library.clear_marker(song_id, p.slot).err_str()?;
+        self.push_markers_event(song_id);
+        Ok(Value::Null)
+    }
+
+    fn marker_play(&mut self, p: Value) -> Result<Value, String> {
+        #[derive(Deserialize)]
+        struct P {
+            #[serde(default)]
+            song_id: Option<SongId>,
+            slot: u32,
+        }
+        let p: P = from_params(p)?;
+        self.marker_play_slot(p.song_id, p.slot)?;
+        Ok(Value::Null)
+    }
+
+    fn marker_play_slot(&mut self, song_id: Option<SongId>, slot: u32) -> Result<(), String> {
+        let song_id = self.target_song(song_id)?;
+        let m = self
+            .library
+            .marker(song_id, slot)
+            .ok_or_else(|| format!("no marker in slot {slot}"))?;
+        self.audio.send(EngineCmd::SeekSecs(m.pos));
+        self.audio.send(EngineCmd::Play);
+        Ok(())
     }
 
     /// Persist a section layout and rename the dynamic loops. Shared by the
@@ -3786,7 +3869,7 @@ mod mix_tests {
     use practice::store::Store;
     use std::sync::{Arc, Mutex};
 
-    fn make_shared_mock() -> (Arc<Mutex<MockEngine>>, App) {
+    pub(super) fn make_shared_mock() -> (Arc<Mutex<MockEngine>>, App) {
         let mock = Arc::new(Mutex::new(MockEngine::default()));
         let app = App::new(
             Store::open_in_memory().unwrap(),
@@ -3794,6 +3877,21 @@ mod mix_tests {
             Arc::new(FakeSeparator),
         );
         (mock, app)
+    }
+
+    /// make_shared_mock() plus a library song (tempdir root), returning its id.
+    pub(super) fn seed_song(app: &mut App) -> SongId {
+        let lib_dir = tempfile::tempdir().unwrap();
+        let src = tempfile::tempdir().unwrap();
+        let audio = src.path().join("a.flac");
+        std::fs::write(&audio, b"AUDIO").unwrap();
+        std::mem::forget(src);
+        app.set_library_root(lib_dir.path().to_path_buf());
+        std::mem::forget(lib_dir);
+        app.library
+            .create_song(&audio, "Title", Some("Band"), "hash", 1.0)
+            .unwrap()
+            .id
     }
 
     fn req(cmd: &str, params: Value) -> Request {
@@ -3914,25 +4012,10 @@ mod routine_tests {
     use practice::model::{Block, CountIn, Span};
     use practice::store::Store;
 
-    fn app_with_song() -> (App, SongId) {
-        let lib_dir = tempfile::tempdir().unwrap();
-        let src = tempfile::tempdir().unwrap();
-        let audio = src.path().join("a.flac");
-        std::fs::write(&audio, b"AUDIO").unwrap();
-        // Keep the temp dirs alive for the test by leaking them — fine in tests.
-        std::mem::forget(src);
-        let mut app = App::new(
-            Store::open_in_memory().unwrap(),
-            Box::new(MockEngine::default()),
-            Arc::new(FakeSeparator),
-        );
-        app.set_library_root(lib_dir.path().to_path_buf());
-        std::mem::forget(lib_dir);
-        let song = app
-            .library
-            .create_song(&audio, "Title", Some("Band"), "hash", 1.0)
-            .unwrap();
-        (app, song.id)
+    pub(super) fn app_with_song() -> (App, SongId) {
+        let (_, mut app) = super::mix_tests::make_shared_mock();
+        let id = super::mix_tests::seed_song(&mut app);
+        (app, id)
     }
 
     fn sample_routine() -> Routine {
@@ -4163,5 +4246,75 @@ mod routine_tests {
             evs.iter().all(|e| e.event != "routine"),
             "no advance after stop"
         );
+    }
+}
+
+#[cfg(test)]
+mod marker_cmd_tests {
+    use super::mix_tests::{make_shared_mock, seed_song};
+    use super::routine_tests::app_with_song;
+    use super::*;
+    use practice::model::Marker;
+
+    fn req(cmd: &str, params: Value) -> Request {
+        Request {
+            id: 1,
+            cmd: cmd.into(),
+            params,
+        }
+    }
+
+    #[test]
+    fn marker_set_explicit_pos_persists_and_emits() {
+        let (mut app, song_id) = app_with_song();
+        let resp = app.dispatch(req(
+            "marker.set",
+            json!({ "song_id": song_id, "slot": 2, "pos": 12.5 }),
+        ));
+        assert!(resp.ok, "got: {:?}", resp.error);
+        assert_eq!(
+            app.library.marker(song_id, 2),
+            Some(Marker { slot: 2, pos: 12.5 })
+        );
+        // The mutation queues a "markers" event; tick() drains job_rx.
+        let events = app.tick();
+        assert!(events.iter().any(|e| e.event == "markers"));
+    }
+
+    #[test]
+    fn marker_set_without_pos_uses_playhead() {
+        let (mut app, song_id) = app_with_song();
+        app.last_position = Some((42.0, 1.0, true, None));
+        let resp = app.dispatch(req("marker.set", json!({ "song_id": song_id, "slot": 1 })));
+        assert!(resp.ok, "got: {:?}", resp.error);
+        assert_eq!(app.library.marker(song_id, 1).unwrap().pos, 42.0);
+    }
+
+    #[test]
+    fn marker_play_seeks_and_plays() {
+        let (mock, mut app) = make_shared_mock();
+        let song_id = seed_song(&mut app);
+        app.library.set_marker(song_id, 4, 90.0).unwrap();
+        let resp = app.dispatch(req("marker.play", json!({ "song_id": song_id, "slot": 4 })));
+        assert!(resp.ok, "got: {:?}", resp.error);
+        let sent = &mock.lock().unwrap().sent;
+        assert!(sent
+            .iter()
+            .any(|c| matches!(c, EngineCmd::SeekSecs(s) if *s == 90.0)));
+        assert!(sent.iter().any(|c| matches!(c, EngineCmd::Play)));
+    }
+
+    #[test]
+    fn marker_play_missing_slot_errors() {
+        let (mut app, song_id) = app_with_song();
+        let resp = app.dispatch(req("marker.play", json!({ "song_id": song_id, "slot": 9 })));
+        assert!(!resp.ok);
+    }
+
+    #[test]
+    fn marker_cmds_without_song_id_need_an_open_song() {
+        let (mut app, _) = app_with_song(); // song exists but is not open
+        let resp = app.dispatch(req("marker.set", json!({ "slot": 1, "pos": 0.0 })));
+        assert!(!resp.ok, "no open song and no explicit song_id must error");
     }
 }
