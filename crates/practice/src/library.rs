@@ -183,6 +183,7 @@ impl Library {
             routines: vec![],
             isolation: Isolation::default(),
             markers: vec![],
+            snapshots: vec![],
         };
         bundle::write_manifest(&dir, &manifest)?;
         self.entries.insert(song.id.0, Entry { dir, manifest });
@@ -509,6 +510,52 @@ impl Library {
         Self::persist(entry)
     }
 
+    // ── isolation snapshots ───────────────────────────────────────────────────
+
+    pub fn list_snapshots(&self, song_id: SongId) -> Vec<IsolationSnapshot> {
+        self.entries
+            .get(&song_id.0)
+            .map(|e| e.manifest.snapshots.clone())
+            .unwrap_or_default()
+    }
+
+    pub fn snapshot(&self, song_id: SongId, slot: u32) -> Option<IsolationSnapshot> {
+        self.entries
+            .get(&song_id.0)?
+            .manifest
+            .snapshots
+            .iter()
+            .find(|s| s.slot == slot)
+            .cloned()
+    }
+
+    /// Save (or overwrite) the snapshot in `slot`. Kept sorted by slot.
+    pub fn save_snapshot(
+        &mut self,
+        song_id: SongId,
+        slot: u32,
+        name: Option<String>,
+        state: Isolation,
+    ) -> Result<IsolationSnapshot> {
+        let entry = self.entry_mut(song_id)?;
+        let s = IsolationSnapshot { slot, name, state };
+        match entry.manifest.snapshots.iter_mut().find(|x| x.slot == slot) {
+            Some(x) => *x = s.clone(),
+            None => {
+                entry.manifest.snapshots.push(s.clone());
+                entry.manifest.snapshots.sort_by_key(|x| x.slot);
+            }
+        }
+        Self::persist(entry)?;
+        Ok(s)
+    }
+
+    pub fn clear_snapshot(&mut self, song_id: SongId, slot: u32) -> Result<()> {
+        let entry = self.entry_mut(song_id)?;
+        entry.manifest.snapshots.retain(|s| s.slot != slot);
+        Self::persist(entry)
+    }
+
     // ── analysis ───────────────────────────────────────────────────────────────
 
     pub fn has_analysis(&self, song_id: SongId) -> bool {
@@ -631,6 +678,7 @@ mod tests {
                 routines: vec![],
                 isolation: Isolation::default(),
                 markers: vec![],
+                snapshots: vec![],
             };
             bundle::write_manifest(&bundle_dir, &manifest).unwrap();
         }
@@ -711,6 +759,7 @@ mod tests {
             routines: vec![],
             isolation: Isolation::default(),
             markers: vec![],
+            snapshots: vec![],
         };
         bundle::write_manifest(&bundle_dir, &manifest).unwrap();
 
@@ -1123,5 +1172,35 @@ mod tests {
         let dir = lib.bundle_dir(song_id).unwrap();
         let m = bundle::read_manifest(&dir).unwrap();
         assert_eq!(m.markers, lib.list_markers(song_id));
+    }
+
+    // ── Task 3: isolation snapshots ──
+
+    #[test]
+    fn snapshots_save_overwrite_clear_and_sort() {
+        let (mut lib, song_id, _src_dir, _lib_dir) = lib_with_song();
+        lib.save_snapshot(song_id, 2, None, Isolation::default())
+            .unwrap();
+        lib.save_snapshot(song_id, 1, Some("full".into()), Isolation::default())
+            .unwrap();
+        assert_eq!(
+            lib.list_snapshots(song_id)
+                .iter()
+                .map(|s| s.slot)
+                .collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+        let mut alt = Isolation::default();
+        alt.mutes[0] = true;
+        lib.save_snapshot(song_id, 2, None, alt.clone()).unwrap(); // overwrite
+        assert_eq!(lib.snapshot(song_id, 2).unwrap().state, alt);
+        assert_eq!(lib.list_snapshots(song_id).len(), 2);
+        lib.clear_snapshot(song_id, 1).unwrap();
+        assert!(lib.snapshot(song_id, 1).is_none());
+
+        // on disk: the manifest carries the surviving snapshot
+        let dir = lib.bundle_dir(song_id).unwrap();
+        let m = bundle::read_manifest(&dir).unwrap();
+        assert_eq!(m.snapshots, lib.list_snapshots(song_id));
     }
 }

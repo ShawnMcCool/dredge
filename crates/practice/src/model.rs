@@ -151,6 +151,24 @@ impl Isolation {
             solos: fit(&self.solos, false),
         }
     }
+
+    /// Resolved per-stem gains (0.0..=1.0) with mute/solo folded in — the Rust
+    /// mirror of the frontend's gain fold (`stemGainsVector` in `lib/stores.ts`).
+    /// Mute is checked independently of solo: a stem that is both muted and
+    /// soloed stays silent. With any solo active, only soloed-and-unmuted
+    /// stems are audible; with no solo active, only unmuted stems are.
+    pub fn resolve_gains(&self) -> [f32; STEM_COUNT] {
+        let n = self.normalized();
+        let any_solo = n.solos.iter().any(|s| *s);
+        let mut out = [0.0; STEM_COUNT];
+        for (i, gain) in out.iter_mut().enumerate() {
+            let audible = !n.mutes[i] && (!any_solo || n.solos[i]);
+            if audible {
+                *gain = f32::from(n.levels[i]) / 100.0;
+            }
+        }
+        out
+    }
 }
 
 /// A numbered per-song position marker (seconds). Slots are stable handles the
@@ -160,6 +178,16 @@ impl Isolation {
 pub struct Marker {
     pub slot: u32,
     pub pos: f64,
+}
+
+/// A saved isolation-box state under a slot number — what a pedal button's
+/// "activate snapshot N" points at. Per song, in the bundle manifest.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct IsolationSnapshot {
+    pub slot: u32,
+    #[serde(default)]
+    pub name: Option<String>,
+    pub state: Isolation,
 }
 
 /// An overdub take: your own input recorded over one pass of a span, held as an
@@ -428,6 +456,44 @@ mod isolation_tests {
         let back: Isolation = serde_json::from_str(&s).unwrap();
         assert_eq!(i, back);
     }
+
+    #[test]
+    fn resolve_gains_no_solo_folds_mutes_and_levels() {
+        let mut i = Isolation::default();
+        i.levels[0] = 50;
+        i.mutes[1] = true;
+        let g = i.resolve_gains();
+        assert_eq!(g[0], 0.5);
+        assert_eq!(g[1], 0.0);
+        assert_eq!(g[2], 1.0);
+    }
+
+    #[test]
+    fn resolve_gains_solo_silences_everything_else() {
+        let mut i = Isolation::default();
+        i.solos[1] = true; // drums only
+        i.levels[1] = 80;
+        let g = i.resolve_gains();
+        assert_eq!(g[1], 0.8_f32);
+        for (idx, gain) in g.iter().enumerate() {
+            if idx != 1 {
+                assert_eq!(*gain, 0.0, "stem {idx} must be silent under solo");
+            }
+        }
+    }
+
+    #[test]
+    fn resolve_gains_mute_wins_over_its_own_solo() {
+        // Mirrors the frontend fold in `stores.ts` (`stemGainsVector`): mute is
+        // checked independently of solo, so a stem that is both muted and
+        // soloed stays silent rather than being forced audible.
+        let mut i = Isolation::default();
+        i.solos[1] = true;
+        i.mutes[1] = true;
+        i.levels[1] = 80;
+        let g = i.resolve_gains();
+        assert_eq!(g[1], 0.0);
+    }
 }
 
 #[cfg(test)]
@@ -439,5 +505,21 @@ mod marker_tests {
         let m = Marker { slot: 2, pos: 92.5 };
         let s = serde_json::to_string(&m).unwrap();
         assert_eq!(serde_json::from_str::<Marker>(&s).unwrap(), m);
+    }
+}
+
+#[cfg(test)]
+mod snapshot_tests {
+    use super::*;
+
+    #[test]
+    fn snapshot_round_trips() {
+        let s = IsolationSnapshot {
+            slot: 1,
+            name: Some("drums only".into()),
+            state: Isolation::default(),
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        assert_eq!(serde_json::from_str::<IsolationSnapshot>(&json).unwrap(), s);
     }
 }

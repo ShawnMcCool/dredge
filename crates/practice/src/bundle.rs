@@ -2,7 +2,8 @@ use std::path::{Path, PathBuf};
 
 use crate::error::Result;
 use crate::model::{
-    Analysis, Isolation, LoopRegion, Marker, Recording, Routine, Section, SectionNote, Song,
+    Analysis, Isolation, IsolationSnapshot, LoopRegion, Marker, Recording, Routine, Section,
+    SectionNote, Song,
 };
 use serde::{Deserialize, Serialize};
 
@@ -44,6 +45,8 @@ pub struct BundleManifest {
     pub isolation: Isolation,
     #[serde(default)]
     pub markers: Vec<Marker>,
+    #[serde(default)]
+    pub snapshots: Vec<IsolationSnapshot>,
 }
 
 // ── slug ───────────────────────────────────────────────────────────────────────
@@ -174,6 +177,7 @@ mod tests {
             routines: vec![],
             isolation: Isolation::default(),
             markers: vec![],
+            snapshots: vec![],
         }
     }
 
@@ -319,5 +323,16 @@ mod tests {
         obj.remove("markers");
         let m: BundleManifest = serde_json::from_value(Value::Object(obj)).unwrap();
         assert!(m.markers.is_empty());
+    }
+
+    // ── Task 3: isolation snapshots ──
+
+    #[test]
+    fn manifest_without_snapshots_defaults_empty() {
+        let json = serde_json::to_value(sample_manifest()).unwrap();
+        let mut obj = json.as_object().unwrap().clone();
+        obj.remove("snapshots");
+        let m: BundleManifest = serde_json::from_value(Value::Object(obj)).unwrap();
+        assert!(m.snapshots.is_empty());
     }
 }
