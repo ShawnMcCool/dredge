@@ -32,8 +32,13 @@
   }
 
   async function refreshDevices(): Promise<void> {
-    const r = await cmd<{ devices: string[] }>("midi.status");
-    devices = r.devices;
+    try {
+      const r = await cmd<{ devices: string[] }>("midi.status");
+      devices = r.devices;
+    } catch {
+      // Backend hiccup on a background poll: keep the last known list.
+      // A banner flashing every 5s would be worse than brief staleness.
+    }
   }
 
   onMount(() => {
@@ -73,8 +78,13 @@
     void setRow(i, { action, slot: needsSlot(action) ? (rows[i].slot ?? 1) : undefined });
   }
 
-  function setSlot(i: number, raw: number): void {
-    if (!Number.isFinite(raw) || raw < 1) return;
+  function setSlot(i: number, raw: number, input: HTMLInputElement): void {
+    if (!Number.isFinite(raw) || raw < 1) {
+      // Reject and re-sync the field to the persisted value so the DOM
+      // never displays a number that doesn't match state.
+      input.value = String(rows[i].slot ?? 1);
+      return;
+    }
     void setRow(i, { slot: Math.floor(raw) });
   }
 
@@ -141,7 +151,7 @@
             type="number"
             min="1"
             value={row.slot ?? 1}
-            onchange={(e) => setSlot(i, e.currentTarget.valueAsNumber)}
+            onchange={(e) => setSlot(i, e.currentTarget.valueAsNumber, e.currentTarget)}
             aria-label="slot"
           />
         {/if}
