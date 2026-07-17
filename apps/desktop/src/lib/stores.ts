@@ -163,6 +163,26 @@ export interface WorkSample {
   ram_total_mb?: number;
 }
 
+/** A saved playhead marker slot (mirrors `practice::model::Marker`). */
+export interface Marker {
+  slot: number;
+  pos: number;
+}
+
+/** A saved isolation-mix snapshot slot (mirrors `practice::model::IsolationSnapshot`). */
+export interface IsolationSnapshot {
+  slot: number;
+  name: string | null;
+  state: Isolation;
+}
+
+/** One row of the global pedal mapping (the `pedal_mapping` setting). */
+export interface PedalBinding {
+  trigger: string;
+  action: string;
+  slot?: number;
+}
+
 export interface OpenSong {
   song: Song;
   sections: Section[];
@@ -177,6 +197,10 @@ export interface OpenSong {
   recordings: Recording[];
   /** Saved isolation-box state (bass focus + per-stem levels/mutes/solos). */
   isolation: Isolation;
+  /** Saved playhead marker slots. */
+  markers: Marker[];
+  /** Saved isolation-mix snapshot slots. */
+  snapshots: IsolationSnapshot[];
 }
 
 /** Fixed stem order contract — mirrors `practice::model::STEM_NAMES`:
@@ -335,6 +359,11 @@ export const drillShow = writable({ trainer: false, recall: false, region: false
 /** Bumped by `resetWorkspace()` — the waveform watches this to refit zoom and
  *  drop its local view/active-span state (which no store mirrors). */
 export const workspaceReset = writable(0);
+/** Snapshot slot last applied server-side; cleared by any manual fader edit. */
+export const activeSnapshotSlot = writable<number | null>(null);
+/** Last normalized MIDI trigger seen (learn flow); `seq` forces reactivity on
+ *  repeated identical triggers. */
+export const lastMidiTrigger = writable<{ trigger: string; seq: number } | null>(null);
 export const pitch = writable({ semitones: 0, cents: 0, octaveUp: false });
 export const countIn = writable<{ enabled: boolean; beats: number; loopMode: "first" | "every" }>({
   enabled: true,
@@ -507,6 +536,8 @@ export const COUNT_IN = "count_in";
 export const SECTION_CLICK = "section_click";
 /** Metronome config: `{ bpm, beats_per_bar, cadence, kit }`. Persisted. */
 export const METRONOME = "metronome";
+/** Global foot-pedal → action mapping: `PedalBinding[]`. Persisted. */
+export const PEDAL_MAPPING = "pedal_mapping";
 
 /** Local mirror of the settings table; `loadSettings` fills it at launch and
  *  `setSetting` writes through. */
@@ -1267,7 +1298,9 @@ export const actions = {
 
   // --- stems ---
 
-  /** The 4-vector sent to the engine: sliders × mute × solo. */
+  /** The stems-length gain vector sent to the engine: sliders × mute × solo.
+   *  Mirrored in Rust by `Isolation::resolve_gains` (crates/practice/src/model.rs)
+   *  — keep the fold logic in lockstep. */
   stemGainsVector(mix: StemMix): number[] {
     const anySolo = mix.solos.some(Boolean);
     return mix.levels.map((level, i) =>
@@ -1285,6 +1318,7 @@ export const actions = {
    *  not once per tick. The `song_id` is captured now so a save landing after
    *  a song switch still writes the song it was edited on. */
   persistIsolation(): void {
+    activeSnapshotSlot.set(null);
     const open = get(openSong);
     if (!open) return;
     const song_id = open.song.id;
@@ -1348,6 +1382,27 @@ export const actions = {
       count_in: { beats: 0, loop_mode: "first" },
       name: null,
     };
+  },
+
+  // --- isolation snapshots ---
+
+  /** The live isolation-box state in wire shape (what snapshot.save stores). */
+  captureIsolation(): Isolation {
+    return stemMixToIsolation(get(stemMix), get(bassFocus));
+  },
+  saveSnapshot: (slot: number) =>
+    cmd("isolation.snapshot.save", { slot, state: actions.captureIsolation() }),
+  activateSnapshot: (slot: number) => cmd("isolation.snapshot.activate", { slot }),
+  clearSnapshot: (slot: number) => cmd("isolation.snapshot.clear", { slot }),
+  cycleSnapshots: () => cmd("isolation.snapshot.cycle"),
+
+  // --- markers / pedal ---
+
+  setMarker: (slot: number) => cmd("marker.set", { slot }), // pos defaults to playhead
+  clearMarker: (slot: number) => cmd("marker.clear", { slot }),
+  playMarker: (slot: number) => cmd("marker.play", { slot }),
+  setPedalMapping(rows: PedalBinding[]): Promise<void> {
+    return this.setSetting(PEDAL_MAPPING, rows);
   },
 
   async refreshRoutines(): Promise<void> {
@@ -1653,6 +1708,10 @@ function applyRoutineMix(mix: Mix): void {
   routineMixRaf = requestAnimationFrame(tick);
 }
 
+/** Sequence counter for `lastMidiTrigger` — forces reactivity when the same
+ *  trigger fires twice in a row. */
+let midiSeq = 0;
+
 export async function initEvents(): Promise<() => void> {
   void openLastSong();
   return onEvent((ev) => {
@@ -1765,6 +1824,45 @@ export async function initEvents(): Promise<() => void> {
         const r = ev.data as Recording;
         recordings.update((rs) => (rs.some((x) => x.id === r.id) ? rs : [...rs, r]));
         recordingActive.set(false);
+        break;
+      }
+      case "markers": {
+        const d = ev.data as { song_id: number; markers: Marker[] };
+        openSong.update((o) => (o && o.song.id === d.song_id ? { ...o, markers: d.markers } : o));
+        break;
+      }
+      case "snapshots": {
+        const d = ev.data as { song_id: number; snapshots: IsolationSnapshot[] };
+        openSong.update((o) =>
+          o && o.song.id === d.song_id ? { ...o, snapshots: d.snapshots } : o,
+        );
+        break;
+      }
+      case "isolation": {
+        // A snapshot was applied server-side: the engine already has the mix,
+        // so only mirror it into the UI stores — never re-send stems.gains or
+        // bass_focus. Keeps the bass-focus/pitch-octave coupling in step with
+        // the restore path in actions.openSong / actions.bassFocus.
+        const d = ev.data as { song_id: number; isolation: Isolation; slot: number | null };
+        const open = get(openSong);
+        if (!open || open.song.id !== d.song_id) break;
+        stemMix.set(isolationToStemMix(d.isolation));
+        bassFocus.set(d.isolation.bass_focus);
+        activeSnapshotSlot.set(d.slot);
+        const p = get(pitch);
+        if (p.octaveUp !== d.isolation.bass_focus) {
+          pitch.set({ ...p, octaveUp: d.isolation.bass_focus });
+          void cmd("pitch", {
+            semitones: p.semitones,
+            cents: p.cents,
+            octave_up: d.isolation.bass_focus,
+          });
+        }
+        break;
+      }
+      case "midi": {
+        midiSeq += 1;
+        lastMidiTrigger.set({ trigger: (ev.data as { trigger: string }).trigger, seq: midiSeq });
         break;
       }
     }
