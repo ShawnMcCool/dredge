@@ -420,7 +420,9 @@ pub struct App {
     /// applies whole snapshots of it. Reset to `Mix::default()` on song open.
     current_mix: Mix,
     /// Slot of the last snapshot applied via activate/cycle — the cycle cursor.
-    /// Transient: reset on song open, never persisted.
+    /// Transient: reset on song open, never persisted. May point at a slot
+    /// that's since been cleared; `snapshot_cycle` doesn't validate it, it
+    /// just advances past it to the next occupied slot.
     snapshot_cursor: Option<u32>,
     /// The running practice routine, if any. Advances on engine loop-wrap events
     /// (`tick`), driving the loop region / mix / rate / count-in per block.
@@ -2588,8 +2590,13 @@ impl App {
         }
         let p: P = from_params(p)?;
         let song_id = self.target_song(p.song_id)?;
+        // Normalize at the door so a caller-provided state (e.g. an older
+        // stem vocabulary) can never store a short/long vector — every
+        // snapshot in list_snapshots (song.open payload + events) is then
+        // guaranteed STEM_COUNT-shaped.
         let state = p
             .state
+            .map(|s| s.normalized())
             .unwrap_or_else(|| self.library.get_isolation(song_id));
         self.library
             .save_snapshot(song_id, p.slot, p.name, state)
@@ -4598,5 +4605,33 @@ mod snapshot_cmd_tests {
             !resp.ok,
             "isolation.snapshot.activate must require the target song to be open"
         );
+    }
+
+    #[test]
+    fn clear_removes_it_and_emits() {
+        // Parity with marker_clear_removes_it_and_emits.
+        let (mut app, song_id) = app_with_song();
+        saved(&mut app, song_id, 3, 0);
+        let resp = app.dispatch(req(
+            "isolation.snapshot.clear",
+            json!({ "song_id": song_id, "slot": 3 }),
+        ));
+        assert!(resp.ok, "got: {:?}", resp.error);
+        assert_eq!(app.library.snapshot(song_id, 3), None);
+        assert!(app.tick().iter().any(|e| e.event == "snapshots"));
+    }
+
+    #[test]
+    fn save_without_state_uses_persisted_isolation() {
+        let (mut app, song_id) = app_with_song();
+        let mut iso = Isolation::default();
+        iso.levels[1] = 33;
+        app.library.set_isolation(song_id, iso.clone()).unwrap();
+        let resp = app.dispatch(req(
+            "isolation.snapshot.save",
+            json!({ "song_id": song_id, "slot": 1 }),
+        ));
+        assert!(resp.ok, "got: {:?}", resp.error);
+        assert_eq!(app.library.snapshot(song_id, 1).unwrap().state, iso);
     }
 }
