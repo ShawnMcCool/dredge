@@ -3,6 +3,12 @@
 All notable user-facing changes to dredge, newest first. Entries are written
 at release time by `scripts/ship release`.
 
+## v0.14.2 — 2026-07-17
+
+### Fixed
+
+- **Downloads now build.** The v0.14.0 and v0.14.1 Linux builds failed on the build server and never published downloads. This release fixes the build — it includes everything listed under v0.14.0.
+
 ## v0.14.1 — 2026-07-17
 
 ### Fixed
