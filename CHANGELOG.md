@@ -3,6 +3,26 @@
 All notable user-facing changes to dredge, newest first. Entries are written
 at release time by `scripts/ship release`.
 
+## v0.14.0 — 2026-07-17
+
+### New
+
+- **Foot pedal control.** Map a MIDI foot pedal (or any MIDI controller) to dredge, so you can loop, jump, and switch mixes hands-free while you play. A new Pedal tab walks you through it: arm a slot, press the pedal, and it learns the button.
+- **Markers.** Drop numbered markers on the waveform and click one to jump straight to that spot.
+- **Isolation snapshots.** Save a listening mix — which stems and bass-focus you're hearing — as a numbered chip, then recall it in one click. Right-click a chip to clear it.
+- **Per-song isolation memory.** dredge now remembers how you set each song's stem mix and bass focus, and restores it when you reopen the song.
+
+### Improved
+
+- **Stop analyzing.** You can now stop structure analysis or stem separation after it starts — a Stop button on the ANALYZING panel aborts the run and frees your GPU. Anything that already finished is kept. A failed run also gets a Close button now.
+- **Library sorting.** The song list is sorted by band, then song title, alphabetically (ignoring capitalization).
+- **Recording takes.** Recorded takes show a real waveform, and you get a live input-level meter while arming a recording.
+
+### Fixed
+
+- **Dock tabs.** The tab bar is one continuous target now — no dead gaps between tabs when clicking or dragging.
+- **Waveform zoom at launch.** The waveform reliably fits the window on startup instead of occasionally opening mis-zoomed.
+
 ## v0.13.0 — 2026-07-11
 
 ### New
