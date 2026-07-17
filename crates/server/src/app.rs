@@ -2539,6 +2539,12 @@ impl App {
 
     fn marker_play_slot(&mut self, song_id: Option<SongId>, slot: u32) -> Result<(), String> {
         let song_id = self.target_song(song_id)?;
+        // SeekSecs/Play act on whatever the engine has loaded, so playing a
+        // marker only makes sense for the currently open song — unlike
+        // marker.set/clear, which are pure persistence and stay cross-song.
+        if self.open_song.as_ref().map(|o| o.song.id) != Some(song_id) {
+            return Err("song not open".into());
+        }
         let m = self
             .library
             .marker(song_id, slot)
@@ -3885,6 +3891,7 @@ mod mix_tests {
         let src = tempfile::tempdir().unwrap();
         let audio = src.path().join("a.flac");
         std::fs::write(&audio, b"AUDIO").unwrap();
+        // Keep the temp dirs alive for the test by leaking them — fine in tests.
         std::mem::forget(src);
         app.set_library_root(lib_dir.path().to_path_buf());
         std::mem::forget(lib_dir);
@@ -4295,6 +4302,10 @@ mod marker_cmd_tests {
         let (mock, mut app) = make_shared_mock();
         let song_id = seed_song(&mut app);
         app.library.set_marker(song_id, 4, 90.0).unwrap();
+        app.open_song = Some(OpenSong {
+            song: app.library.song_by_id(song_id).unwrap(),
+            stems: false,
+        });
         let resp = app.dispatch(req("marker.play", json!({ "song_id": song_id, "slot": 4 })));
         assert!(resp.ok, "got: {:?}", resp.error);
         let sent = &mock.lock().unwrap().sent;
@@ -4307,8 +4318,28 @@ mod marker_cmd_tests {
     #[test]
     fn marker_play_missing_slot_errors() {
         let (mut app, song_id) = app_with_song();
+        app.open_song = Some(OpenSong {
+            song: app.library.song_by_id(song_id).unwrap(),
+            stems: false,
+        });
         let resp = app.dispatch(req("marker.play", json!({ "song_id": song_id, "slot": 9 })));
         assert!(!resp.ok);
+    }
+
+    #[test]
+    fn marker_play_on_a_song_that_is_not_open_errors() {
+        // Marker persistence is cross-song, but playback acts on whatever the
+        // engine has loaded — playing a marker from a song other than the
+        // open one must be rejected rather than yanking the open song's
+        // playhead to a foreign position.
+        let (mut app, song_id) = app_with_song();
+        app.library.set_marker(song_id, 1, 55.0).unwrap();
+        // No song is open at all here, so any explicit song_id must fail.
+        let resp = app.dispatch(req("marker.play", json!({ "song_id": song_id, "slot": 1 })));
+        assert!(
+            !resp.ok,
+            "marker.play must require the target song to be open"
+        );
     }
 
     #[test]
@@ -4316,5 +4347,21 @@ mod marker_cmd_tests {
         let (mut app, _) = app_with_song(); // song exists but is not open
         let resp = app.dispatch(req("marker.set", json!({ "slot": 1, "pos": 0.0 })));
         assert!(!resp.ok, "no open song and no explicit song_id must error");
+    }
+
+    #[test]
+    fn marker_clear_removes_it_and_emits() {
+        let (mut app, song_id) = app_with_song();
+        app.dispatch(req(
+            "marker.set",
+            json!({ "song_id": song_id, "slot": 3, "pos": 5.0 }),
+        ));
+        let resp = app.dispatch(req(
+            "marker.clear",
+            json!({ "song_id": song_id, "slot": 3 }),
+        ));
+        assert!(resp.ok, "got: {:?}", resp.error);
+        assert_eq!(app.library.marker(song_id, 3), None);
+        assert!(app.tick().iter().any(|e| e.event == "markers"));
     }
 }
