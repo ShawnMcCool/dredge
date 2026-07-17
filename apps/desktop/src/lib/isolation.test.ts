@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isolationToStemMix, stemMixToIsolation, type Isolation } from "./isolation";
+import { isolationToStemMix, nextFreeSlot, stemMixToIsolation, type Isolation } from "./isolation";
 
 const N = 6;
 
@@ -38,5 +38,17 @@ describe("isolation <-> stemMix", () => {
     expect(mix.levels.length).toBe(N);
     expect(mix.mutes.length).toBe(N);
     expect(mix.solos.length).toBe(N);
+  });
+});
+
+describe("nextFreeSlot", () => {
+  it("starts at 1", () => {
+    expect(nextFreeSlot([])).toBe(1);
+  });
+  it("fills gaps first", () => {
+    expect(nextFreeSlot([{ slot: 1 }, { slot: 3 }])).toBe(2);
+  });
+  it("appends past the end", () => {
+    expect(nextFreeSlot([{ slot: 1 }, { slot: 2 }])).toBe(3);
   });
 });

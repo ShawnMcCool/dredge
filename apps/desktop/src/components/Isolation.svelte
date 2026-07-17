@@ -8,6 +8,7 @@
   // offers bass focus and invites the analyze run that unlocks the stems.
   import {
     actions,
+    activeSnapshotSlot,
     analysisError,
     bassFocus,
     openSong,
@@ -16,6 +17,7 @@
     stemMix,
     stemsError,
   } from "../lib/stores";
+  import { nextFreeSlot } from "../lib/isolation";
   import Box from "../lib/ui/Box.svelte";
   import Button from "../lib/ui/Button.svelte";
   import Fader from "../lib/ui/Fader.svelte";
@@ -97,6 +99,32 @@
           </div>
         {/each}
       </div>
+
+      <div class="rule"></div>
+
+      <div class="snapshots">
+        {#each $openSong.snapshots as s (s.slot)}
+          <Button
+            variant="chip"
+            active={$activeSnapshotSlot === s.slot}
+            title={s.name ?? `snapshot ${s.slot} — right-click to clear`}
+            onclick={() => void actions.activateSnapshot(s.slot)}
+            oncontextmenu={(e: MouseEvent) => {
+              e.preventDefault();
+              void actions.clearSnapshot(s.slot);
+            }}
+          >
+            {s.slot}
+          </Button>
+        {/each}
+        <Button
+          variant="chip"
+          title="save current state as a snapshot"
+          onclick={() => void actions.saveSnapshot(nextFreeSlot($openSong.snapshots))}
+        >
+          +
+        </Button>
+      </div>
     {:else if analyzing}
       <!-- the readout below is the whole state while separating pre-stems -->
     {:else if $openSong.analysis}
@@ -173,6 +201,12 @@
   .toggles {
     display: flex;
     gap: 2px;
+  }
+
+  .snapshots {
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
 
   .cta {

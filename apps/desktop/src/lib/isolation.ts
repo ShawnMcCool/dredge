@@ -41,3 +41,11 @@ export function stemMixToIsolation(mix: StemMix, bassFocus: boolean): Isolation 
     solos: mix.solos.slice(),
   };
 }
+
+/** Lowest snapshot slot number not yet in use (1-based). */
+export function nextFreeSlot(snaps: { slot: number }[]): number {
+  const used = new Set(snaps.map((s) => s.slot));
+  let slot = 1;
+  while (used.has(slot)) slot += 1;
+  return slot;
+}
