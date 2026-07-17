@@ -125,7 +125,15 @@ impl Library {
             .values()
             .map(|e| e.manifest.song.clone())
             .collect();
-        v.sort_by_key(|s| s.id.0);
+        // Band (artist) then song (title), both case-insensitive ascending;
+        // id breaks ties for a stable order. Missing artist sorts first.
+        v.sort_by(|a, b| {
+            let artist = |s: &Song| s.artist.as_deref().unwrap_or("").to_lowercase();
+            artist(a)
+                .cmp(&artist(b))
+                .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
+                .then(a.id.0.cmp(&b.id.0))
+        });
         v
     }
 
