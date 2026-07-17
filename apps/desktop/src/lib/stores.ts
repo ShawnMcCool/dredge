@@ -465,6 +465,7 @@ export const ALL_TABS = [
   "export",
   "profile",
   "devices",
+  "pedal",
   "settings",
   "guide",
 ] as const;

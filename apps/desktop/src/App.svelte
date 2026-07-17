@@ -11,6 +11,7 @@
   import ProfilingPanel from "./components/ProfilingPanel.svelte";
   import Isolation from "./components/Isolation.svelte";
   import Notes from "./components/Notes.svelte";
+  import Pedal from "./components/Pedal.svelte";
   import Recordings from "./components/Recordings.svelte";
   import Routines from "./components/Routines.svelte";
   import Sections from "./components/Sections.svelte";
@@ -49,6 +50,7 @@
     export: Export,
     profile: ProfilingPanel,
     devices: Devices,
+    pedal: Pedal,
     settings: SettingsPanel,
     guide: Guide,
   };
