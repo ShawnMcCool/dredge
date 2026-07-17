@@ -788,7 +788,7 @@
       let cursor = "crosshair";
       if (hitLoopEdge(x) || hitWorkingEdge(x)) cursor = "ew-resize";
       else if (hitLaneSpan(x, y)) cursor = "grab";
-      else if (hitLoopBody(x, y)) cursor = "pointer";
+      else if (hitMarkerPip(x, y) || hitLoopBody(x, y)) cursor = "pointer";
       canvas.style.cursor = cursor;
       return;
     }

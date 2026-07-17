@@ -113,6 +113,16 @@ describe("hitMarkerPip", () => {
   it("misses horizontally", () => {
     expect(hitMarkerPip(view, markers, 300, 24 + 4, 24)).toBeNull();
   });
+
+  it("returns the higher slot when pips overlap, matching draw z-order", () => {
+    // draw paints ascending slot (highest slot on top); hit-testing walks the
+    // same array backwards so an overlap resolves to what's actually visible
+    const overlapping = [
+      { slot: 1, pos: 50 },
+      { slot: 2, pos: 50.5 },
+    ];
+    expect(hitMarkerPip(view, overlapping, 505, 24 + 4, 24)?.slot).toBe(2);
+  });
 });
 
 describe("laneSpans", () => {

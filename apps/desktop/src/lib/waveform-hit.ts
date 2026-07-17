@@ -100,7 +100,10 @@ export function hitMarkerPip(
   laneTop: number,
 ): { slot: number; pos: number } | null {
   if (y < laneTop || y > laneTop + MARKER_PIP_H) return null;
-  for (const m of markers) {
+  // draw order is ascending slot, so the highest slot paints on top; walk
+  // backwards so an overlap hit returns the one actually visible.
+  for (let i = markers.length - 1; i >= 0; i--) {
+    const m = markers[i];
     const mx = secToX(view, m.pos);
     if (x >= mx - 2 && x <= mx + MARKER_PIP_W) return m;
   }
