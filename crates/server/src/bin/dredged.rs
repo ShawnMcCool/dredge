@@ -68,6 +68,7 @@ fn main() {
         Box::new(engine),
         Arc::new(server::stems::DemucsSeparator::default()),
     )));
+    app.lock().unwrap().start_midi();
     let _handle = match serve(app, &socket_path, |_| {}) {
         Ok(h) => h,
         Err(e) => {

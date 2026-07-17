@@ -5,6 +5,7 @@ pub mod app;
 pub mod control;
 pub mod input_monitor;
 pub mod logging;
+pub mod midi;
 pub mod pedal;
 mod profile;
 pub mod protocol;

@@ -55,6 +55,7 @@ fn main() {
         Box::new(engine),
         Arc::new(server::stems::DemucsSeparator::default()),
     )));
+    app.lock().unwrap().start_midi();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())

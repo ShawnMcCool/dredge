@@ -463,6 +463,11 @@ pub struct App {
     input_monitor: Box<dyn crate::input_monitor::InputMonitorControl>,
     monitor_tx: mpsc::Sender<crate::input_monitor::InputLevel>,
     monitor_rx: mpsc::Receiver<crate::input_monitor::InputLevel>,
+    /// Normalized pedal triggers from the MIDI listener; drained by `tick()`.
+    midi_tx: mpsc::Sender<String>,
+    midi_rx: mpsc::Receiver<String>,
+    /// Connected MIDI source names (None until `start_midi`).
+    midi_status: Option<crate::midi::MidiStatus>,
     /// Input capture backend for overdub recording. Behind its own mutex so the
     /// blocking `calibrate_capture` can run via `dispatch_shared` without
     /// holding the App lock (which would stall the tick pump).
@@ -528,6 +533,7 @@ impl App {
         let (work_sample_tx, work_sample_rx) = mpsc::channel();
         let (tuner_tx, tuner_rx) = mpsc::channel();
         let (monitor_tx, monitor_rx) = mpsc::channel();
+        let (midi_tx, midi_rx) = mpsc::channel();
         let root = Self::library_root(&store);
         let library = practice::library::Library::load(root.clone()).unwrap_or_else(|e| {
             eprintln!("dredge: library load failed at {}: {e}", root.display());
@@ -571,6 +577,9 @@ impl App {
             input_monitor: Box::new(crate::input_monitor::RealInputMonitor::default()),
             monitor_tx,
             monitor_rx,
+            midi_tx,
+            midi_rx,
+            midi_status: None,
             recorder: Arc::new(Mutex::new(Box::new(
                 crate::recording::RealRecorder::default(),
             ))),
@@ -616,6 +625,12 @@ impl App {
     /// Cloned out once by `serve` before it spawns the sampler.
     pub fn sampler_handles(&self) -> (SharedWork, mpsc::Sender<WorkSample>) {
         (self.work_state.clone(), self.work_sample_tx.clone())
+    }
+
+    /// Start the MIDI listener thread. Called once by each binary after
+    /// construction; tests skip it and push triggers through `midi_tx`.
+    pub fn start_midi(&mut self) {
+        self.midi_status = Some(crate::midi::spawn(self.midi_tx.clone()));
     }
 
     /// A reporter the heavy workers use to publish their stage.
@@ -691,6 +706,9 @@ impl App {
             "isolation.snapshot.cycle" => self.snapshot_cycle().map(|()| Value::Null),
             "isolation.snapshot.clear" => self.snapshot_clear(p),
             "pedal.trigger" => self.pedal_trigger(p),
+            "midi.status" => Ok(json!({
+                "devices": self.midi_status.as_ref().map(|s| s.devices()).unwrap_or_default(),
+            })),
             "section.click.set" => self.section_click_set(p),
             "sectionclick.set" => self.section_click_enable(p),
             "loop.create" => self.loop_create(p),
@@ -1230,6 +1248,18 @@ impl App {
                     event: "input_level".into(),
                     data,
                 });
+            }
+        }
+        // Pedal triggers: broadcast for the UI's learn flow, then run the
+        // mapped action. Failures log rather than surface — there is no
+        // requester to answer.
+        while let Ok(trigger) = self.midi_rx.try_recv() {
+            events.push(Event {
+                event: "midi".into(),
+                data: json!({ "trigger": trigger }),
+            });
+            if let Err(e) = self.run_trigger(&trigger) {
+                eprintln!("dredge: pedal trigger {trigger}: {e}");
             }
         }
         let mut last_pos = None;
@@ -4816,5 +4846,35 @@ mod pedal_trigger_tests {
         );
         let resp = app.dispatch(req("pedal.trigger", json!({ "trigger": "pc:0:3" })));
         assert!(!resp.ok);
+    }
+
+    #[test]
+    fn tick_broadcasts_and_runs_midi_triggers() {
+        let (mock, mut app) = make_shared_mock();
+        app.store
+            .set_setting(
+                crate::pedal::PEDAL_MAPPING_KEY,
+                &json!([{ "trigger": "pc:0:0", "action": "play_pause" }]),
+            )
+            .unwrap();
+        app.midi_tx.send("pc:0:0".into()).unwrap();
+        let events = app.tick();
+        assert!(events
+            .iter()
+            .any(|e| e.event == "midi" && e.data["trigger"] == "pc:0:0"));
+        assert!(mock
+            .lock()
+            .unwrap()
+            .sent
+            .iter()
+            .any(|c| matches!(c, EngineCmd::Play)));
+    }
+
+    #[test]
+    fn midi_status_empty_until_started() {
+        let (_, mut app) = make_shared_mock();
+        let resp = app.dispatch(req("midi.status", json!(null)));
+        assert!(resp.ok, "got: {:?}", resp.error);
+        assert_eq!(resp.data["devices"], json!([]));
     }
 }
