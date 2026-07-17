@@ -18,6 +18,27 @@ a MIDI listener/mapping in the server crate), designed in
 `docs/superpowers/specs/2026-07-17-pedal-control-design.md`. Paths A/B are
 kept as history only.
 
+## Shipped + verified (2026-07-17, same day)
+
+Implemented via subagent-driven plan execution
+(`docs/superpowers/plans/2026-07-17-pedal-control.md`), commits `ec39cfb`
+through `0b727f4`: markers + isolation snapshots in the bundle manifest,
+marker/snapshot commands, `pedal.rs` mapping + `run_trigger`, `midi.rs`
+listener (midir 0.11, auto-connect/rescan), waveform marker pips, snapshot
+chips in the isolation box, and the pedal dock tab (mapping editor with
+MIDI-learn + markers row).
+
+End-to-end verification against a release build (isolated `dredged`, scratch
+DB/library, real PipeWire, real pedal in U mode): `midi.status` enumerates
+`SINCO:SINCO MIDI 1 32:0`; `pedal.trigger` drives play/pause toggle,
+set-marker-at-playhead (persisted to `dredge.json`), play-from-marker seek,
+and snapshot save/cycle. Full `just check` gate green.
+
+Still pending (needs feet): stomp-through of the learn flow in the UI, and
+capturing what the two-switch combos send (expected extra PC numbers — add
+them as mapping rows via learn). Reprogramming switches to CC (for
+hold/momentary semantics) stays deferred.
+
 ## Why the Spark Control was rejected (don't revisit)
 
 The original ask was to use a **Positive Grid Spark Control** foot pedal. It was
